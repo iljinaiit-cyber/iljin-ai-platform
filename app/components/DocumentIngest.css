@@ -1,0 +1,16 @@
+.ingest-panel { border: 1px solid var(--line, #e3eaf5); border-radius: 14px; padding: 18px 20px; margin: 0 0 18px; }
+.ingest-head h2 { margin: 2px 0 4px; font-size: 18px; }
+.ingest-head p { margin: 0; font-size: 13.5px; color: var(--muted, #5b6b85); }
+.ingest-form { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.ingest-field { display: flex; flex-direction: column; gap: 5px; font-size: 13.5px; font-weight: 600; }
+.ingest-field small { font-weight: 400; color: var(--muted, #5b6b85); }
+.ingest-field input[type="text"], .ingest-field input:not([type]), .ingest-field textarea {
+  font: inherit; font-weight: 400; padding: 8px 10px; border: 1px solid var(--line, #e3eaf5); border-radius: 8px;
+}
+.ingest-field textarea { resize: vertical; min-height: 120px; }
+.ingest-classification { border: 1px solid var(--line, #e3eaf5); border-radius: 10px; padding: 10px 12px; display: flex; gap: 14px; flex-wrap: wrap; }
+.ingest-classification legend { font-size: 12.5px; font-weight: 700; padding: 0 4px; }
+.ingest-classification label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.ingest-classification small { color: var(--muted, #5b6b85); }
+.ingest-error { color: #c0271b; font-size: 13px; margin: 0; }
+.ingest-done { color: #1b7a49; font-size: 13px; margin: 0; }

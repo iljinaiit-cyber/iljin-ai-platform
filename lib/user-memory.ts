@@ -1,0 +1,207 @@
+import { getD1 } from "../db";
+import type { Principal } from "./identity";
+import type { GatewayMessage } from "./llm-gateway";
+import { completeWithGateway } from "./llm-gateway";
+import { embedTextsWithProvider } from "./rag";
+
+export interface UserPreferences {
+  answerLength?: "brief" | "standard" | "detailed";
+  answerFormat?: "paragraph" | "bullets" | "table";
+  searchScope?: "internal" | "internet";
+  frequentTopics?: string[];
+  lastUpdatedAt?: string;
+}
+
+export interface UserMemory {
+  id: string;
+  email: string;
+  tenantId: string;
+  content: string;
+  category: string;
+  embedding: number[] | null;
+  createdAt: string;
+  conversationId: string | null;
+}
+
+const MAX_MEMORIES = 50;
+const MEMORY_RECALL_LIMIT = 5;
+const MEMORY_RELEVANCE_THRESHOLD = 0.45;
+
+export async function ensureUserMemorySchema() {
+  const db = getD1();
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS user_memory (
+      id TEXT PRIMARY KEY, email TEXT NOT NULL, tenant_id TEXT NOT NULL,
+      content TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'fact',
+      embedding TEXT, conversation_id TEXT, created_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS user_memory_email_idx ON user_memory(tenant_id, email, created_at)"),
+  ]);
+}
+
+function memId() {
+  return `umem_${crypto.randomUUID().replaceAll("-", "")}`;
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+export async function loadUserPreferences(principal: Principal): Promise<UserPreferences> {
+  await ensureUserMemorySchema();
+  const row = await getD1().prepare("SELECT preferences_json FROM user_profiles WHERE email = ? AND tenant_id = ?")
+    .bind(principal.email, principal.tenantId).first<{ preferences_json: string | null }>();
+  if (!row?.preferences_json) return {};
+  try {
+    return JSON.parse(row.preferences_json) as UserPreferences;
+  } catch {
+    return {};
+  }
+}
+
+export async function saveUserPreferences(principal: Principal, prefs: UserPreferences): Promise<void> {
+  await ensureUserMemorySchema();
+  const existing = await loadUserPreferences(principal);
+  const merged = { ...existing, ...prefs, lastUpdatedAt: nowIso() };
+  await getD1().prepare("UPDATE user_profiles SET preferences_json = ?, updated_at = ? WHERE email = ? AND tenant_id = ?")
+    .bind(JSON.stringify(merged), nowIso(), principal.email, principal.tenantId).run();
+}
+
+export async function updateUserPreferencesFromRequest(principal: Principal, request: {
+  answerLength?: string;
+  answerFormat?: string;
+  searchScope?: string;
+}): Promise<void> {
+  const prefs: UserPreferences = {};
+  if (request.answerLength) prefs.answerLength = request.answerLength as UserPreferences["answerLength"];
+  if (request.answerFormat) prefs.answerFormat = request.answerFormat as UserPreferences["answerFormat"];
+  if (request.searchScope) prefs.searchScope = request.searchScope as UserPreferences["searchScope"];
+  if (Object.keys(prefs).length > 0) {
+    await saveUserPreferences(principal, prefs).catch(() => undefined);
+  }
+}
+
+const NUDGE_INTERVAL = 3;
+const NUDGE_KEYWORDS = ["기억해", "참고로", "메모해", "기억해둬", "참고하세요", "알아둬", "메모해둬"];
+
+export async function extractAndStoreMemory(principal: Principal, conversationId: string, messages: GatewayMessage[], traceId: string): Promise<void> {
+  const userMessages = messages.filter((m) => m.role === "user").map((m) => m.content);
+  if (userMessages.length < 2) return;
+  const latestUserMessage = userMessages[userMessages.length - 1] || "";
+  const shouldNudge = latestUserMessage.length > 0 && NUDGE_KEYWORDS.some((kw) => latestUserMessage.includes(kw));
+  const turnCount = userMessages.length;
+  const isNudgeTurn = turnCount % NUDGE_INTERVAL === 0;
+  if (!shouldNudge && !isNudgeTurn) return;
+  const conversationText = messages
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .slice(-6)
+    .map((m) => `${m.role === "user" ? "사용자" : "AI"}: ${m.content.slice(0, 400)}`)
+    .join("\n");
+  const prompt = `다음 대화에서 사용자에 대해 알 수 있는 핵심 사실이나 선호도를 1~3개 추출하세요. 각 항목은 한 문장으로 작성하고, 사용자의 업무 맥락, 관심 주제, 선호하는 답변 스타일 등을 포함하세요. 추출할 내용이 없으면 "없음"이라고만 답하세요.
+
+대화:
+${conversationText}
+
+추출된 사용자 메모 (한 줄씩):`;
+  try {
+    const completion = await completeWithGateway(
+      [{ role: "user", content: prompt }],
+      traceId,
+      { maxOutputTokens: 256, sensitivity: "internal" },
+      "swift",
+    );
+    const lines = completion.content.split("\n").map((l) => l.trim()).filter((l) => l && l !== "없음" && !l.startsWith("추출"));
+    if (lines.length === 0) return;
+    await ensureUserMemorySchema();
+    const countRow = await getD1().prepare("SELECT COUNT(*) as cnt FROM user_memory WHERE tenant_id = ? AND email = ?")
+      .bind(principal.tenantId, principal.email).first<{ cnt: number }>();
+    const currentCount = countRow?.cnt || 0;
+    if (currentCount >= MAX_MEMORIES) {
+      await getD1().prepare(`DELETE FROM user_memory WHERE id IN (
+        SELECT id FROM user_memory WHERE tenant_id = ? AND email = ?
+        ORDER BY created_at ASC LIMIT ?)`)
+        .bind(principal.tenantId, principal.email, lines.length).run();
+    }
+    for (const line of lines.slice(0, 3)) {
+      await getD1().prepare(`INSERT INTO user_memory (id, email, tenant_id, content, category, conversation_id, created_at) VALUES (?, ?, ?, ?, 'fact', ?, ?)`)
+        .bind(memId(), principal.email, principal.tenantId, line.slice(0, 500), conversationId, nowIso()).run();
+    }
+  } catch (error) {
+    console.error("[user-memory] extract failed", { error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+export async function recallRelevantMemories(principal: Principal, query: string): Promise<UserMemory[]> {
+  await ensureUserMemorySchema();
+  const rows = await getD1().prepare(`SELECT id, email, tenant_id, content, category, embedding, conversation_id, created_at
+    FROM user_memory WHERE tenant_id = ? AND email = ? ORDER BY created_at DESC LIMIT ${MAX_MEMORIES}`)
+    .bind(principal.tenantId, principal.email).all<Omit<UserMemory, "embedding"> & { embedding: string | null }>();
+  const memories = (rows.results || []);
+  if (memories.length === 0) return [];
+  const withEmbeddings = memories.filter((m) => m.embedding);
+  if (withEmbeddings.length > 0) {
+    try {
+      const queryEmb = await embedTextsWithProvider([query]);
+      if (queryEmb.vectors.length > 0) {
+        const queryVec = queryEmb.vectors[0];
+        type ScoredMemory = { memory: (typeof withEmbeddings)[number]; score: number };
+        const scored = withEmbeddings
+          .map((m): ScoredMemory | null => {
+            let emb: number[] = [];
+            try { emb = JSON.parse(m.embedding!); } catch { return null; }
+            const sim = cosineSimilarity(queryVec, emb);
+            return { memory: m, score: sim };
+          })
+          .filter((x): x is ScoredMemory => x !== null && x.score >= MEMORY_RELEVANCE_THRESHOLD);
+        scored.sort((a, b) => b.score - a.score);
+        const recalled = scored.slice(0, MEMORY_RECALL_LIMIT).map((s) => ({
+          ...s.memory, embedding: null,
+        } as UserMemory));
+        if (recalled.length > 0) return recalled;
+      }
+    } catch { /* fall through to keyword */ }
+  }
+  const queryLower = query.toLowerCase();
+  const keywordMatched = memories.filter((m) => {
+    const contentLower = m.content.toLowerCase();
+    const keywords = queryLower.split(/\s+/).filter((k) => k.length >= 2);
+    return keywords.some((k) => contentLower.includes(k));
+  }).slice(0, MEMORY_RECALL_LIMIT);
+  return keywordMatched.map((m) => ({ ...m, embedding: null } as UserMemory));
+}
+
+export async function buildMemoryContextBlock(principal: Principal, query: string): Promise<string> {
+  const memories = await recallRelevantMemories(principal, query);
+  if (memories.length === 0) return "";
+  const memoryLines = memories.map((m, i) => `${i + 1}. ${m.content}`);
+  return `\n[사용자 컨텍스트 - 이전 대화에서 파악한 사용자 정보]\n${memoryLines.join("\n")}\n`;
+}
+
+export async function embedAllMemories(principal: Principal): Promise<void> {
+  await ensureUserMemorySchema();
+  const rows = await getD1().prepare("SELECT id, content FROM user_memory WHERE tenant_id = ? AND email = ? AND embedding IS NULL")
+    .bind(principal.tenantId, principal.email).all<{ id: string; content: string }>();
+  const unembedded = rows.results || [];
+  if (unembedded.length === 0) return;
+  try {
+    const emb = await embedTextsWithProvider(unembedded.map((r) => r.content));
+    for (let i = 0; i < unembedded.length; i++) {
+      await getD1().prepare("UPDATE user_memory SET embedding = ? WHERE id = ?")
+        .bind(JSON.stringify(emb.vectors[i]), unembedded[i].id).run();
+    }
+  } catch (error) {
+    console.error("[user-memory] embedding failed", { error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length || a.length === 0) return 0;
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}

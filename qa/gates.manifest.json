@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "generated_for": "ILJIN AI Agent platform",
+  "policy": {
+    "pass_requires": "All mandatory automated and manual evidence must be current and reproducible.",
+    "starter_dataset_is_official": false,
+    "official_g2_minimum_cases": 300
+  },
+  "gates": [
+    {
+      "id": "G1",
+      "name": "PoC and text retrieval feasibility",
+      "decision": "hold",
+      "automated_evidence": ["scripts/verify-g1.mjs", "scripts/verify-platform.mjs"],
+      "manual_evidence_required": ["data-source scale survey", "STT benchmark", "NDCG@10 benchmark", "cost ceiling", "embedding-model comparison"],
+      "known_limitations": ["The platform lifecycle test alone is not an official G1 approval."]
+    },
+    {
+      "id": "G2",
+      "name": "Document RAG, citation and ACL",
+      "decision": "hold",
+      "automated_evidence": ["scripts/verify-g2.mjs", "scripts/evaluate-rag.mjs", "qa/security-negative-corpus.json"],
+      "manual_evidence_required": ["approved 300-case golden set", "enterprise IdP ACL negative set", "human faithfulness/citation review"],
+      "known_limitations": ["tests/golden-rag.json now contains 300 cases. Official G2 requires enterprise IdP ACL and human faithfulness/citation review in addition."]
+    },
+    {
+      "id": "G3",
+      "name": "Multimodal RAG",
+      "decision": "not_ready",
+      "automated_evidence": [],
+      "manual_evidence_required": ["image/OCR/STT/video implementation and KPI evidence"],
+      "known_limitations": ["Multimodal ingestion and evaluation are not implemented."]
+    },
+    {
+      "id": "G4",
+      "name": "Agent and MCP tool controls",
+      "decision": "not_ready",
+      "automated_evidence": [],
+      "manual_evidence_required": ["tool permission matrix", "approval bypass negative tests", "sandbox integration evidence", "audit evidence"],
+      "known_limitations": ["The current approval dialog is not a live MCP/tool execution control."]
+    },
+    {
+      "id": "G5",
+      "name": "Production readiness",
+      "decision": "not_ready",
+      "automated_evidence": ["qa/load/k6-150-users.js", "scripts/verify-dr-rehearsal.mjs", "scripts/verify-browser-accessibility.mjs"],
+      "manual_evidence_required": ["150-user load result", "security assessment", "DR restore evidence", "Pilot/UAT sign-off", "rollback rehearsal", "production deployment evidence"],
+      "known_limitations": ["Profiles and checklists are supplied, but no production result is claimed."]
+    }
+  ]
+}

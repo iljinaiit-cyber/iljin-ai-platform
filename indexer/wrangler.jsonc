@@ -1,0 +1,65 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "iljin-ai-works-indexer",
+  "main": "worker.ts",
+  "compatibility_date": "2026-05-22",
+  "compatibility_flags": ["nodejs_compat"],
+  // Chunking/JSON-parsing a large extracted document is real CPU time, not I/O
+  // wait, and can exceed the 30s free-tier default on a big window. 300s is the
+  // platform max.
+  "limits": {
+    "cpu_ms": 300000
+  },
+  // Same bindings as ../wrangler.jsonc — this Worker shares ../lib and ../db
+  // with the Pages app and must see the same D1/R2/AI resources.
+  "ai": {
+    "binding": "AI"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "iljin-ai-works-db",
+      "database_id": "89bef568-ff82-4c71-a062-4027f344c451",
+      "migrations_dir": "../drizzle"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "iljin-ai-works-originals"
+    }
+  ],
+  "vectorize": [
+    {
+      "binding": "VECTOR_INDEX",
+      "index_name": "iljin-ai-works-vectors"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "INDEX_QUEUE",
+        "queue": "iljin-index-jobs"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "iljin-index-jobs",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "dead_letter_queue": "iljin-index-jobs-dlq"
+      }
+    ]
+  },
+  "vars": {
+    "CLOUDFLARE_AI_MODEL": "@cf/zai-org/glm-5.2",
+    "CLOUDFLARE_EMBED_MODEL": "@cf/baai/bge-m3",
+    "CLOUDFLARE_RERANK_MODEL": "@cf/baai/bge-reranker-base",
+    "LLM_TIMEOUT_MS": "60000",
+    "DEFAULT_TENANT_ID": "iljin"
+  },
+  "triggers": {
+    "crons": ["0 * * * *"]
+  }
+}

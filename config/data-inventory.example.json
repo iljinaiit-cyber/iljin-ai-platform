@@ -1,0 +1,24 @@
+{
+  "surveyVersion": "2026-07-pilot-draft",
+  "assumptions": {
+    "peakConcurrentUsers": 150,
+    "annualGrowthRate": 0.2,
+    "replicaFactor": 2,
+    "retentionYears": 3,
+    "status": "needs_owner_confirmation"
+  },
+  "sources": [
+    {
+      "id": "document-management",
+      "owner": "미확정",
+      "classification": "internal",
+      "formats": ["pdf", "docx", "pptx", "xlsx"],
+      "documentCount": 0,
+      "averageBytes": 0,
+      "monthlyNewDocuments": 0,
+      "containsPersonalData": false,
+      "aclSource": "미확정",
+      "confirmed": false
+    }
+  ]
+}

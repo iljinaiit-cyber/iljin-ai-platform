@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "environment": "not_recorded",
+  "rehearsal_id": "not_run",
+  "executed_at": null,
+  "owner": "unassigned",
+  "targets": {
+    "rpo_minutes": 60,
+    "rto_minutes": 240
+  },
+  "controls": [
+    { "id": "DR-D1-BACKUP", "description": "D1 backup/export captured before rehearsal", "status": "not_evidenced", "evidence": [] },
+    { "id": "DR-R2-BACKUP", "description": "R2 object inventory and recoverable copy captured", "status": "not_evidenced", "evidence": [] },
+    { "id": "DR-CONFIG", "description": "Bindings, configuration and secret names inventoried without secret values", "status": "not_evidenced", "evidence": [] },
+    { "id": "DR-ISOLATED-RESTORE", "description": "D1 and R2 restored into an isolated rehearsal environment", "status": "not_evidenced", "evidence": [] },
+    { "id": "DR-INTEGRITY", "description": "Row counts, object counts and sampled checksums reconciled", "status": "not_evidenced", "evidence": [] },
+    { "id": "DR-APP-SMOKE", "description": "Health, authentication, search and citation smoke checks passed after restore", "status": "not_evidenced", "evidence": [] },
+    { "id": "DR-RPO-RTO", "description": "Measured recovery point and recovery time meet targets", "status": "not_evidenced", "evidence": [] },
+    { "id": "DR-ROLLBACK", "description": "Rollback decision and return-to-service procedure rehearsed", "status": "not_evidenced", "evidence": [] },
+    { "id": "DR-SIGNOFF", "description": "Service owner and security/operations owner signed the rehearsal", "status": "not_evidenced", "evidence": [] }
+  ]
+}
