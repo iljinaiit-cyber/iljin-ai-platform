@@ -31,6 +31,21 @@ function modelPath(model: string) {
   return model.split("/").map((part) => encodeURIComponent(part)).join("/");
 }
 
+/** Gateway 캐시 TTL. 임베딩은 모델이 바뀌지 않는 한 결과가 고정이다. */
+const AI_GATEWAY_CACHE_TTL_SECONDS = 60 * 60 * 24 * 7;
+
+/**
+ * 결정적 출력이라 캐시해도 되는 모델인지 판단한다.
+ *
+ * 임베딩·재순위는 같은 입력 → 같은 출력이므로 캐시가 안전하고 효과도 크다
+ * (재색인·반복 질의에서 그대로 절감된다).
+ * 생성 모델은 캐시하지 않는다. 같은 질문이라도 대화 맥락과 검색 근거가
+ * 다르면 답이 달라야 하는데, 캐시가 그것을 덮어버린다.
+ */
+function isCacheableModelKind(model: string): boolean {
+  return /embed|rerank/i.test(model);
+}
+
 export async function runCloudflareWorkersAiModel<T>(
   model: string,
   input: Record<string, unknown>,
@@ -38,7 +53,24 @@ export async function runCloudflareWorkersAiModel<T>(
   timeoutMs = 60_000,
 ): Promise<T> {
   if (hasCloudflareAiBinding(runtime)) {
-    return runtime.AI!.run(model, input) as Promise<T>;
+    // AI Gateway 를 경유시키면 세 가지를 얻는다.
+    //   1) 관측 — 모델별 호출·토큰·비용이 Gateway 대시보드에 분해되어 남는다.
+    //      2026-08-02 청구에서 "어느 모델이 얼마를 썼는지" 알 수 없었던 문제를 푼다.
+    //   2) 캐시 — 동일 입력은 모델을 거치지 않아 뉴런을 쓰지 않는다.
+    //   3) 레이트리밋·폴백을 Gateway 설정으로 걸 수 있다.
+    // gateway id 가 없으면 옵션 없이 호출한다 — 구성 전에도 동작해야 한다.
+    const gatewayId = runtime.CLOUDFLARE_AI_GATEWAY_ID;
+    if (!gatewayId) return runtime.AI!.run(model, input) as Promise<T>;
+
+    return runtime.AI!.run(model, input, {
+      gateway: {
+        id: gatewayId,
+        // 임베딩·재순위는 같은 입력이면 같은 출력이라 캐시가 안전하다.
+        // 생성(chat)은 캐시하지 않는다 — 같은 질문에 항상 같은 답을 주면
+        // 대화 맥락이 무시되고, 근거가 바뀌어도 옛 답이 나간다.
+        ...(isCacheableModelKind(model) ? { cacheTtl: AI_GATEWAY_CACHE_TTL_SECONDS } : { skipCache: true }),
+      },
+    }) as Promise<T>;
   }
 
   const baseUrl = cloudflareAiRestBaseUrl(runtime);

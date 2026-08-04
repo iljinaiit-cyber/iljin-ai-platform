@@ -11,7 +11,7 @@
     {
       "binding": "DB",
       "database_name": "iljin-ai-works-db",
-      "database_id": "89bef568-ff82-4c71-a062-4027f344c451",
+      "database_id": "<PROD_D1_ID>",
       "migrations_dir": "drizzle"
     }
   ],
@@ -50,6 +50,6 @@
     "DEFAULT_DEPARTMENT": "DX전략팀",
     "DEFAULT_USER_ROLE": "user",
     "ALLOW_DEV_IDENTITY": "false",
-    "ADMIN_EMAILS": "iljinai.lucas@gmail.com"
+    "ADMIN_EMAILS": "iljin.ai.it@gmail.com"
   }
 }

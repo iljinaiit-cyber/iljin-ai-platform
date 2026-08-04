@@ -19,8 +19,30 @@ export type RuntimeEnv = {
   // Absent in environments without the queue binding; callers fall back to
   // synchronous indexing when it is missing.
   INDEX_QUEUE?: QueueProducer<IndexJobMessage>;
+  /**
+   * 임베딩 캐시 등 짧은 수명 캐시용 KV.
+   * 없어도 동작해야 한다 — 캐시는 최적화지 정확성의 전제가 아니다.
+   */
+  CACHE?: KVNamespace;
   AI?: {
-    run(model: string, input: Record<string, unknown>): Promise<unknown>;
+    /**
+     * 세 번째 인자는 AI Gateway 옵션이다.
+     * gateway.id 를 주면 요청이 Gateway 를 거쳐 로깅·캐시·레이트리밋이 붙는다.
+     * cacheTtl 을 주면 동일 요청이 모델을 거치지 않으므로 뉴런을 아낀다.
+     */
+    run(
+      model: string,
+      input: Record<string, unknown>,
+      options?: {
+        gateway?: {
+          id: string;
+          cacheTtl?: number;
+          skipCache?: boolean;
+          cacheKey?: string;
+          metadata?: Record<string, unknown>;
+        };
+      },
+    ): Promise<unknown>;
     toMarkdown(
       files: { name: string; blob: Blob } | Array<{ name: string; blob: Blob }>,
       options?: Record<string, unknown>,

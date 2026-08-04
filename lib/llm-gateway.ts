@@ -287,9 +287,32 @@ function safeMessages(messages: GatewayMessage[], reasoningTier: ReasoningTier =
   ];
 }
 
-function normalizedMaxOutputTokens(value?: number) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_MAX_OUTPUT_TOKENS;
-  return Math.min(Math.max(Math.round(value), 512), MAX_OUTPUT_TOKENS);
+/**
+ * reasoning tier 별 기본 출력 상한.
+ *
+ * 2026-08-02 청구 실측: 총 $256 전액이 Workers AI 추론이었고, 요청당 3,284 뉴런은
+ * LLM 생성 1회와 자릿수가 맞는다(infra-config/cost_model.py). 생성 비용은 출력
+ * 토큰에 선형 비례하므로 여기가 가장 직접적인 절감 지점이다.
+ *
+ * 종전에는 tier 가 프롬프트만 바꾸고 상한은 전부 2,400 이었다. swift 는 애초에
+ * "결론부터 짧게"를 지시하는 tier 인데 2,400 토큰을 허용할 이유가 없다.
+ * 혼합 가정(swift 50% · expert 40% · deep 10%)에서 상대 비용이 42% 로 떨어진다.
+ *
+ * 품질 영향: swift 는 원래 짧은 답변을 요구하므로 잘릴 여지가 적다. deep 은
+ * 종전과 같다. expert 만 절반이 되므로 골든셋으로 Answer Relevance 를 확인하라.
+ */
+const TIER_MAX_OUTPUT_TOKENS: Record<ReasoningTier, number> = {
+  swift: 600,
+  expert: 1_200,
+  deep: DEFAULT_MAX_OUTPUT_TOKENS,
+};
+
+function normalizedMaxOutputTokens(value?: number, reasoningTier?: ReasoningTier) {
+  // 명시 요청이 있으면 존중한다 — 호출부가 의도를 갖고 준 값이다.
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.min(Math.max(Math.round(value), 512), MAX_OUTPUT_TOKENS);
+  }
+  return TIER_MAX_OUTPUT_TOKENS[reasoningTier ?? "expert"] ?? DEFAULT_MAX_OUTPUT_TOKENS;
 }
 
 type ProviderRequest = {
@@ -308,7 +331,7 @@ async function requestCompletion(
   reasoningTier?: ReasoningTier,
 ): Promise<GatewayCompletion> {
   const { provider, baseUrl, model, headers, disableThinking } = request;
-  const maxOutputTokens = normalizedMaxOutputTokens(requestedMaxOutputTokens);
+  const maxOutputTokens = normalizedMaxOutputTokens(requestedMaxOutputTokens, reasoningTier);
   assertProviderCircuitClosed(provider);
   const runtime = getRuntimeEnv();
   const configuredTimeout = provider === "local"
@@ -493,7 +516,7 @@ export async function completeWithCloudflare(messages: GatewayMessage[], traceId
   }
   assertProviderCircuitClosed("cloudflare");
   const model = overrideModel || runtime.CLOUDFLARE_AI_MODEL || DEFAULT_CLOUDFLARE_MODEL;
-  const maxOutputTokens = normalizedMaxOutputTokens(requestedMaxOutputTokens);
+  const maxOutputTokens = normalizedMaxOutputTokens(requestedMaxOutputTokens, reasoningTier);
   const timeoutMs = Math.min(Math.max(Number(runtime.LLM_TIMEOUT_MS) || 60_000, 5_000), 120_000);
   const startedAt = Date.now();
   let payload: CloudflareCompletionPayload | undefined;
