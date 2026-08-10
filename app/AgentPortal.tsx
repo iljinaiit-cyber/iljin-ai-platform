@@ -1200,7 +1200,14 @@ export function AgentPortal() {
         }
         return;
       }
-      const payload = (await response.json()) as GatewayResponse;
+      const rawPayload = await response.text();
+      let payload: GatewayResponse;
+      try {
+        payload = JSON.parse(rawPayload) as GatewayResponse;
+      } catch {
+        const responseLabel = responseType.includes("text/html") ? "HTML 오류 페이지" : "예상하지 않은 응답";
+        throw new Error(`${responseLabel}가 반환되었습니다. 잠시 후 다시 시도해 주세요.`);
+      }
       const content = payload.choices?.[0]?.message?.content?.trim();
 
       if (!response.ok || !content) {
