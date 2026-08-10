@@ -919,8 +919,8 @@ export function AgentPortal() {
     if (!authenticatedEmail) return;
     const storedTheme = window.localStorage.getItem(`iljin-ai-theme:${authenticatedEmail}`);
     if (!isThemeColor(storedTheme)) return;
-    const timer = window.setTimeout(() => setThemeColor(storedTheme), 0);
-    return () => window.clearTimeout(timer);
+    const timer = setTimeout(() => setThemeColor(storedTheme), 0);
+    return () => clearTimeout(timer);
   }, [authenticatedEmail]);
 
   useEffect(() => {

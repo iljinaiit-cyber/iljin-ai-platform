@@ -443,7 +443,9 @@ test("separates internal and internet search and supports queued document drag-a
   assert.match(internetRoute, /authorizeFeature\(principal, "rag\.search", "rag\.search"\)/);
   assert.match(internetRoute, /enforceRateLimit\(principal, "internet-search", 30\)/);
   assert.match(chatRoute, /buildInternetGroundingPrompt/);
-  assert.match(chatRoute, /INTERNET_GROUNDING_MESSAGE_BUDGET = 7_600/);
+  // 근거 블록은 고정 상한을 자르는 대신 지시문·질문 길이를 뺀 나머지를 예산으로 쓴다.
+  assert.match(chatRoute, /INTERNET_GROUNDING_MESSAGE_LIMIT = 7_900/);
+  assert.match(chatRoute, /const sourceBudget = maxLength - instruction\.length - question\.length/);
   assert.match(chatRoute, /INTERNET_GROUNDING_SOURCE_LIMIT = 6/);
   assert.match(chatRoute, /boundedSourceContext/);
   assert.match(chatRoute, /ensureInternetCitationCoverage/);
