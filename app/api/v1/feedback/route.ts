@@ -8,7 +8,13 @@ export async function GET(request: Request) {
   try {
     const principal = await resolvePrincipal(request);
     const category = new URL(request.url).searchParams.get("category") || undefined;
-    return ok({ items: await listFeedbackPosts(principal, category) }, traceId);
+    return ok({
+      items: await listFeedbackPosts(principal, category),
+      capabilities: {
+        canModerate: principal.role === "admin" || principal.role === "manager",
+        canNotice: principal.role === "admin",
+      },
+    }, traceId);
   } catch (error) {
     return fail(error, traceId);
   }
