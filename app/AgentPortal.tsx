@@ -3148,6 +3148,7 @@ function SchedulePlanningBoard() {
   const [priority, setPriority] = useState<PlannedWorkItem["priority"]>("normal");
   const [dueAt, setDueAt] = useState("");
   const [notify, setNotify] = useState(true);
+  const [currentTime] = useState(() => Date.now());
   const [filter, setFilter] = useState<"all" | "open" | "done">("all");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -3164,7 +3165,11 @@ function SchedulePlanningBoard() {
     } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => { if (active) void load(); });
+    return () => { active = false; };
+  }, [load]);
 
   const create = async () => {
     if (!title.trim()) return;
@@ -3206,7 +3211,7 @@ function SchedulePlanningBoard() {
 
   const visible = items.filter((item) => filter === "all" || (filter === "done" ? item.status === "done" : item.status !== "done" && item.status !== "cancelled"));
   const openCount = items.filter((item) => item.status === "open" || item.status === "in_progress").length;
-  const dueCount = items.filter((item) => item.due_at && Date.parse(item.due_at) <= Date.now() && item.status !== "done" && item.status !== "cancelled").length;
+  const dueCount = items.filter((item) => item.due_at && Date.parse(item.due_at) <= currentTime && item.status !== "done" && item.status !== "cancelled").length;
 
   return (
     <section className="schedule-planning-panel" aria-label="업무 플래닝과 Todo">
@@ -3230,7 +3235,7 @@ function SchedulePlanningBoard() {
       <div className="schedule-planning-toolbar"><div className="schedule-filters" role="group" aria-label="업무 상태 필터">{(["all", "open", "done"] as const).map((value) => <button key={value} type="button" className={filter === value ? "active" : ""} onClick={() => setFilter(value)}>{value === "all" ? "전체" : value === "open" ? "진행 중" : "완료"}</button>)}</div><span>{loading ? "불러오는 중..." : `${visible.length}개 업무`}</span></div>
       <div className="schedule-plan-list">{visible.length === 0 ? <p className="empty-state">등록된 업무가 없습니다. 대화에서 업무를 요청하거나 직접 할 일을 추가해 보세요.</p> : visible.map((item) => <article key={item.id} className={`schedule-plan-item schedule-plan-${item.status}`}>
         <div className="schedule-plan-check"><button type="button" disabled={busy} aria-label={item.status === "done" ? "업무 다시 열기" : "업무 완료"} onClick={() => void update(item.id, item.status === "done" ? "open" : "done")}>{item.status === "done" ? "✓" : "○"}</button></div>
-        <div className="schedule-plan-content"><div className="schedule-plan-topline"><span className={`schedule-plan-priority priority-${item.priority}`}>{item.priority}</span><span>{plannedKindLabels[item.kind]}</span>{item.auto_generated === 1 && <span className="schedule-plan-auto">자동</span>}</div><strong>{item.title}</strong>{item.description && <p>{item.description}</p>}{item.due_at && <small className={Date.parse(item.due_at) <= Date.now() && item.status !== "done" ? "schedule-plan-overdue" : ""}>마감 {new Date(item.due_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</small>}</div>
+        <div className="schedule-plan-content"><div className="schedule-plan-topline"><span className={`schedule-plan-priority priority-${item.priority}`}>{item.priority}</span><span>{plannedKindLabels[item.kind]}</span>{item.auto_generated === 1 && <span className="schedule-plan-auto">자동</span>}</div><strong>{item.title}</strong>{item.description && <p>{item.description}</p>}{item.due_at && <small className={Date.parse(item.due_at) <= currentTime && item.status !== "done" ? "schedule-plan-overdue" : ""}>마감 {new Date(item.due_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</small>}</div>
         <div className="schedule-plan-actions"><button type="button" disabled={busy || item.status === "done"} onClick={() => void update(item.id, "in_progress")}>{item.status === "in_progress" ? "진행 중" : "착수"}</button><button type="button" disabled={busy} onClick={() => void remove(item.id)}>삭제</button></div>
       </article>)}</div>
     </section>

@@ -15,6 +15,10 @@ const kinds = new Set<ScheduleWorkItemKind>(["todo", "milestone", "reminder", "e
 const priorities = new Set<ScheduleWorkItemPriority>(["low", "normal", "high", "urgent"]);
 const statuses = new Set<ScheduleWorkItemStatus>(["open", "in_progress", "done", "failed", "cancelled"]);
 
+function invalid(traceId: string, message: string) {
+  return ok({ error: { code: "INVALID_INPUT", message, trace_id: traceId } }, traceId, { status: 400 });
+}
+
 export async function GET(request: Request) {
   const traceId = newTraceId();
   try {
@@ -33,8 +37,23 @@ export async function POST(request: Request) {
       title?: string; description?: string; kind?: ScheduleWorkItemKind; priority?: ScheduleWorkItemPriority;
       due_at?: string | null; notify_enabled?: boolean;
     };
-    if (!body.title?.trim() || body.title.trim().length > 240 || (body.kind && !kinds.has(body.kind)) || (body.priority && !priorities.has(body.priority))) {
-      return ok({ error: { code: "INVALID_INPUT", message: "title, kind, priority를 확인해 주세요.", trace_id: traceId } }, traceId, { status: 400 });
+    if (typeof body.title !== "string" || !body.title.trim() || body.title.trim().length > 240) {
+      return invalid(traceId, "업무 제목은 1~240자로 입력해 주세요.");
+    }
+    if (body.description !== undefined && typeof body.description !== "string") {
+      return invalid(traceId, "업무 설명 형식이 올바르지 않습니다.");
+    }
+    if (body.kind !== undefined && !kinds.has(body.kind)) {
+      return invalid(traceId, "업무 종류가 올바르지 않습니다.");
+    }
+    if (body.priority !== undefined && !priorities.has(body.priority)) {
+      return invalid(traceId, "우선순위가 올바르지 않습니다.");
+    }
+    if (body.due_at !== undefined && body.due_at !== null && (typeof body.due_at !== "string" || Number.isNaN(Date.parse(body.due_at)))) {
+      return invalid(traceId, "마감 시각 형식이 올바르지 않습니다.");
+    }
+    if (body.notify_enabled !== undefined && typeof body.notify_enabled !== "boolean") {
+      return invalid(traceId, "알림 설정 형식이 올바르지 않습니다.");
     }
     const id = await createScheduleWorkItem({
       principal,
@@ -57,8 +76,26 @@ export async function PATCH(request: Request) {
       id?: string; title?: string; description?: string; status?: ScheduleWorkItemStatus;
       priority?: ScheduleWorkItemPriority; due_at?: string | null; notify_enabled?: boolean;
     };
-    if (!body.id || (body.status && !statuses.has(body.status)) || (body.priority && !priorities.has(body.priority))) {
-      return ok({ error: { code: "INVALID_INPUT", message: "id와 변경 값을 확인해 주세요.", trace_id: traceId } }, traceId, { status: 400 });
+    if (typeof body.id !== "string" || !body.id.trim()) {
+      return invalid(traceId, "업무 항목 ID가 필요합니다.");
+    }
+    if (body.title !== undefined && (typeof body.title !== "string" || !body.title.trim() || body.title.trim().length > 240)) {
+      return invalid(traceId, "업무 제목은 1~240자로 입력해 주세요.");
+    }
+    if (body.description !== undefined && typeof body.description !== "string") {
+      return invalid(traceId, "업무 설명 형식이 올바르지 않습니다.");
+    }
+    if (body.status !== undefined && !statuses.has(body.status)) {
+      return invalid(traceId, "업무 상태가 올바르지 않습니다.");
+    }
+    if (body.priority !== undefined && !priorities.has(body.priority)) {
+      return invalid(traceId, "우선순위가 올바르지 않습니다.");
+    }
+    if (body.due_at !== undefined && body.due_at !== null && (typeof body.due_at !== "string" || Number.isNaN(Date.parse(body.due_at)))) {
+      return invalid(traceId, "마감 시각 형식이 올바르지 않습니다.");
+    }
+    if (body.notify_enabled !== undefined && typeof body.notify_enabled !== "boolean") {
+      return invalid(traceId, "알림 설정 형식이 올바르지 않습니다.");
     }
     await updateScheduleWorkItem(principal, body.id, {
       title: body.title, description: body.description, status: body.status, priority: body.priority,

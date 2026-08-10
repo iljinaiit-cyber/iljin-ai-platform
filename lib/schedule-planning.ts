@@ -119,7 +119,8 @@ export async function createScheduleWorkItem(input: {
   const timestamp = nowIso();
   const dueAt = normalizeDate(input.dueAt);
   const notifyEnabled = input.notifyEnabled !== false;
-  const reminderAt = normalizeDate(input.reminderAt) || defaultReminder(dueAt, notifyEnabled);
+  const activeStatus = input.status !== "done" && input.status !== "cancelled";
+  const reminderAt = normalizeDate(input.reminderAt) || defaultReminder(dueAt, notifyEnabled && activeStatus);
   const workItemId = id("work");
   const metadata = JSON.stringify(input.metadata || {});
   await db.prepare(`INSERT INTO schedule_work_items
@@ -162,12 +163,13 @@ export async function updateScheduleWorkItem(principal: Principal, workItemId: s
   const title = patch.title === undefined ? current.title : patch.title.trim().slice(0, 240);
   const dueAt = patch.dueAt === undefined ? current.due_at : normalizeDate(patch.dueAt);
   const notifyEnabled = patch.notifyEnabled === undefined ? Boolean(current.notify_enabled) : patch.notifyEnabled;
-  const reminderAt = defaultReminder(dueAt, notifyEnabled);
+  const status = patch.status || current.status;
+  const reminderAt = defaultReminder(dueAt, notifyEnabled && status !== "done" && status !== "cancelled");
   const updatedAt = nowIso();
   await getD1().prepare(`UPDATE schedule_work_items SET title = ?, description = ?, status = ?, priority = ?,
     due_at = ?, reminder_at = ?, notify_enabled = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND owner_email = ?`)
     .bind(title, patch.description === undefined ? current.description : patch.description.trim().slice(0, 2000) || null,
-      patch.status || current.status, patch.priority || current.priority, dueAt, reminderAt, notifyEnabled ? 1 : 0,
+      status, patch.priority || current.priority, dueAt, reminderAt, notifyEnabled ? 1 : 0,
       updatedAt, workItemId, principal.tenantId, principal.email).run();
   await getD1().prepare("DELETE FROM schedule_notifications WHERE work_item_id = ? AND delivered_at IS NULL").bind(workItemId).run();
   if (reminderAt) {
@@ -207,9 +209,16 @@ export async function deleteScheduleWorkItemsForConversation(principal: Principa
 
 export async function syncScheduleWorkItemStatus(principal: Principal, sourceType: string, sourceId: string, status: ScheduleWorkItemStatus) {
   await ensureSchedulePlanningSchema();
-  await getD1().prepare(`UPDATE schedule_work_items SET status = ?, updated_at = ?
+  const db = getD1();
+  const updatedAt = nowIso();
+  await db.prepare(`UPDATE schedule_work_items SET status = ?, updated_at = ?
     WHERE tenant_id = ? AND owner_email = ? AND source_type = ? AND source_id = ?`)
-    .bind(status, nowIso(), principal.tenantId, principal.email, sourceType, sourceId).run();
+    .bind(status, updatedAt, principal.tenantId, principal.email, sourceType, sourceId).run();
+  if (status === "done" || status === "cancelled") {
+    await db.prepare(`DELETE FROM schedule_notifications WHERE tenant_id = ? AND owner_email = ?
+      AND work_item_id IN (SELECT id FROM schedule_work_items WHERE tenant_id = ? AND owner_email = ? AND source_type = ? AND source_id = ?)`)
+      .bind(principal.tenantId, principal.email, principal.tenantId, principal.email, sourceType, sourceId).run();
+  }
 }
 
 export async function listScheduleAlerts(principal: Principal, limit = 8): Promise<ScheduleAlert[]> {
@@ -227,7 +236,7 @@ export async function listScheduleAlerts(principal: Principal, limit = 8): Promi
 export function extractDueAtFromText(text: string, now = new Date()) {
   const kstText = text.toLowerCase();
   const base = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-  let year = base.getFullYear();
+  const year = base.getFullYear();
   let month = base.getMonth();
   let day = base.getDate();
   const monthDay = kstText.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/);
