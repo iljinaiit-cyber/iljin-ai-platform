@@ -702,6 +702,7 @@ export async function completeWithGateway(
   // 정책과 대조한다. 임계값은 배포 설정(MAX_EGRESS_SENSITIVITY)이 정하며,
   // 값이 없거나 이상하면 public 으로 떨어진다(fail-closed).
   const runtimeEnv = getRuntimeEnv();
+  const selectedCloudflareModel = selectCloudflareModel(runtimeEnv, tier, policy.cloudflareModelOverride);
   const maxEgress = normalizedMaxEgress(runtimeEnv.MAX_EGRESS_SENSITIVITY);
   const externalAllowed = SENSITIVITY_RANK[sensitivity] <= SENSITIVITY_RANK[maxEgress];
 
@@ -754,7 +755,7 @@ export async function completeWithGateway(
   throw new GatewayError(
     cloudflareFailure.code === "CLOUD_COST_CAP_REACHED"
       ? `Cloud 비용 한도에 도달했고 로컬 모델도 사용할 수 없습니다. (${localFailure.code})`
-      : `Cloudflare GLM 5.2와 로컬 LLM이 모두 응답하지 않습니다. (${cloudflareFailure.code} → ${localFailure.code})`,
+      : `Cloudflare 모델(${selectedCloudflareModel})과 로컬 LLM이 모두 응답하지 않습니다. (${cloudflareFailure.code} → ${localFailure.code})`,
     cloudflareFailure.code === "CLOUD_COST_CAP_REACHED" ? 429 : Math.max(localFailure.status, cloudflareFailure.status),
     cloudflareFailure.code === "CLOUD_COST_CAP_REACHED" ? "CLOUD_COST_CAP_LOCAL_UNAVAILABLE" : "ALL_PROVIDERS_UNAVAILABLE",
     cloudflareFailure.retryable || localFailure.retryable,
