@@ -1,0 +1,8 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "iljin-ai",
+  "account_id": "de5ce3bbf2cba1f463e952104b4ab47f",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-10",
+  "workers_dev": true
+}
