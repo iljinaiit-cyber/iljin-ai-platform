@@ -1,5 +1,6 @@
 import { listAssets } from "../../../../lib/rag";
 import { resolvePrincipal } from "../../../../lib/identity";
+import { authorizeFeature } from "../../../../lib/admin-governance";
 import { fail, newTraceId, ok } from "../../_shared";
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -15,28 +16,28 @@ export async function GET(request: Request) {
   const traceId = newTraceId();
   try {
     const principal = await resolvePrincipal(request);
-    const items = await listAssets(principal, 200);
+    await authorizeFeature(principal, "rag.search", "rag.search");
+    const items = await listAssets(principal, 100);
     const counts = new Map<string, number>();
     let totalSegments = 0;
     let latestUpdatedAt: string | undefined;
-    for (const a of items as unknown as Array<Record<string, unknown>>) {
-      const src = String(a.source_type ?? a.sourceType ?? "upload");
+    for (const a of items) {
+      const src = a.source_type || "upload";
       counts.set(src, (counts.get(src) ?? 0) + 1);
-      totalSegments += Number(a.segment_count ?? a.segmentCount ?? 0);
-      const updated = String(a.updated_at ?? a.updatedAt ?? "");
+      totalSegments += Number(a.segment_count || 0);
+      const updated = a.updated_at || "";
       if (updated && (!latestUpdatedAt || updated > latestUpdatedAt)) latestUpdatedAt = updated;
     }
     const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
-    const recent = (items as unknown as Array<Record<string, unknown>>)
-      .filter((a) => String(a.updated_at ?? a.updatedAt ?? "") >= since).slice(0, 12);
+    const recentUpdates = items.filter((a) => a.updated_at >= since).slice(0, 12);
     return ok({
       items,
-      recent,
+      recent: recentUpdates,
       categories: [...counts].map(([sourceType, count]) => ({ sourceType, label: SOURCE_LABELS[sourceType] ?? sourceType, count })),
       summary: {
         totalDocuments: items.length,
         totalSegments,
-        recentUpdates: recent.length,
+        recentUpdates: recentUpdates.length,
         sourceCount: counts.size,
         latestUpdatedAt,
         department: principal.department,

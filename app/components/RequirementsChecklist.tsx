@@ -7,7 +7,7 @@ type Requirement = { id: string; title?: string; label?: string; status?: string
 type Payload = {
   requirements?: Requirement[];
   outstanding?: Requirement[];
-  summary?: { total?: number; done?: number; outstanding?: number };
+  summary?: { total?: number; done?: number; outstanding?: number; archivedImplemented: number };
 };
 
 export function RequirementsChecklist() {
@@ -37,7 +37,7 @@ export function RequirementsChecklist() {
     <section className="panel requirements-panel">
       <div className="panel-title">
         <div><span className="section-kicker">REQUIREMENTS</span><h2>개발 요구사항 체크리스트</h2></div>
-        {summary ? <span>{summary.outstanding ?? items.length}건 미해소</span> : null}
+        {summary ? <span>남은 항목 {summary.outstanding ?? items.length}건 · 완료 {summary.archivedImplemented}개 제외</span> : null}
       </div>
 
       <label className="requirements-toggle">

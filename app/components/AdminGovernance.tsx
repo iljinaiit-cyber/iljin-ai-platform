@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 
 type Dashboard = {
-  users?: Array<{ email: string; display_name?: string; department?: string; role: string; status?: string }>;
-  rolePermissions?: Array<{ role: string; permission_key: string; allowed: number | boolean }>;
-  features?: Array<{ feature_key: string; enabled: number | boolean; label?: string }>;
-  audits?: Array<{ id: string; actor_email?: string; action: string; created_at?: string }>;
+  permissions?: Array<{ key: string; label: string }>;
+  users?: Array<{ email: string; displayName?: string; department?: string; role: string; status?: string }>;
+  rolePermissions?: Array<{ role: string; permissions: Record<string, boolean> }>;
+  features?: Array<{ key: string; enabled: boolean; label?: string }>;
+  audit?: Array<{ id: string; actorEmail?: string; action: string; createdAt?: string }>;
 };
 
 export function AdminGovernance({ currentEmail }: { currentEmail: string }) {
@@ -36,6 +37,18 @@ export function AdminGovernance({ currentEmail }: { currentEmail: string }) {
 
   const on = (v: number | boolean | undefined) => v === true || v === 1;
 
+  const update = async (body: Record<string, unknown>) => {
+    setError("");
+    const response = await fetch("/api/admin/governance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json() as { error?: { message?: string } };
+    if (!response.ok) throw new Error(payload.error?.message || "변경 사항을 저장하지 못했습니다.");
+    await load();
+  };
+
   return (
     <section className="panel governance-panel">
       <div className="panel-title">
@@ -48,14 +61,14 @@ export function AdminGovernance({ currentEmail }: { currentEmail: string }) {
         : (
           <div className="governance-grid">
             <div>
-              <h3>사용자 ({data?.users?.length ?? 0})</h3>
+              <h3>사용자별 권한 ({data?.users?.length ?? 0})</h3>
               <table>
                 <caption className="sr-only">사용자 권한</caption>
                 <thead><tr><th>이메일</th><th>부서</th><th>역할</th><th>상태</th></tr></thead>
                 <tbody>
                   {(data?.users ?? []).slice(0, 12).map((u) => (
                     <tr key={u.email}>
-                      <td><strong>{u.display_name || u.email}</strong><small className="table-subtext">{u.email}</small></td>
+                      <td><strong>{u.displayName || u.email}</strong><small className="table-subtext">{u.email}</small></td>
                       <td>{u.department || "—"}</td>
                       <td>{u.role}</td>
                       <td>{u.status || "—"}</td>
@@ -66,13 +79,27 @@ export function AdminGovernance({ currentEmail }: { currentEmail: string }) {
             </div>
 
             <div>
-              <h3>기능 스위치</h3>
+              <h3>역할 정책</h3>
+              <ul className="feature-list">
+                {(data?.rolePermissions ?? []).map((policy) => (
+                  <li key={policy.role}>
+                    <strong>{policy.role}</strong>
+                    <span>{Object.values(policy.permissions).filter(Boolean).length}개 권한 사용</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div>
+              <h3>기능 설정</h3>
               <ul className="feature-list">
                 {(data?.features ?? []).map((f) => (
-                  <li key={f.feature_key}>
+                  <li key={f.key}>
                     <span className={`status-dot ${on(f.enabled) ? "" : "status-dot-warning"}`} />
-                    <strong>{f.label || f.feature_key}</strong>
-                    <span>{on(f.enabled) ? "사용" : "중지"}</span>
+                    <strong>{f.label || f.key}</strong>
+                    <button type="button" onClick={() => void update({ action: "feature", featureKey: f.key, enabled: !on(f.enabled) }).catch((cause) => setError(cause instanceof Error ? cause.message : "변경 사항을 저장하지 못했습니다."))}>
+                      {on(f.enabled) ? "사용 중지" : "사용"}
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -80,13 +107,13 @@ export function AdminGovernance({ currentEmail }: { currentEmail: string }) {
 
             {/* 감사 로그는 읽기 전용이다. 이 화면에서 수정 경로를 열지 않는다. */}
             <div>
-              <h3>최근 감사 기록</h3>
+              <h3>변경 이력</h3>
               <ul className="audit-list">
-                {(data?.audits ?? []).slice(0, 10).map((a) => (
+                {(data?.audit ?? []).slice(0, 10).map((a) => (
                   <li key={a.id}>
                     <strong>{a.action}</strong>
-                    <span>{a.actor_email || "—"}</span>
-                    <small>{a.created_at ? new Date(a.created_at).toLocaleString("ko-KR") : ""}</small>
+                    <span>{a.actorEmail || "—"}</span>
+                    <small>{a.createdAt ? new Date(a.createdAt).toLocaleString("ko-KR") : ""}</small>
                   </li>
                 ))}
               </ul>

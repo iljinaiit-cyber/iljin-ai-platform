@@ -48,12 +48,18 @@ export type RuntimeEnv = {
       options?: Record<string, unknown>,
     ): Promise<unknown>;
   };
+  /**
+   * 외부 Provider 로 내보낼 수 있는 최고 민감도. 기본 public.
+   * 값이 없거나 이상하면 public 으로 떨어진다(fail-closed).
+   */
+  MAX_EGRESS_SENSITIVITY?: string;
   LOCAL_LLM_BASE_URL?: string;
   LOCAL_LLM_MODEL?: string;
   LOCAL_LLM_API_KEY?: string;
   LOCAL_LLM_ACCESS_CLIENT_ID?: string;
   LOCAL_LLM_ACCESS_CLIENT_SECRET?: string;
   CLOUDFLARE_AI_MODEL?: string;
+  CLOUDFLARE_AI_PREMIUM_MODEL?: string;
   CLOUDFLARE_EMBED_MODEL?: string;
   CLOUDFLARE_RERANK_MODEL?: string;
   LOCAL_EMBED_MODEL?: string;
@@ -79,6 +85,9 @@ export type RuntimeEnv = {
   ALLOW_DEV_IDENTITY?: string;
   ADMIN_EMAILS?: string;
   ADMIN_BOOTSTRAP_TOKEN?: string;
+  DISABLED_AI_KINDS?: string;
+  DAILY_BUDGET_PER_USER?: string;
+  DAILY_BUDGET_PER_TENANT?: string;
 };
 
 declare global {
@@ -100,6 +109,7 @@ export function getRuntimeEnv(): RuntimeEnv {
       LOCAL_LLM_ACCESS_CLIENT_ID: process.env.LOCAL_LLM_ACCESS_CLIENT_ID,
       LOCAL_LLM_ACCESS_CLIENT_SECRET: process.env.LOCAL_LLM_ACCESS_CLIENT_SECRET,
       CLOUDFLARE_AI_MODEL: process.env.CLOUDFLARE_AI_MODEL,
+      CLOUDFLARE_AI_PREMIUM_MODEL: process.env.CLOUDFLARE_AI_PREMIUM_MODEL,
       CLOUDFLARE_EMBED_MODEL: process.env.CLOUDFLARE_EMBED_MODEL,
       CLOUDFLARE_RERANK_MODEL: process.env.CLOUDFLARE_RERANK_MODEL,
       LOCAL_EMBED_MODEL: process.env.LOCAL_EMBED_MODEL,
@@ -125,6 +135,9 @@ export function getRuntimeEnv(): RuntimeEnv {
       ALLOW_DEV_IDENTITY: process.env.ALLOW_DEV_IDENTITY,
       ADMIN_EMAILS: process.env.ADMIN_EMAILS,
       ADMIN_BOOTSTRAP_TOKEN: process.env.ADMIN_BOOTSTRAP_TOKEN,
+      DISABLED_AI_KINDS: process.env.DISABLED_AI_KINDS,
+      DAILY_BUDGET_PER_USER: process.env.DAILY_BUDGET_PER_USER,
+      DAILY_BUDGET_PER_TENANT: process.env.DAILY_BUDGET_PER_TENANT,
     };
     return runtime;
   }

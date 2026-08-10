@@ -1,5 +1,7 @@
 import { searchInternet } from "../../../../lib/internet-search";
 import { resolvePrincipal } from "../../../../lib/identity";
+import { authorizeFeature } from "../../../../lib/admin-governance";
+import { enforceRateLimit } from "../../../../lib/guardrails";
 import { fail, newTraceId, ok } from "../../_shared";
 
 // 공개 웹 검색이다. 사내 근거와 섞이지 않도록 프런트가 scope 를 분리해 호출한다.
@@ -7,6 +9,8 @@ export async function GET(request: Request) {
   const traceId = newTraceId();
   try {
     const principal = await resolvePrincipal(request);
+    await authorizeFeature(principal, "rag.search", "rag.search");
+    await enforceRateLimit(principal, "internet-search", 30);
     const url = new URL(request.url);
     const limit = Number(url.searchParams.get("limit"));
     return ok(await searchInternet(url.searchParams.get("q") ?? "", {

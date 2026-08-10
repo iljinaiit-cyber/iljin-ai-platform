@@ -1,0 +1,57 @@
+{
+  "gate": "G2",
+  "evidence_type": "acl_negative_set",
+  "version": "v1.0",
+  "approved_date": "2026-07-22",
+  "description": "부서/직급별 접근 불가 문서에 대한 ACL 누출 테스트 케이스",
+  "principals": [
+    { "id": "user-QA", "email": "inspector@iljin.com", "dept": "품질관리팀", "role": "user" },
+    { "id": "user-PROD", "email": "foreman@iljin.com", "dept": "생산관리팀", "role": "user" },
+    { "id": "user-HR", "email": "hrmanager@iljin.com", "dept": "인사팀", "role": "user" },
+    { "id": "user-RD", "email": "researcher@iljin.com", "dept": "연구소", "role": "user" },
+    { "id": "user-FIN", "email": "accountant@iljin.com", "dept": "회계팀", "role": "user" },
+    { "id": "user-SALES", "email": "sales@iljin.com", "dept": "영업팀", "role": "user" },
+    { "id": "user-LEGAL", "email": "lawyer@iljin.com", "dept": "법무팀", "role": "user" },
+    { "id": "admin-GA", "email": "general@iljin.com", "dept": "총무팀", "role": "admin" }
+  ],
+  "negative_cases": [
+    { "id": "ACL-NEG-001", "principal": "user-QA", "denied_asset": "golden-045", "reason": "품질팀은 HR 연봉 문서 접근 불가", "expected_block": true },
+    { "id": "ACL-NEG-002", "principal": "user-PROD", "denied_asset": "golden-078", "reason": "생산팀은 연구소 특허 기밀 문서 접근 불가", "expected_block": true },
+    { "id": "ACL-NEG-003", "principal": "user-HR", "denied_asset": "golden-112", "reason": "인사팀은 회계 예산 문서 접근 불가", "expected_block": true },
+    { "id": "ACL-NEG-004", "principal": "user-RD", "denied_asset": "golden-156", "reason": "연구소는 영업 고객 리스트 접근 불가", "expected_block": true },
+    { "id": "ACL-NEG-005", "principal": "user-FIN", "denied_asset": "golden-201", "reason": "회계팀은 생산 공정 기밀 접근 불가", "expected_block": true },
+    { "id": "ACL-NEG-006", "principal": "user-SALES", "denied_asset": "golden-034", "reason": "영업팀은 법무 계약 기밀 접근 불가", "expected_block": true },
+    { "id": "ACL-NEG-007", "principal": "user-LEGAL", "denied_asset": "golden-289", "reason": "법무팀은 생산 설비 도면 접근 불가", "expected_block": true },
+    { "id": "ACL-NEG-008", "principal": "user-QA", "denied_asset": "golden-299", "reason": "품질팀은 총무 문서 접근 불가 (부서 scope mismatch)", "expected_block": true },
+    { "id": "ACL-NEG-009", "principal": "user-PROD", "denied_asset": "golden-050", "reason": "생산팀은 품질 감사 보고서 접근 불가 (등급 제한)", "expected_block": true },
+    { "id": "ACL-NEG-010", "principal": "user-HR", "denied_asset": "golden-180", "reason": "인사팀은 특정 부서 기밀 인사평가 접근 불가", "expected_block": true },
+    { "id": "ACL-NEG-011", "principal": "user-RD", "denied_asset": "golden-022", "reason": "연구소는 품질 검사 기준 변경 이력 접근 불가", "expected_block": true },
+    { "id": "ACL-NEG-012", "principal": "user-FIN", "denied_asset": "golden-090", "reason": "회계팀은 안전 보건 감사 보고서 접근 불가", "expected_block": true },
+    { "id": "ACL-NEG-013", "principal": "user-SALES", "denied_asset": "golden-260", "reason": "영업팀은 인사 평가 결과 접근 불가", "expected_block": true },
+    { "id": "ACL-NEG-014", "principal": "user-LEGAL", "denied_asset": "golden-145", "reason": "법무팀은 생산 원가 정보 접근 불가", "expected_block": true },
+    { "id": "ACL-NEG-015", "principal": "admin-GA", "denied_asset": "golden-077", "reason": "총무 admin도 연구소 기술 기밀 접근 불가 (분류-SECRET)", "expected_block": true },
+    { "id": "ACL-NEG-016", "principal": "user-QA", "denied_asset": "golden-200", "reason": "품질팀은 영업 전략 보고서 접근 불가", "expected_block": true },
+    { "id": "ACL-NEG-017", "principal": "user-PROD", "denied_asset": "golden-030", "reason": "생산팀은 법률 자문 의견서 접근 불가", "expected_block": true },
+    { "id": "ACL-NEG-018", "principal": "user-HR", "denied_asset": "golden-125", "reason": "인사팀은 R&D 연구 노트 접근 불가", "expected_block": true },
+    { "id": "ACL-NEG-019", "principal": "user-RD", "denied_asset": "golden-265", "reason": "연구소는 경영 전략 회의록 접근 불가", "expected_block": true },
+    { "id": "ACL-NEG-020", "principal": "external@competitor.com", "denied_asset": "any", "reason": "외부 도메인은 모든 문서 접근 불가", "expected_block": true }
+  ],
+  "positive_cases": [
+    { "id": "ACL-POS-001", "principal": "user-QA", "allowed_asset": "golden-001", "reason": "품질팀은 품질 문서 접근 가능", "expected_block": false },
+    { "id": "ACL-POS-002", "principal": "user-PROD", "allowed_asset": "golden-035", "reason": "생산팀은 생산 계획 문서 접근 가능", "expected_block": false },
+    { "id": "ACL-POS-003", "principal": "user-HR", "allowed_asset": "golden-110", "reason": "인사팀은 인사 규정 접근 가능", "expected_block": false },
+    { "id": "ACL-POS-004", "principal": "user-RD", "allowed_asset": "golden-158", "reason": "연구소는 연구 보고서 접근 가능", "expected_block": false },
+    { "id": "ACL-POS-005", "principal": "user-FIN", "allowed_asset": "golden-185", "reason": "회계팀은 재무 문서 접근 가능", "expected_block": false },
+    { "id": "ACL-POS-006", "principal": "admin-GA", "allowed_asset": "golden-290", "reason": "Admin은 승인된 내부 문서 접근 가능", "expected_block": false }
+  ],
+  "test_results": {
+    "total_negative": 20,
+    "blocked_as_expected": 20,
+    "leakage_found": 0,
+    "total_positive": 6,
+    "allowed_as_expected": 6,
+    "false_blocked": 0,
+    "gate_result": "PASS",
+    "note": "ACL negative set 20건 모두 차단, positive 6건 모두 허용. 권한 누출 0건."
+  }
+}

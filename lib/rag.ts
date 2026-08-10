@@ -6,6 +6,7 @@ import type { Principal } from "./identity";
 import { loadContextFiles } from "./context-files";
 import { rewriteQuery, generateInsufficiencyQuestions, FOLLOW_UP_INSTRUCTION, type FollowUpQuestion } from "./question-rewriter";
 import { isLikelyInjectedContent, maskPii } from "./guardrails";
+import { buildOrganizationDictionary, graphRelatedSegments, indexSegmentOntology } from "./ontology";
 
 export type ReasoningTier = "swift" | "expert" | "deep";
 
@@ -1349,6 +1350,24 @@ export async function processIngestBatch(input: {
     });
     await db.prepare(`UPDATE segments SET vector_indexed_at = ? WHERE id IN (${segmentIds.map(() => "?").join(",")})`)
       .bind(nowIso(), ...segmentIds).run();
+
+    // 온톨로지 추출(L1 정규식 + L2 사전). LLM 호출이 없으므로 뉴런을 쓰지 않는다.
+    // 실패해도 색인 자체는 성공으로 둔다 — 그래프는 검색을 보강하는 층이지
+    // 문서 등록의 성립 조건이 아니다.
+    try {
+      const dictionary = await buildOrganizationDictionary(asset.tenant_id);
+      for (const [index, chunk] of window.entries()) {
+        await indexSegmentOntology({
+          tenantId: asset.tenant_id,
+          assetId: asset.id,
+          segmentId: segmentIds[index],
+          text: `${chunk.heading ? `${chunk.heading}\n` : ""}${chunk.content}`,
+          dictionary,
+        });
+      }
+    } catch (error) {
+      console.error("[ontology] 추출 실패", { assetId: asset.id, jobId: input.jobId, error });
+    }
   }
 
   const processed = Math.min(offset + window.length, chunks.length);
@@ -1586,6 +1605,34 @@ export async function searchRag(query: string, options: {
     fusedScore: rrf[index],
     finalScore: rrf[index],
   })).sort((a, b) => b.fusedScore - a.fusedScore).slice(0, FUSION_CANDIDATE_LIMIT);
+
+  // ── 그래프 신호 (2026-08-06) ────────────────────────────────────────
+  // 벡터·어휘 융합 위에 온톨로지 이웃을 얹는다. 질의에 등장한 엔티티의 2홉
+  // 이웃이 언급된 세그먼트에 가산점을 준다. "이 규격을 다루는 다른 문서"처럼
+  // 표현이 겹치지 않아 벡터로는 안 걸리는 연결을 여기서 잡는다.
+  //
+  // 재순위가 아니라 가산이다. 그래프가 비어 있어도(초기 상태) 기존 순위가
+  // 그대로 유지되도록 — 신규 기능이 기존 검색 품질을 떨어뜨리면 안 된다.
+  let graphSeedCount = 0;
+  let graphBoosted = 0;
+  try {
+    const graph = await graphRelatedSegments({ tenantId, query: cleanQuery, limit: 40 });
+    graphSeedCount = graph.seeds.length;
+    if (graph.segments.length) {
+      const boostBySegment = new Map(graph.segments.map((s) => [s.segmentId, s.entityHits]));
+      const maxHits = Math.max(...graph.segments.map((s) => s.entityHits), 1);
+      scored = scored.map((item) => {
+        const hits = boostBySegment.get(item.id);
+        if (!hits) return item;
+        graphBoosted += 1;
+        // 상한 0.15 — 그래프는 보조 신호다. 의미 유사도를 뒤집을 만큼 주지 않는다.
+        const boost = (hits / maxHits) * 0.15;
+        return { ...item, fusedScore: item.fusedScore + boost, finalScore: item.finalScore + boost };
+      }).sort((a, b) => b.fusedScore - a.fusedScore);
+    }
+  } catch (error) {
+    console.error("[ontology] 그래프 확장 실패", { traceId: options.traceId, error });
+  }
 
   const rerankerConfigured = getRagStatus().rerankConfigured;
   const rerankInput = scored.slice(0, RERANK_CANDIDATE_LIMIT);
@@ -1939,6 +1986,25 @@ ${latestUserMessage}`;
   };
 }
 
+export type AssetListItem = {
+  id: string;
+  title: string;
+  source_type: string;
+  mime_type: string;
+  status: string;
+  classification: string;
+  department_scope: string;
+  version: number;
+  segment_count: number;
+  original_size: number | null;
+  original_etag: string | null;
+  original_uploaded_at: string | null;
+  embedding_model: string | null;
+  embedding_dimensions: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export async function listAssets(principal: Pick<Principal, "tenantId" | "department" | "role">, limit = 50) {
   await ensureRagSchema();
   const result = await getD1().prepare(`SELECT id, title, source_type, mime_type, status, classification,
@@ -1947,7 +2013,7 @@ export async function listAssets(principal: Pick<Principal, "tenantId" | "depart
     WHERE tenant_id = ? AND deleted_at IS NULL
       AND (? = 'admin' OR classification = 'public' OR department_scope = '*' OR instr(',' || department_scope || ',', ',' || ? || ',') > 0)
     ORDER BY updated_at DESC LIMIT ?`)
-    .bind(principal.tenantId, principal.role, principal.department, Math.min(Math.max(limit, 1), 100)).all();
+    .bind(principal.tenantId, principal.role, principal.department, Math.min(Math.max(limit, 1), 100)).all<AssetListItem>();
   return result.results || [];
 }
 

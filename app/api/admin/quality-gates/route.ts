@@ -6,5 +6,8 @@ export async function GET(request: Request) {
   const traceId = newTraceId();
   try {
     return ok(await getQualityGates(await resolvePrincipal(request)), traceId);
-  } catch (error) { return fail(error, traceId); }
+  } catch (error) {
+    console.error(`[${traceId}] QUALITY_GATE_READ_FAILED`, error);
+    return fail(error, traceId);
+  }
 }

@@ -37,7 +37,7 @@ export const MODEL_FEATURE_CATALOG: Array<{
     label: "채팅 (Cloud)",
     description: "Cloudflare Workers AI 채팅 모델 — 메인 응답 생성",
     provider: "cloudflare",
-    defaultModel: "@cf/zai-org/glm-5.2",
+    defaultModel: "@cf/zai-org/glm-4.7-flash",
   },
   {
     feature: "chat_local",
@@ -77,7 +77,7 @@ export const MODEL_FEATURE_CATALOG: Array<{
     label: "비전 (VLM)",
     description: "이미지 캡셔닝 비전 언어 모델 — 멀티모달 입력",
     provider: "cloudflare",
-    defaultModel: "@cf/meta/llama-3.2-11b-vision-instruct",
+    defaultModel: "@cf/google/gemma-4-26b-a4b-it",
   },
   {
     feature: "tts",

@@ -1,0 +1,22 @@
+{
+  "suite": "dr-rehearsal",
+  "generated_at": "2026-07-24T08:10:14.228Z",
+  "validation_status": "pass",
+  "readiness": "blocked",
+  "target_rpo_minutes": 60,
+  "target_rto_minutes": 240,
+  "verified_controls": 0,
+  "required_controls": 9,
+  "structural_errors": [],
+  "missing_evidence": [
+    "DR-D1-BACKUP",
+    "DR-R2-BACKUP",
+    "DR-CONFIG",
+    "DR-ISOLATED-RESTORE",
+    "DR-INTEGRITY",
+    "DR-APP-SMOKE",
+    "DR-RPO-RTO",
+    "DR-ROLLBACK",
+    "DR-SIGNOFF"
+  ]
+}

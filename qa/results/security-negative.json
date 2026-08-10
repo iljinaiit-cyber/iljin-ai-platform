@@ -1,0 +1,62 @@
+{
+  "suite": "security-negative",
+  "mode": "static",
+  "generated_at": "2026-07-24T08:10:13.528Z",
+  "corpus_cases": 5,
+  "status": "pass",
+  "results": [
+    {
+      "id": "SEC-ACL-SPOOF-001",
+      "status": "pass",
+      "detail": "Search scope is derived from the resolved Principal; body.department is not forwarded to retrieval.",
+      "evidence": {
+        "files": [
+          "app/api/v1/search/route.ts",
+          "lib/rag.ts"
+        ]
+      }
+    },
+    {
+      "id": "SEC-PROMPT-001",
+      "status": "pass",
+      "detail": "Direct injection patterns are inspected before retrieval/model execution.",
+      "evidence": {
+        "files": [
+          "lib/guardrails.ts",
+          "app/api/v1/chat/completions/route.ts"
+        ]
+      }
+    },
+    {
+      "id": "SEC-APPROVAL-001",
+      "status": "pass",
+      "detail": "Forwarded identity takes precedence over development headers and unrequested users are blocked.",
+      "evidence": {
+        "files": [
+          "lib/identity.ts"
+        ]
+      }
+    },
+    {
+      "id": "SEC-IDEMPOTENCY-001",
+      "status": "pass",
+      "detail": "Document checksum deduplication provides the implemented ingest idempotency contract.",
+      "evidence": {
+        "files": [
+          "lib/rag.ts"
+        ]
+      }
+    },
+    {
+      "id": "SEC-RATE-001",
+      "status": "pass",
+      "detail": "A D1 minute bucket returns RATE_LIMITED and Retry-After after the configured route limit.",
+      "evidence": {
+        "files": [
+          "lib/guardrails.ts"
+        ]
+      }
+    }
+  ],
+  "note": "Static mode validates control wiring only; run with --live for behavioral evidence."
+}

@@ -90,6 +90,7 @@ export function RagResults({
 
   return (
     <div className="rag-results">
+      <h2>지식 검색 결과 · 인용 근거</h2>
       <div className="rag-results-meta">
         <span><strong>{totalCount.toLocaleString("ko-KR")}</strong>건</span>
         {typeof elapsedMs === "number" ? <span>{elapsedMs.toLocaleString("ko-KR")}ms</span> : null}
@@ -106,7 +107,7 @@ export function RagResults({
           ].filter(Boolean).join(" · ");
 
           return (
-            <li key={result.id || `${result.title}-${index}`} className="rag-result">
+            <li key={result.id || `${result.title}-${index}`} className={`rag-result${result.regionId ? " rag-document__visual" : ""}`}>
               <div className="rag-result-head">
                 <span className={`rag-badge rag-badge--${result.sourceType}`}>
                   {SOURCE_BADGE[result.sourceType] ?? result.sourceType}
@@ -121,6 +122,7 @@ export function RagResults({
 
               {/* 인용문은 원문 그대로다. 요약하지 않는다 — 근거 검증이 목적이다. */}
               <p className="rag-snippet">{result.snippet}</p>
+              {result.regionId ? <span className="rag-chip">이미지 근거 · {result.regionType || "visual"}</span> : null}
 
               <div className="rag-result-foot">
                 {locator ? <span>{locator}</span> : null}

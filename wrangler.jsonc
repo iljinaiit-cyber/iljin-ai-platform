@@ -1,47 +1,53 @@
+// Pages 프로젝트 (iljin-ai) — 환경 분리 적용본
+//
+// 2026-08-04 정정: 이전 판(wrangler.template.jsonc)은 Workers 배포에 dev/test/stage/prod
+// 4환경을 두는 구성이었다. **Pages 에는 그대로 쓸 수 없다.**
+//   - Pages 는 `preview` 와 `production` 두 환경만 지원한다. 임의 이름의 환경을 만들 수 없다.
+//   - Pages 는 브랜치별 설정을 지원하지 않는다. preview 설정은 모든 preview 배포에 공통 적용된다.
+//   - 진입점이 `main` 이 아니라 `pages_build_output_dir` 다.
+// 또한 바인딩 이름도 실물과 달랐다(ASSETS → BUCKET). 아래는 web-app/wrangler.jsonc 실물 기준이다.
+//
+// 배포:
+//   npx wrangler pages deploy            # production
+//   (preview 는 설정된 preview 브랜치에 push 하면 자동 배포)
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "iljin-ai-works",
+  "name": "iljin-ai",
   "pages_build_output_dir": "./dist/pages",
-  "compatibility_date": "2026-05-22",
+  "compatibility_date": "2026-08-10",
   "compatibility_flags": ["nodejs_compat"],
-  "ai": {
-    "binding": "AI"
-  },
+
+  // ── 최상위 = 로컬 개발(wrangler pages dev) 기본값 ──────────────────────
+  // Pages 는 Workers 와 달리 최상위 바인딩을 환경이 상속한다. 다만 환경별로
+  // 다시 선언하면 그것이 이긴다. 아래 env 블록이 preview/production 을 각각 덮는다.
+  "ai": { "binding": "AI" },
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "iljin-ai-works-db",
-      "database_id": "<PROD_D1_ID>",
+      "database_name": "iljin-ai-db-preview",
+      "database_id": "d7ca85cc-949c-452a-8be1-2778738b2806",
       "migrations_dir": "drizzle"
     }
   ],
   "r2_buckets": [
-    {
-      "binding": "BUCKET",
-      "bucket_name": "iljin-ai-works-originals"
-    }
+    { "binding": "BUCKET", "bucket_name": "iljin-ai-originals-preview" }
   ],
   "vectorize": [
-    {
-      "binding": "VECTOR_INDEX",
-      "index_name": "iljin-ai-works-vectors"
-    }
+    { "binding": "VECTOR_INDEX", "index_name": "iljin-ai-vectors-preview" }
   ],
-  // Producer only. Pages Functions cannot consume queues, so the consumer lives
-  // in the separate `indexer` Worker.
+  // Producer 전용. Pages Functions 는 Queue Consumer 가 될 수 없으므로
+  // Consumer 는 별도 Worker(iljin-ai-indexer)에 있다.
   "queues": {
-    "producers": [
-      {
-        "binding": "INDEX_QUEUE",
-        "queue": "iljin-index-jobs"
-      }
-    ]
+    "producers": [{ "binding": "INDEX_QUEUE", "queue": "iljin-ai-index-jobs-preview" }]
   },
   "vars": {
     "LOCAL_LLM_MODEL": "gemma4:latest",
-    "CLOUDFLARE_AI_MODEL": "@cf/zai-org/glm-5.2",
+    "CLOUDFLARE_AI_MODEL": "@cf/zai-org/glm-4.7-flash",
+    "CLOUDFLARE_AI_PREMIUM_MODEL": "@cf/google/gemma-4-26b-a4b-it",
+    "CLOUDFLARE_AI_GATEWAY_ID": "iljin-ai-gateway",
     "CLOUDFLARE_EMBED_MODEL": "@cf/baai/bge-m3",
     "CLOUDFLARE_RERANK_MODEL": "@cf/baai/bge-reranker-base",
+    "CLOUD_VLM_MODEL": "@cf/google/gemma-4-26b-a4b-it",
     "CLOUDFLARE_TTS_MODEL": "@cf/myshell-ai/tts-ko",
     "CLOUDFLARE_IMAGE_MODEL": "@cf/black-forest-labs/flux-1-schnell",
     "LLM_TIMEOUT_MS": "60000",
@@ -50,6 +56,133 @@
     "DEFAULT_DEPARTMENT": "DX전략팀",
     "DEFAULT_USER_ROLE": "user",
     "ALLOW_DEV_IDENTITY": "false",
-    "ADMIN_EMAILS": "iljin.ai.it@gmail.com"
+    "ADMIN_EMAILS": "iljin.ai.it@iljin.com",
+
+    // ── hardening 배선 대기 변수 ──────────────────────────────────────
+    // 아직 이 값을 읽는 코드가 없다. 배선(10 §H.5) 전까지는 무효다.
+    // 미리 두는 이유는 배선 시점에 설정 변경과 코드 변경이 겹치지 않게 하기 위함이다.
+    "APP_ENV": "preview",
+    "COST_PROFILE": "test",
+    "MAX_SENSITIVITY": "public",
+    "MAX_EGRESS_SENSITIVITY": "public",
+    "DAILY_BUDGET_PER_USER": "50",
+    "DAILY_BUDGET_PER_TENANT": "200",
+    "DISABLED_AI_KINDS": "image_gen"
+  },
+
+  "env": {
+    // ── PREVIEW — 브랜치 배포 공통 ────────────────────────────────────
+    // 사내 문서를 넣지 않는다. egress-guard 배선 전까지 민감도 상한을 public 으로 잠근다.
+    "preview": {
+      "ai": { "binding": "AI" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "iljin-ai-db-preview",
+          "database_id": "d7ca85cc-949c-452a-8be1-2778738b2806",
+          "migrations_dir": "drizzle"
+        }
+      ],
+      "kv_namespaces": [
+        { "binding": "CACHE", "id": "8dec8439a79346dea92f8e5852213d21" }
+      ],
+      "r2_buckets": [
+        { "binding": "BUCKET", "bucket_name": "iljin-ai-originals-preview" }
+      ],
+      "vectorize": [
+        { "binding": "VECTOR_INDEX", "index_name": "iljin-ai-vectors-preview" }
+      ],
+      "queues": {
+        "producers": [{ "binding": "INDEX_QUEUE", "queue": "iljin-ai-index-jobs-preview" }]
+      },
+      "vars": {
+        "LOCAL_LLM_MODEL": "gemma4:latest",
+        "CLOUDFLARE_AI_MODEL": "@cf/zai-org/glm-4.7-flash",
+        "CLOUDFLARE_AI_PREMIUM_MODEL": "@cf/google/gemma-4-26b-a4b-it",
+        "CLOUDFLARE_AI_GATEWAY_ID": "iljin-ai-gateway",
+        "CLOUDFLARE_EMBED_MODEL": "@cf/baai/bge-m3",
+        "CLOUDFLARE_RERANK_MODEL": "@cf/baai/bge-reranker-base",
+        "CLOUD_VLM_MODEL": "@cf/google/gemma-4-26b-a4b-it",
+        "CLOUDFLARE_TTS_MODEL": "@cf/myshell-ai/tts-ko",
+        "CLOUDFLARE_IMAGE_MODEL": "@cf/black-forest-labs/flux-1-schnell",
+        "LLM_TIMEOUT_MS": "60000",
+        "LOCAL_LLM_TIMEOUT_MS": "90000",
+        "DEFAULT_TENANT_ID": "iljin",
+        "DEFAULT_DEPARTMENT": "DX전략팀",
+        "DEFAULT_USER_ROLE": "user",
+        "ALLOW_DEV_IDENTITY": "false",
+        "ADMIN_EMAILS": "iljin.ai.it@iljin.com",
+        "APP_ENV": "preview",
+        "COST_PROFILE": "test",
+        "MAX_SENSITIVITY": "public",
+        "MAX_EGRESS_SENSITIVITY": "public",
+        "DISABLED_AI_KINDS": "image_gen,tts",
+        "DAILY_BUDGET_PER_USER": "50",
+        "DAILY_BUDGET_PER_TENANT": "200"
+      }
+    },
+
+    // ── PRODUCTION — 실서비스 ────────────────────────────────────────
+    // D1 ID 는 현재 운영 중인 값이다. 바꾸면 기존 데이터와 끊긴다.
+    "production": {
+      "ai": { "binding": "AI" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "iljin-ai-db",
+          "database_id": "f9b8eae9-7bb3-448c-bf4b-c1bae6db0532",
+          "migrations_dir": "drizzle"
+        }
+      ],
+      "kv_namespaces": [
+        { "binding": "CACHE", "id": "704c28b026e444bcba2f417e78ca8757" }
+      ],
+      "r2_buckets": [
+        { "binding": "BUCKET", "bucket_name": "iljin-ai-originals" }
+      ],
+      "vectorize": [
+        { "binding": "VECTOR_INDEX", "index_name": "iljin-ai-vectors" }
+      ],
+      "queues": {
+        "producers": [{ "binding": "INDEX_QUEUE", "queue": "iljin-ai-index-jobs" }]
+      },
+      "vars": {
+        "LOCAL_LLM_MODEL": "gemma4:latest",
+        "CLOUDFLARE_AI_MODEL": "@cf/zai-org/glm-4.7-flash",
+        "CLOUDFLARE_AI_PREMIUM_MODEL": "@cf/google/gemma-4-26b-a4b-it",
+        "CLOUDFLARE_AI_GATEWAY_ID": "iljin-ai-gateway",
+        "CLOUDFLARE_EMBED_MODEL": "@cf/baai/bge-m3",
+        "CLOUDFLARE_RERANK_MODEL": "@cf/baai/bge-reranker-base",
+        "CLOUD_VLM_MODEL": "@cf/google/gemma-4-26b-a4b-it",
+        "CLOUDFLARE_TTS_MODEL": "@cf/myshell-ai/tts-ko",
+        "CLOUDFLARE_IMAGE_MODEL": "@cf/black-forest-labs/flux-1-schnell",
+        "LLM_TIMEOUT_MS": "60000",
+        "LOCAL_LLM_TIMEOUT_MS": "90000",
+        "DEFAULT_TENANT_ID": "iljin",
+        "DEFAULT_DEPARTMENT": "DX전략팀",
+        "DEFAULT_USER_ROLE": "user",
+        "ALLOW_DEV_IDENTITY": "false",
+        "ADMIN_EMAILS": "iljin.ai.it@iljin.com",
+        "APP_ENV": "production",
+        "COST_PROFILE": "prod",
+        "MAX_SENSITIVITY": "confidential",
+        "MAX_EGRESS_SENSITIVITY": "internal",
+        // 이미지 생성은 채팅의 ~12배 비용이고 현재 업무 요구가 없다. 필요해지면 연다.
+        "DISABLED_AI_KINDS": "image_gen",
+        "DAILY_BUDGET_PER_USER": "400",
+        "DAILY_BUDGET_PER_TENANT": "5000"
+      }
+    }
   }
+
+  // ── Secret 은 여기 쓰지 않는다 (08 §8.9) ────────────────────────────
+  // Pages 는 대시보드 또는 CLI 로 환경별로 넣는다.
+  //   npx wrangler pages secret put LOCAL_LLM_BASE_URL --project-name iljin-ai
+  //   npx wrangler pages secret put LOCAL_LLM_API_KEY --project-name iljin-ai
+  //   npx wrangler pages secret put LOCAL_LLM_ACCESS_CLIENT_ID --project-name iljin-ai
+  //   npx wrangler pages secret put LOCAL_LLM_ACCESS_CLIENT_SECRET --project-name iljin-ai
+  //   npx wrangler pages secret put CLOUDFLARE_ACCOUNT_ID --project-name iljin-ai
+  //   npx wrangler pages secret put CLOUDFLARE_API_TOKEN --project-name iljin-ai
+  //   npx wrangler pages secret put TAVILY_API_KEY --project-name iljin-ai
+  //   (preview 용은 --preview 플래그를 붙인다)
 }

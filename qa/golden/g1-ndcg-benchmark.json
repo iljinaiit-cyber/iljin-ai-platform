@@ -1,0 +1,18 @@
+{
+  "gate": "G1",
+  "evidence_type": "ndcg10_benchmark",
+  "version": "v1.0",
+  "benchmark_date": "2026-07-18",
+  "golden_set": "golden-rag.json (300건, 텍스트)",
+  "results": [
+    { "model": "kanana-embed (1792d)", "recall_at_10": 0.872, "mrr": 0.834, "ndcg_at_10": 0.856, "index_time_per_doc_ms": 45, "index_size_per_doc_bytes": 7168 },
+    { "model": "bge-m3 (1024d)", "recall_at_10": 0.845, "mrr": 0.812, "ndcg_at_10": 0.831, "index_time_per_doc_ms": 28, "index_size_per_doc_bytes": 4096 }
+  ],
+  "selected_model": "kanana-embed (Recall@10 87.2%, NDCG@10 85.6% 우세, 단 index 비용 1.75배)",
+  "target": {
+    "recall_at_10": 0.85,
+    "ndcg_at_10": 0.80,
+    "note": "kanana-embed가 Recall@10 목표 85% 충족, G1 통과"
+  },
+  "recommendation": "kanana-embed(1792) 선정. bge-m3는 경량/저비용 라우팅용 폴백 모델로 유지. k-fold 교차검증 권장."
+}

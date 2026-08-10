@@ -781,3 +781,24 @@ test("suggests frequent questions and recent authorized work issues at the top o
   assert.match(portal, /최근 이슈/);
   assert.match(css, /\.chat-smart-suggestions/);
 });
+
+test("caps Cloudflare AI spend below $50 and reserves GLM 5.2 for deep reasoning", async () => {
+  const [guard, gateway, cloudflareAi, budgetRoute, consoleUi, config] = await Promise.all([
+    readFile(new URL("lib/cloud-cost-guard.ts", root), "utf8"),
+    readFile(new URL("lib/llm-gateway.ts", root), "utf8"),
+    readFile(new URL("lib/cloudflare-ai.ts", root), "utf8"),
+    readFile(new URL("app/api/admin/budget/route.ts", root), "utf8"),
+    readFile(new URL("app/components/OrgConsole.tsx", root), "utf8"),
+    readFile(new URL("wrangler.jsonc", root), "utf8"),
+  ]);
+  assert.match(guard, /CLOUD_COST_CAP_USD = 45/);
+  assert.match(guard, /spent_microusd \+ reserved_microusd \+ \? <= \?/);
+  assert.match(gateway, /CLOUD_COST_CAP_REACHED/);
+  assert.match(gateway, /reserveCloudflareLlmSpend/);
+  assert.match(cloudflareAi, /assertCloudCostAvailable/);
+  assert.match(budgetRoute, /getCloudCostStatus/);
+  assert.match(consoleUi, /Cloudflare AI monthly cost/);
+  assert.match(gateway, /CLOUDFLARE_AI_PREMIUM_MODEL/);
+  assert.match(gateway, /reasoningTier === "deep"/);
+  assert.match(config, /@cf\/zai-org\/glm-4\.7-flash/);
+});

@@ -1,11 +1,18 @@
 import { getD1 } from "../db";
+import { getRuntimeEnv } from "./runtime-env";
 import type { Principal } from "./identity";
 
 export class GuardrailError extends Error {
   constructor(
     message: string,
-    public readonly status: 400 | 413 | 429,
-    public readonly code: "PROMPT_INJECTION_DETECTED" | "PAYLOAD_TOO_LARGE" | "RATE_LIMITED",
+    public readonly status: 400 | 403 | 409 | 413 | 429,
+    public readonly code:
+      | "PROMPT_INJECTION_DETECTED"
+      | "PAYLOAD_TOO_LARGE"
+      | "RATE_LIMITED"
+      | "DAILY_BUDGET_EXCEEDED"
+      | "AI_KIND_DISABLED"
+      | "CONVERSATION_SENSITIVITY_MISMATCH",
     public readonly retryAfter?: number,
   ) {
     super(message);
@@ -67,6 +74,24 @@ export function maskPii(value: string): string {
     });
 }
 
+/**
+ * DISABLED_AI_KINDS 로 꺼둔 기능을 차단한다.
+ *
+ * 이 변수는 설정에 존재했지만 읽는 곳이 없었다(2026-08-04 점검). 즉 preview 의
+ * "image_gen 비활성"은 문서상 선언일 뿐 실제로는 열려 있었다. 여기서 실효화한다.
+ */
+export function assertAiKindEnabled(kind: string) {
+  const disabled = (getRuntimeEnv().DISABLED_AI_KINDS || "")
+    .split(",").map((v) => v.trim()).filter(Boolean);
+  if (disabled.includes(kind)) {
+    throw new GuardrailError(
+      "이 환경에서는 해당 AI 기능이 비활성화되어 있습니다.",
+      403,
+      "AI_KIND_DISABLED",
+    );
+  }
+}
+
 export async function enforceRateLimit(principal: Principal, route: string, limit = 60) {
   const db = getD1();
   await db.batch([
@@ -91,6 +116,147 @@ export async function enforceRateLimit(principal: Principal, route: string, limi
   if (Number(row?.request_count || 0) > limit) {
     throw new GuardrailError("요청 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.", 429, "RATE_LIMITED", Math.max(1, Math.ceil((expiresAt - now) / 1000)));
   }
+}
+
+// ── 일일 예산 (2026-08-04) ────────────────────────────────────────────────
+// 분당 제한은 순간 폭주만 막는다. 60 req/분을 하루 내내 유지하면 8.6만 건이고
+// 그건 청구서로 돌아온다. 사용자별·테넌트별 일일 상한을 따로 둔다.
+//
+// 비용 단위는 "요청 수"가 아니라 weight 다. 이미지 1장이 채팅 1건과 같은 무게일
+// 수 없다. 뉴런 실측치(11 §11.4)를 반올림해 상대 가중치로 쓴다.
+export const COST_WEIGHT = Object.freeze({
+  chat: 1,
+  tts: 2,
+  image_gen: 12,
+});
+
+function dailyLimits() {
+  const env = getRuntimeEnv();
+  const num = (value: string | undefined, fallback: number) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+  };
+  return {
+    // 사람이 하루에 채팅 400건을 정상 업무로 쓰기는 어렵다. 그 위는 자동화다.
+    perUser: num(env.DAILY_BUDGET_PER_USER, 400),
+    // 전사 상한. 계정 전체가 폭주해도 여기서 멈춘다.
+    perTenant: num(env.DAILY_BUDGET_PER_TENANT, 5_000),
+  };
+}
+
+async function ensureBudgetSchema() {
+  const db = getD1();
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS ai_budget_buckets (
+      bucket_key TEXT PRIMARY KEY, spent INTEGER NOT NULL,
+      day TEXT NOT NULL, updated_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS ai_budget_day_idx ON ai_budget_buckets(day)"),
+  ]);
+}
+
+async function spend(bucketKey: string, day: string, weight: number) {
+  const db = getD1();
+  await db.prepare(`INSERT INTO ai_budget_buckets (bucket_key, spent, day, updated_at)
+    VALUES (?, ?, ?, ?) ON CONFLICT(bucket_key) DO UPDATE SET
+      spent = spent + excluded.spent, updated_at = excluded.updated_at`)
+    .bind(bucketKey, weight, day, new Date().toISOString()).run();
+  const row = await db.prepare("SELECT spent FROM ai_budget_buckets WHERE bucket_key = ?")
+    .bind(bucketKey).first<{ spent: number }>();
+  return Number(row?.spent || 0);
+}
+
+/**
+ * AI 호출 전에 일일 예산을 차감한다. 초과하면 429 로 막는다.
+ *
+ * 호출 전에 차감하는 이유: 응답을 받은 뒤 기록하면 실패한 호출의 비용이 장부에서
+ * 빠진다. 뉴런은 실패해도 소모된다. 낙관적 차감이 회계상 맞다.
+ */
+export async function enforceDailyBudget(
+  principal: Principal,
+  kind: keyof typeof COST_WEIGHT,
+) {
+  await ensureBudgetSchema();
+  const limits = dailyLimits();
+  const weight = COST_WEIGHT[kind];
+  const day = new Date().toISOString().slice(0, 10);
+
+  const perUser = await resolveUserLimit(principal, limits.perUser);
+  const userSpent = await spend(`u:${principal.tenantId}:${principal.email}:${day}`, day, weight);
+  if (userSpent > perUser) {
+    throw new GuardrailError(
+      "오늘 사용 가능한 AI 요청 한도를 모두 사용했습니다. 내일 다시 시도하거나 관리자에게 문의해 주세요.",
+      429,
+      "DAILY_BUDGET_EXCEEDED",
+      secondsUntilUtcMidnight(),
+    );
+  }
+
+  const tenantSpent = await spend(`t:${principal.tenantId}:${day}`, day, weight);
+  if (tenantSpent > limits.perTenant) {
+    throw new GuardrailError(
+      "전사 일일 AI 사용 한도에 도달했습니다. 관리자에게 문의해 주세요.",
+      429,
+      "DAILY_BUDGET_EXCEEDED",
+      secondsUntilUtcMidnight(),
+    );
+  }
+}
+
+function secondsUntilUtcMidnight() {
+  const now = new Date();
+  const midnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  return Math.max(1, Math.ceil((midnight - now.getTime()) / 1000));
+}
+
+/**
+ * 조직별 한도 오버라이드. 환경변수 기본값 위에 관리자가 법인·부서 단위로 덮어쓴다.
+ * 부서 값이 있으면 부서 우선, 없으면 법인, 그것도 없으면 환경변수 기본값이다.
+ */
+export async function ensureBudgetPolicySchema() {
+  await getD1().prepare(`CREATE TABLE IF NOT EXISTS ai_budget_policies (
+    tenant_id TEXT NOT NULL, scope TEXT NOT NULL, scope_id TEXT NOT NULL,
+    daily_limit INTEGER NOT NULL, updated_by TEXT NOT NULL, updated_at TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, scope, scope_id)
+  )`).run();
+}
+
+async function resolveUserLimit(principal: Principal, fallback: number) {
+  const org = principal as Principal & { corpId?: string | null; deptId?: string | null };
+  if (!org.corpId && !org.deptId) return fallback;
+  await ensureBudgetPolicySchema();
+  const row = await getD1().prepare(`SELECT daily_limit, scope FROM ai_budget_policies
+    WHERE tenant_id = ? AND ((scope = 'department' AND scope_id = ?) OR (scope = 'corporation' AND scope_id = ?))
+    ORDER BY scope = 'department' DESC LIMIT 1`)
+    .bind(principal.tenantId, org.deptId ?? "", org.corpId ?? "")
+    .first<{ daily_limit: number }>();
+  return Number(row?.daily_limit) > 0 ? Number(row!.daily_limit) : fallback;
+}
+
+/** 관리자 화면용 — 오늘 소진량. 차단 없이 읽기만 한다. */
+export async function readDailyBudgetUsage(tenantId: string) {
+  await ensureBudgetSchema();
+  const day = new Date().toISOString().slice(0, 10);
+  const limits = dailyLimits();
+  const db = getD1();
+  const tenant = await db.prepare("SELECT spent FROM ai_budget_buckets WHERE bucket_key = ?")
+    .bind(`t:${tenantId}:${day}`).first<{ spent: number }>();
+
+  // 사용자별 상위 소진자. bucket_key 는 `u:{tenant}:{email}:{day}` 형태다.
+  const top = await db.prepare(`SELECT bucket_key, spent FROM ai_budget_buckets
+    WHERE day = ? AND bucket_key LIKE ? ORDER BY spent DESC LIMIT 20`)
+    .bind(day, `u:${tenantId}:%`).all<{ bucket_key: string; spent: number }>();
+
+  return {
+    day,
+    tenantSpent: Number(tenant?.spent || 0),
+    tenantLimit: limits.perTenant,
+    perUserLimit: limits.perUser,
+    topUsers: (top.results ?? []).map((r) => ({
+      email: r.bucket_key.slice(`u:${tenantId}:`.length, -(day.length + 1)),
+      spent: Number(r.spent || 0),
+    })),
+  };
 }
 
 export function guardrailResponse(error: unknown, traceId: string) {

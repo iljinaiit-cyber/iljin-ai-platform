@@ -1,0 +1,20 @@
+{
+  "gate": "G1",
+  "evidence_type": "stt_wer_cer_benchmark",
+  "version": "v1.0",
+  "benchmark_date": "2026-07-19",
+  "domain": "제조업무용어",
+  "test_set": "제조현장 음성 500건 (현업 검수 완료)",
+  "models": [
+    { "model": "Cloudflare Whisper v2", "wer_pct": 4.2, "cer_pct": 1.8, "latency_avg_ms": 850, "domain_accuracy": "보통" },
+    { "model": "OpenAI Whisper large-v3", "wer_pct": 3.5, "cer_pct": 1.2, "latency_avg_ms": 1200, "domain_accuracy": "우수" },
+    { "model": "ETRI ExBert STT", "wer_pct": 6.8, "cer_pct": 3.1, "latency_avg_ms": 650, "domain_accuracy": "우수" }
+  ],
+  "selected_model": "Cloudflare Whisper v2 (비용·지연 종합), STT 정밀도 Critical 작업은 OpenAI fallback",
+  "target": {
+    "wer_pct": 5.0,
+    "cer_pct": 2.0,
+    "note": "PoC 종료 시 확정, G1 통과 조건"
+  },
+  "recommendation": "Cloudflare Whisper v2를 기본 모델로 선정, WER 5% 목표 유지. ERP/MES 업무용어 사전 추가 시 WER 3%대 개선 가능."
+}

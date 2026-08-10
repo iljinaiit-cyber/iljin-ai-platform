@@ -1,5 +1,6 @@
 import { deleteConversation, getConversation } from "../../../../../lib/conversations";
 import { resolvePrincipal } from "../../../../../lib/identity";
+import { cleanupConversationAttachments } from "../../../../../lib/conversation-attachments";
 import { fail, newTraceId, ok } from "../../../_shared";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -19,6 +20,7 @@ export async function DELETE(request: Request, ctx: Ctx) {
   try {
     const principal = await resolvePrincipal(request);
     const { id } = await ctx.params;
+    await cleanupConversationAttachments(principal, id);
     await deleteConversation(principal, id);
     return ok({ ok: true }, traceId);
   } catch (error) { return fail(error, traceId); }

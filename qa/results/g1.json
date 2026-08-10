@@ -1,0 +1,37 @@
+{
+  "gate": "G1",
+  "generated_at": "2026-07-24T08:10:15.078Z",
+  "automated_status": "pass",
+  "live_lifecycle": "not_run",
+  "official_decision": "hold",
+  "checks": [
+    {
+      "id": "FILE:scripts/verify-platform.mjs",
+      "status": "pass"
+    },
+    {
+      "id": "FILE:app/api/v1/assets/route.ts",
+      "status": "pass"
+    },
+    {
+      "id": "FILE:app/api/v1/search/route.ts",
+      "status": "pass"
+    },
+    {
+      "id": "FILE:lib/rag.ts",
+      "status": "pass"
+    },
+    {
+      "id": "FILE:docs/openapi.yaml",
+      "status": "pass"
+    }
+  ],
+  "missing_official_evidence": [
+    "approved data-source scale survey",
+    "STT WER/CER benchmark and target",
+    "versioned NDCG@10 benchmark",
+    "per-query cost ceiling and measured distribution",
+    "embedding-model comparison using the same evaluation set"
+  ],
+  "statement": "A passing text-platform lifecycle is development evidence only and does not approve G1."
+}

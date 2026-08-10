@@ -143,6 +143,7 @@ export function requirementSummary(items = DEVELOPMENT_REQUIREMENTS) {
   items.forEach((item) => { counts[item.status] += 1; });
   return {
     ...counts,
+    archivedImplemented: counts.implemented,
     completionPercent: Math.round((counts.implemented / Math.max(counts.total, 1)) * 100),
     readinessPercent: Math.round(((counts.implemented + counts.partial * 0.5) / Math.max(counts.total, 1)) * 100),
   };

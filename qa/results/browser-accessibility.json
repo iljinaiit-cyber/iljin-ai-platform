@@ -1,0 +1,49 @@
+{
+  "suite": "browser-accessibility-scaffold",
+  "mode": "static",
+  "generated_at": "2026-07-24T08:10:12.686Z",
+  "status": "pass",
+  "checks": [
+    {
+      "id": "A11Y-LANG",
+      "status": "pass",
+      "detail": "Document language is declared as Korean."
+    },
+    {
+      "id": "A11Y-APPROVAL",
+      "status": "pass",
+      "detail": "Approval uses an accessible modal or an explicitly confirmed in-page control."
+    },
+    {
+      "id": "A11Y-FOCUS",
+      "status": "pass",
+      "detail": "Approval is in-page, so no modal focus trap is required."
+    },
+    {
+      "id": "A11Y-LIVE",
+      "status": "pass",
+      "detail": "Asynchronous access state exposes a polite live region."
+    },
+    {
+      "id": "RESPONSIVE-BREAKPOINTS",
+      "status": "pass",
+      "detail": "Desktop, tablet and mobile breakpoints exist."
+    },
+    {
+      "id": "RESPONSIVE-TOUCH",
+      "status": "pass",
+      "detail": "Interactive controls include a 44px minimum target."
+    },
+    {
+      "id": "A11Y-MOTION",
+      "status": "pass",
+      "detail": "Reduced-motion preferences are honored."
+    },
+    {
+      "id": "RESPONSIVE-DYNAMIC-VIEWPORT",
+      "status": "pass",
+      "detail": "Dynamic viewport units protect mobile browser layouts."
+    }
+  ],
+  "limitation": "This dependency-free scaffold does not replace Playwright browser matrices, axe, screen-reader or visual-regression testing."
+}

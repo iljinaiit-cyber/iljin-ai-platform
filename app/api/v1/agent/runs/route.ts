@@ -1,11 +1,13 @@
 import { createAgentRun, listAgentRuns } from "../../../../../lib/agent-orchestrator";
 import { resolvePrincipal } from "../../../../../lib/identity";
+import { authorizeFeature } from "../../../../../lib/admin-governance";
 import { fail, newTraceId, ok } from "../../../_shared";
 
 export async function GET(request: Request) {
   const traceId = newTraceId();
   try {
     const principal = await resolvePrincipal(request);
+    await authorizeFeature(principal, "agent.run", "agent");
     const url = new URL(request.url);
     const limit = Number(url.searchParams.get("limit"));
     return ok({ runs: await listAgentRuns(principal, {
@@ -21,6 +23,7 @@ export async function POST(request: Request) {
   const traceId = newTraceId();
   try {
     const principal = await resolvePrincipal(request);
+    await authorizeFeature(principal, "agent.run", "agent");
     const body = await request.json() as { objective?: string; tool_id?: string; tool_input?: Record<string, unknown> };
     return ok(await createAgentRun({
       principal,

@@ -16,9 +16,12 @@ import { RagResults, type RagResultItem } from "./components/RagResults";
 import { DocumentIngest } from "./components/DocumentIngest";
 import { AgentTasksView, ToolApprovalsView } from "./components/AgentOperations";
 import { AdminGovernance } from "./components/AdminGovernance";
+import { OrgConsole } from "./components/OrgConsole";
 import { AiControlTower } from "./components/AiControlTower";
 import { RequirementsChecklist } from "./components/RequirementsChecklist";
 import { IngestionSources } from "./components/IngestionSources";
+import { InternetSearchOperations } from "./components/InternetSearchOperations";
+import { PlatformOperationsConsole } from "./components/PlatformOperationsConsole";
 
 type View = "home" | "chat" | "search" | "tasks" | "approvals" | "activity" | "schedule" | "admin";
 type Scope = "personal" | "department";
@@ -713,7 +716,9 @@ function AccessGate({ access, onAuthenticated, onSignedOut }: {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
   const showApplication = unrequested || rejected;
-  const registrationEmailAllowed = /^[^\s@]+@iljin\.com$/i.test(email.trim());
+  // 초기 관리자 코드를 입력한 경우는 서버가 ADMIN_EMAILS 대조로 판정한다.
+  // 여기서 도메인만 보고 미리 막으면 최초 관리자가 가입 자체를 못 한다.
+  const registrationEmailAllowed = /^[^\s@]+@iljin\.com$/i.test(email.trim()) || Boolean(adminCode.trim());
 
   const submitAuthentication = async (event: FormEvent) => {
     event.preventDefault();
@@ -2230,6 +2235,7 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
   const [qualityGates, setQualityGates] = useState<QualityGate[]>([]);
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [assetActionId, setAssetActionId] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2240,14 +2246,14 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
       return payload;
     };
     Promise.all([
-      checkedJson<{ items?: AssetRow[] }>("/api/admin/assets"),
-      checkedJson<{ items?: JobRow[] }>("/api/admin/index-jobs"),
+      checkedJson<{ assets?: AssetRow[] }>("/api/admin/assets"),
+      checkedJson<{ jobs?: JobRow[] }>("/api/admin/index-jobs"),
       checkedJson<{ items?: AccessUser[] }>("/api/admin/access-requests"),
       checkedJson<Health>("/api/health"),
       checkedJson<{ gates?: QualityGate[] }>("/api/admin/quality-gates"),
     ]).then(([assetData, jobData, accessData, healthData, qualityData]) => {
-      setAssets(assetData.items || []);
-      setJobs(jobData.items || []);
+      setAssets(assetData.assets || []);
+      setJobs(jobData.jobs || []);
       setAccessRequests(accessData.items || []);
       setHealth(healthData);
       setQualityGates(qualityData.gates || []);
@@ -2258,6 +2264,28 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
     });
     return () => controller.abort();
   }, []);
+
+  const manageAsset = async (asset: AssetRow, action: "reindex" | "delete") => {
+    if (action === "delete" && !window.confirm(`'${asset.title}' 문서와 파생 인덱스를 삭제할까요?`)) return;
+    setAssetActionId(asset.id);
+    setLoadError("");
+    try {
+      const response = await fetch(
+        action === "reindex"
+          ? `/api/v1/assets/${encodeURIComponent(asset.id)}/reindex`
+          : `/api/v1/assets/${encodeURIComponent(asset.id)}`,
+        { method: action === "reindex" ? "POST" : "DELETE" },
+      );
+      const payload = await response.json() as { error?: { message?: string } };
+      if (!response.ok) throw new Error(payload.error?.message || "문서 작업을 처리하지 못했습니다.");
+      if (action === "delete") setAssets((items) => items.filter((item) => item.id !== asset.id));
+      else setAssets((items) => items.map((item) => item.id === asset.id ? { ...item, status: "queued" } : item));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "문서 작업을 처리하지 못했습니다.");
+    } finally {
+      setAssetActionId("");
+    }
+  };
 
   const reviewAccess = async (user: AccessUser, decision: "approved" | "rejected") => {
     const draft = reviewDrafts[user.email] || {
@@ -2306,7 +2334,11 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
       <section className="metric-grid">
         {[["인덱싱 Asset", String(assets.filter((asset) => asset.status === "indexed").length), "Database 실데이터"],["검색 Segment", String(segmentCount), "Dense Vector 포함"],["승인 대기", String(pendingAccess), "사용자 접근 요청"],["완료 Index Job", String(completedJobs), failedJobs ? `실패 ${failedJobs}` : "실패 0"]].map(([label, value, trend]) => <article className="metric-card" key={label}><span>{label}</span><strong>{value}</strong><small>{trend}</small></article>)}
       </section>
-      <section className="panel access-review-panel">
+      <nav className="admin-console-nav" aria-label="관리 콘솔 영역">
+        <a href="#admin-platform">플랫폼 운영</a><a href="#admin-access">접근 승인</a><a href="#admin-organization">조직·예산</a><a href="#admin-governance">권한·기능</a><a href="#admin-ingestion">수집·검색</a><a href="#admin-assets">문서 자산</a>
+      </nav>
+      <PlatformOperationsConsole />
+      <section className="panel access-review-panel" id="admin-access">
         <div className="panel-title"><div><span className="section-kicker">ACCESS CONTROL</span><h2>사용자 접근 승인</h2></div><span className={`status-pill ${pendingAccess ? "status-승인-대기" : "status-승인-완료"}`}>{pendingAccess ? `${pendingAccess}건 대기` : "대기 없음"}</span></div>
         <p className="panel-description">이메일 인증을 마치고 가입 신청을 제출한 사용자의 부서·사유·역할을 검토해 접근을 승인합니다.</p>
         <div className="table-wrap"><table><caption className="sr-only">사용자 접근 승인 요청</caption><thead><tr><th>사용자</th><th>부서</th><th>역할</th><th>상태</th><th>승인 작업</th></tr></thead><tbody>
@@ -2318,14 +2350,15 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
           })}
         </tbody></table></div>
       </section>
-      <AdminGovernance currentEmail={currentEmail} />
-      <IngestionSources />
-      <AiControlTower currentEmail={currentEmail} />
+      <div id="admin-organization"><OrgConsole currentEmail={currentEmail} /></div>
+      <div id="admin-governance"><AdminGovernance currentEmail={currentEmail} /></div>
+      <div id="admin-ingestion"><IngestionSources /><InternetSearchOperations /></div>
+      <div id="admin-control"><AiControlTower currentEmail={currentEmail} /></div>
       <RequirementsChecklist />
-      <div className="admin-grid">
+      <div className="admin-grid" id="admin-assets">
         <section className="panel"><div className="panel-title"><div><span className="section-kicker">SERVICE HEALTH</span><h2>RAG 구성요소</h2></div><span className={`status-pill ${services.every(([, ready]) => ready) ? "status-완료" : "status-부분-완료"}`}>{services.every(([, ready]) => ready) ? "준비" : "확인 필요"}</span></div><div className="service-list">{services.map(([name, ready, detail]) => <div key={name}><span className={`status-dot ${ready ? "" : "status-dot-warning"}`} /><strong>{name}</strong><span>{ready ? "연결" : "미설정"}</span><small>{detail}</small></div>)}</div></section>
         <section className="panel"><div className="panel-title"><div><span className="section-kicker">QUALITY GATE</span><h2>실시간 검증 상태</h2></div><span className={`status-pill ${qualityGates.length > 0 && qualityGates.every((gate) => gate.passed) ? "status-완료" : "status-부분-완료"}`}>{qualityGates.filter((gate) => gate.passed).length}/{qualityGates.length || 6} 통과</span></div><div className="quality-list">{qualityGates.map((gate) => <div key={gate.id}><div><strong>{gate.label}</strong><span>{gate.evidence}</span></div><progress value={gate.passed ? 100 : 0} max="100">{gate.passed ? "100%" : "0%"}</progress><small>{gate.value} {gate.unit}</small></div>)}</div></section>
-        <section className="panel table-wrap"><div className="panel-title"><div><span className="section-kicker">ASSETS</span><h2>최근 문서 자산</h2></div><span>{assets.length}건</span></div><table><caption className="sr-only">최근 문서 자산</caption><thead><tr><th>문서</th><th>등급</th><th>상태</th><th>벡터</th><th>원문</th></tr></thead><tbody>{assets.slice(0, 6).map((asset) => <tr key={asset.id}><td><strong>{asset.title}</strong><small className="table-subtext">{asset.segment_count} segments</small></td><td>{asset.classification}</td><td>{asset.status}</td><td>{asset.embedding_dimensions ? `${asset.embedding_dimensions}D` : "—"}<small className="table-subtext">{asset.embedding_model || "미생성"}</small></td><td>{asset.original_uploaded_at ? <a className="text-button" href={`/api/v1/assets/${encodeURIComponent(asset.id)}/original`}>Storage 원문</a> : "—"}{asset.original_size ? <small className="table-subtext">{Math.max(1, Math.ceil(asset.original_size / 1024)).toLocaleString("ko-KR")}KB</small> : null}</td></tr>)}</tbody></table></section>
+        <section className="panel table-wrap"><div className="panel-title"><div><span className="section-kicker">ASSETS</span><h2>최근 문서 자산</h2></div><span>{assets.length}건</span></div><table><caption className="sr-only">최근 문서 자산</caption><thead><tr><th>문서</th><th>등급</th><th>상태</th><th>벡터</th><th>원문</th><th>관리</th></tr></thead><tbody>{assets.slice(0, 6).map((asset) => <tr key={asset.id}><td><strong>{asset.title}</strong><small className="table-subtext">{asset.segment_count} segments</small></td><td>{asset.classification}</td><td>{asset.status}</td><td>{asset.embedding_dimensions ? `${asset.embedding_dimensions}D` : "—"}<small className="table-subtext">{asset.embedding_model || "미생성"}</small></td><td>{asset.original_uploaded_at ? <a className="text-button" href={`/api/v1/assets/${encodeURIComponent(asset.id)}/original`}>Storage 원문</a> : "—"}{asset.original_size ? <small className="table-subtext">{Math.max(1, Math.ceil(asset.original_size / 1024)).toLocaleString("ko-KR")}KB</small> : null}</td><td><div className="review-actions"><button type="button" className="text-button" disabled={assetActionId === asset.id} onClick={() => void manageAsset(asset, "reindex")}>{assetActionId === asset.id ? "처리 중" : "재색인"}</button><button type="button" className="text-button" disabled={assetActionId === asset.id} onClick={() => void manageAsset(asset, "delete")}>삭제</button></div></td></tr>)}</tbody></table></section>
         <section className="panel table-wrap"><div className="panel-title"><div><span className="section-kicker">INDEX JOBS</span><h2>최근 인덱싱 작업</h2></div><span>{failedJobs ? `실패 ${failedJobs}` : "정상"}</span></div><table><caption className="sr-only">최근 인덱싱 작업</caption><thead><tr><th>문서</th><th>단계</th><th>상태</th><th>시도</th></tr></thead><tbody>{jobs.slice(0, 6).map((job) => <tr key={job.id}><td><strong>{job.title || job.id}</strong></td><td>{job.stage}</td><td>{job.status}</td><td>{job.attempt_count}</td></tr>)}</tbody></table></section>
       </div>
     </div>

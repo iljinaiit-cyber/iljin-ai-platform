@@ -1,0 +1,16 @@
+{
+  "suite": "gate-manifest",
+  "generated_at": "2026-07-24T08:10:16.078Z",
+  "validation_status": "pass",
+  "release_decision": "not_approved",
+  "decisions": {
+    "G1": "hold",
+    "G2": "hold",
+    "G3": "not_ready",
+    "G4": "not_ready",
+    "G5": "not_ready"
+  },
+  "starter_case_count": 3,
+  "official_g2_minimum_cases": 300,
+  "errors": []
+}

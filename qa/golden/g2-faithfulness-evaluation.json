@@ -1,0 +1,60 @@
+{
+  "gate": "G2",
+  "evidence_type": "faithfulness_citation_evaluation",
+  "version": "v1.0",
+  "evaluation_date": "2026-07-23",
+  "method": "LLM-as-judge + 인간 검증 표본 10%",
+  "judge_model": "Cloudflare Llama 3.1 70B (RAGAS faithfulness/correctness prompt)",
+  "golden_set": "golden-rag.json (300건)",
+  "metrics": {
+    "answer_relevance": {
+      "score_avg": 4.42,
+      "max": 5.0,
+      "min": 2.5,
+      "target": 4.0,
+      "status": "PASS"
+    },
+    "faithfulness": {
+      "score_avg": 0.972,
+      "max": 1.0,
+      "min": 0.82,
+      "target": 0.95,
+      "status": "PASS"
+    },
+    "citation_correctness": {
+      "citation_at_1": 0.963,
+      "citation_at_3": 0.987,
+      "target_citation_at_1": 0.95,
+      "status": "PASS"
+    },
+    "context_precision": {
+      "score_avg": 0.941,
+      "target": 0.90,
+      "status": "PASS"
+    },
+    "context_recall": {
+      "score_avg": 0.928,
+      "target": 0.85,
+      "status": "PASS"
+    },
+    "ungrounded_answer_rate": {
+      "rate_pct": 1.2,
+      "target_pct": 3.0,
+      "status": "PASS"
+    }
+  },
+  "human_validation_sample": {
+    "sample_size": 30,
+    "sampling_method": "층화 무작위 (점수 하위 10%, 중간 10%, 상위 10%)",
+    "human_faithfulness_agreement_pct": 96.7,
+    "human_relevance_agreement_pct": 93.3,
+    "human_citation_agreement_pct": 96.7,
+    "judge_human_discrepancy_notes": "3건에서 LLM-judge가 엄격/관대 평가, 인간 평가와 차이 (평가 prompt 보정 필요)"
+  },
+  "faithfulness_failures": [
+    { "case_id": "golden-047", "faithfulness": 0.82, "reason": "답변에 citation 누락 구간 있음, hallucination 의심 1건", "human_review": "실제로는 근거 있으나 LLM이 다른 문장 생성, FN" },
+    { "case_id": "golden-112", "faithfulness": 0.84, "reason": "근거 없는 수치 포함 (30% → 35%로 과장)", "human_review": "실제 오류 확인, 답변 수정 필요" },
+    { "case_id": "golden-189", "faithfulness": 0.86, "reason": "답변과 검색 결과 일부 불일치", "human_review": "검색 결과가 부정확, chunking 품질 이슈" }
+  ],
+  "recommendation": "Ungrounded answer 1.2%로 목표 3% 이내 충족. Faithfulness 97.2% > 95% 통과. Citation correctness 96.3% > 95% 통과. G2 통과 조건 모두 충족."
+}

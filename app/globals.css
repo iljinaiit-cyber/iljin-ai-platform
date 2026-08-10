@@ -1279,6 +1279,29 @@ h3 {
   min-height: 0;
 }
 
+.admin-console-nav {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  border: 1px solid #171717;
+  background: #fff;
+}
+
+.admin-console-nav a {
+  flex: 0 0 auto;
+  border-right: 1px solid #171717;
+  color: #171717;
+  font-family: Helvetica Neue, Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 750;
+  padding: 10px 13px;
+  text-decoration: none;
+}
+
+.admin-console-nav a:last-child { border-right: 0; }
+.admin-console-nav a:hover { background: #ff4f00; color: #fff; }
+.admin-console-nav a:focus-visible { outline: 3px solid #ff4f00; outline-offset: 2px; }
+
 .chat-smart-suggestions {
   display: grid;
   gap: 4px;

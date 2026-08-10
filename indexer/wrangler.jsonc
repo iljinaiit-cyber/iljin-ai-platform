@@ -1,65 +1,138 @@
+// 색인 Worker (iljin-ai-indexer) — 환경 분리 적용본
+//
+// Pages Functions 는 Queue Consumer 가 될 수 없어(02 §2.4) 이 Worker 가 따로 있다.
+// Pages 쪽과 **환경 이름을 맞춘다**(preview/production). 이름이 어긋나면
+// Pages preview 가 production 큐에 넣고 운영 색인이 오염된다.
+//
+// 배포:
+//   npx wrangler deploy --config indexer/wrangler.jsonc --env production
+//   npx wrangler deploy --config indexer/wrangler.jsonc --env preview
+//
+// ⚠ Workers 는 Pages 와 달리 명명된 환경이 최상위 바인딩을 **상속하지 않는다.**
+//    그래서 아래는 환경마다 전부 다시 쓴다. 중복이 보기 싫어도 줄이지 마라.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
-  "name": "iljin-ai-works-indexer",
+  "name": "iljin-ai-indexer",
   "main": "worker.ts",
-  "compatibility_date": "2026-05-22",
+  "compatibility_date": "2026-08-10",
   "compatibility_flags": ["nodejs_compat"],
-  // Chunking/JSON-parsing a large extracted document is real CPU time, not I/O
-  // wait, and can exceed the 30s free-tier default on a big window. 300s is the
-  // platform max.
-  "limits": {
-    "cpu_ms": 300000
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
   },
-  // Same bindings as ../wrangler.jsonc — this Worker shares ../lib and ../db
-  // with the Pages app and must see the same D1/R2/AI resources.
-  "ai": {
-    "binding": "AI"
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "iljin-ai-works-db",
-      "database_id": "<PROD_D1_ID>",
-      "migrations_dir": "../drizzle"
+
+  // 대용량 문서의 청킹·JSON 파싱은 I/O 대기가 아니라 실제 CPU 시간이다.
+  // 기본값으로는 큰 윈도우에서 넘치므로 300s(플랫폼 상한)를 주고 싶다.
+  //
+  // 2026-08-04: **Free 플랜은 cpu_ms 설정을 지원하지 않는다**(code 100328).
+  // 그대로 두면 Worker 배포 자체가 실패해 주석 처리했다.
+  //   → Workers Paid 로 올린 뒤 아래 주석을 해제하라.
+  //   → 그전까지는 기본 CPU 상한이 적용되며, **대용량 문서 색인이
+  //     중간에 끊길 수 있다.** 실패한 job 은 5회 재시도 후 DLQ 로 간다.
+  // "limits": { "cpu_ms": 300000 },
+
+  // 최상위는 환경 미지정 배포를 막는 안전장치로만 둔다.
+  // --env 없이 deploy 하면 바인딩이 없어 즉시 실패한다.
+  "vars": { "APP_ENV": "unconfigured" },
+
+  "env": {
+    "preview": {
+      "name": "iljin-ai-indexer-preview",
+      "ai": { "binding": "AI" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "iljin-ai-db-preview",
+          "database_id": "d7ca85cc-949c-452a-8be1-2778738b2806",
+          "migrations_dir": "../drizzle"
+        }
+      ],
+      "kv_namespaces": [
+        { "binding": "CACHE", "id": "8dec8439a79346dea92f8e5852213d21" }
+      ],
+      "r2_buckets": [
+        { "binding": "BUCKET", "bucket_name": "iljin-ai-originals-preview" }
+      ],
+      "vectorize": [
+        { "binding": "VECTOR_INDEX", "index_name": "iljin-ai-vectors-preview" }
+      ],
+      "queues": {
+        "producers": [{ "binding": "INDEX_QUEUE", "queue": "iljin-ai-index-jobs-preview" }],
+        "consumers": [
+          {
+            // 배치 1건씩 처리한다. 한 건이 대용량이면 배치를 키울수록
+            // CPU 상한과 임베딩 호출량이 함께 튄다.
+            "queue": "iljin-ai-index-jobs-preview",
+            "max_batch_size": 1,
+            "max_batch_timeout": 5,
+            "max_retries": 5,
+            "dead_letter_queue": "iljin-ai-index-jobs-dlq-preview"
+          }
+        ]
+      },
+      "vars": {
+        "APP_ENV": "preview",
+        "CLOUDFLARE_AI_MODEL": "@cf/zai-org/glm-5.2",
+        "CLOUDFLARE_AI_GATEWAY_ID": "iljin-ai-gateway",
+        "CLOUDFLARE_EMBED_MODEL": "@cf/baai/bge-m3",
+        "CLOUDFLARE_RERANK_MODEL": "@cf/baai/bge-reranker-base",
+        "LLM_TIMEOUT_MS": "60000",
+        "DEFAULT_TENANT_ID": "iljin",
+        "COST_PROFILE": "test",
+        "MAX_SENSITIVITY": "public",
+        "MAX_EGRESS_SENSITIVITY": "public"
+      },
+      // preview 는 정기 색인을 돌리지 않는다. 브랜치 배포마다 크론이 붙으면
+      // 아무도 안 보는 색인이 계속 돌면서 뉴런만 태운다.
+      "triggers": { "crons": [] }
+    },
+
+    "production": {
+      "name": "iljin-ai-indexer",
+      "ai": { "binding": "AI" },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "iljin-ai-db",
+          "database_id": "f9b8eae9-7bb3-448c-bf4b-c1bae6db0532",
+          "migrations_dir": "../drizzle"
+        }
+      ],
+      "kv_namespaces": [
+        { "binding": "CACHE", "id": "704c28b026e444bcba2f417e78ca8757" }
+      ],
+      "r2_buckets": [
+        { "binding": "BUCKET", "bucket_name": "iljin-ai-originals" }
+      ],
+      "vectorize": [
+        { "binding": "VECTOR_INDEX", "index_name": "iljin-ai-vectors" }
+      ],
+      "queues": {
+        "producers": [{ "binding": "INDEX_QUEUE", "queue": "iljin-ai-index-jobs" }],
+        "consumers": [
+          {
+            "queue": "iljin-ai-index-jobs",
+            "max_batch_size": 1,
+            "max_batch_timeout": 5,
+            "max_retries": 5,
+            "dead_letter_queue": "iljin-ai-index-jobs-dlq"
+          }
+        ]
+      },
+      "vars": {
+        "APP_ENV": "production",
+        "CLOUDFLARE_AI_MODEL": "@cf/zai-org/glm-5.2",
+        "CLOUDFLARE_AI_GATEWAY_ID": "iljin-ai-gateway",
+        "CLOUDFLARE_EMBED_MODEL": "@cf/baai/bge-m3",
+        "CLOUDFLARE_RERANK_MODEL": "@cf/baai/bge-reranker-base",
+        "LLM_TIMEOUT_MS": "60000",
+        "DEFAULT_TENANT_ID": "iljin",
+        "COST_PROFILE": "prod",
+        "MAX_SENSITIVITY": "confidential",
+        "MAX_EGRESS_SENSITIVITY": "internal"
+      },
+      // 매시 정각. 수집 소스 폴링과 감사 체인 검증이 여기 붙는다.
+      "triggers": { "crons": ["0 * * * *"] }
     }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "BUCKET",
-      "bucket_name": "iljin-ai-works-originals"
-    }
-  ],
-  "vectorize": [
-    {
-      "binding": "VECTOR_INDEX",
-      "index_name": "iljin-ai-works-vectors"
-    }
-  ],
-  "queues": {
-    "producers": [
-      {
-        "binding": "INDEX_QUEUE",
-        "queue": "iljin-index-jobs"
-      }
-    ],
-    "consumers": [
-      {
-        "queue": "iljin-index-jobs",
-        "max_batch_size": 1,
-        "max_batch_timeout": 5,
-        "max_retries": 5,
-        "dead_letter_queue": "iljin-index-jobs-dlq"
-      }
-    ]
-  },
-  "vars": {
-    "CLOUDFLARE_AI_MODEL": "@cf/zai-org/glm-5.2",
-    "CLOUDFLARE_EMBED_MODEL": "@cf/baai/bge-m3",
-    "CLOUDFLARE_RERANK_MODEL": "@cf/baai/bge-reranker-base",
-    "LLM_TIMEOUT_MS": "60000",
-    "DEFAULT_TENANT_ID": "iljin"
-  },
-  "triggers": {
-    "crons": ["0 * * * *"]
   }
 }

@@ -247,13 +247,15 @@ export async function getGovernanceDashboard(principal: Principal) {
       }>(),
     db.prepare(`SELECT email, permission_key, allowed FROM user_permission_overrides
       WHERE tenant_id = ?`).bind(principal.tenantId).all<OverrideRow>(),
-    db.prepare(`SELECT email, display_name, department, role, status, approved_at, updated_at
+    db.prepare(`SELECT email, display_name, department, corp_id, dept_id, role, status, approved_at, updated_at
       FROM user_profiles WHERE tenant_id = ? ORDER BY
       CASE role WHEN 'admin' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END, display_name, email
       LIMIT 500`).bind(principal.tenantId).all<{
         email: string;
         display_name: string;
         department: string;
+        corp_id: string | null;
+        dept_id: string | null;
         role: UserRole;
         status: string;
         approved_at: string | null;
@@ -262,6 +264,7 @@ export async function getGovernanceDashboard(principal: Principal) {
     db.prepare(`SELECT id, actor_email, action, resource_type, resource_id, details_json, created_at
       FROM audit_logs WHERE tenant_id = ? AND (
         action LIKE 'governance.%' OR action LIKE 'access.%'
+        OR action LIKE 'organization.%' OR action LIKE 'budget.%'
       ) ORDER BY created_at DESC LIMIT 100`).bind(principal.tenantId).all<{
         id: string;
         actor_email: string;

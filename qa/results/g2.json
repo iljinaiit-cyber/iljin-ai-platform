@@ -1,0 +1,31 @@
+{
+  "gate": "G2",
+  "generated_at": "2026-07-24T08:10:15.611Z",
+  "automated_status": "pass",
+  "live_starter_evaluation": "not_run",
+  "starter_case_count": 3,
+  "official_minimum_case_count": 300,
+  "starter_only": true,
+  "official_decision": "hold",
+  "checks": [
+    {
+      "id": "G2-STARTER-DATASET-PARSES",
+      "status": "pass",
+      "observed": 3
+    },
+    {
+      "id": "G2-ACL-SERVER-FILTER",
+      "status": "pass"
+    },
+    {
+      "id": "G2-CITATION-REVALIDATION",
+      "status": "pass"
+    }
+  ],
+  "missing_official_evidence": [
+    "approved 300-case golden dataset",
+    "enterprise IdP ACL negative set with zero leakage",
+    "human or validated evaluator faithfulness and citation-correctness review"
+  ],
+  "statement": "The three-case starter set and term/citation faithfulness proxy are not official G2 evidence."
+}

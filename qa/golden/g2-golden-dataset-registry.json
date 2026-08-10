@@ -1,0 +1,42 @@
+{
+  "gate": "G2",
+  "evidence_type": "golden_dataset_registry",
+  "version": "golden-v1",
+  "dataset": "golden-rag.json",
+  "total_cases": 300,
+  "approved_by": "현업 SME 협의체 (2026-07-22)",
+  "approval_document": "G2_GoldenSet_Approval_20260722.pdf",
+  "domains": [
+    { "domain": "품질관리 (QMS)", "count": 40, "examples": ["golden-001~golden-040"] },
+    { "domain": "생산/설비 (MES)", "count": 40, "examples": ["golden-041~golden-080"] },
+    { "domain": "안전/환경 (SHE)", "count": 32, "examples": ["golden-081~golden-112"] },
+    { "domain": "인사/조직 (HR)", "count": 40, "examples": ["golden-113~golden-152"] },
+    { "domain": "재무/회계 (FIN)", "count": 32, "examples": ["golden-153~golden-184"] },
+    { "domain": "IT/보안 (IT)", "count": 28, "examples": ["golden-185~golden-212"] },
+    { "domain": "연구개발 (RND)", "count": 28, "examples": ["golden-213~golden-240"] },
+    { "domain": "구매/조달 (PRC)", "count": 24, "examples": ["golden-241~golden-264"] },
+    { "domain": "영업/마케팅 (SLS)", "count": 20, "examples": ["golden-265~golden-284"] },
+    { "domain": "법무/총무 (LEG/GA)", "count": 16, "examples": ["golden-285~golden-300"] }
+  ],
+  "ground_truth_labeling": {
+    "method": "현업 SME 직접 라벨링 (질문당 정답 근거 문서 + expected_terms)",
+    "review_rate_pct": 100,
+    "inter_annotator_agreement": 0.92
+  },
+  "acl_labels": {
+    "labeled_cases": 300,
+    "classification_distribution": {
+      "public": 30,
+      "internal": 120,
+      "confidential": 100,
+      "secret": 50
+    },
+    "dept_scope_mapped": true
+  },
+  "version_control": {
+    "repository": "FR-ADM-005 평가셋 관리 기능",
+    "current_version": "golden-v1",
+    "update_trigger": "모델/prompt/chunking 변경 시 회귀 평가",
+    "expected_update_frequency": "분기 1회"
+  }
+}

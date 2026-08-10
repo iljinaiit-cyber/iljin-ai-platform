@@ -14,3 +14,9 @@
 .ingest-classification small { color: var(--muted, #5b6b85); }
 .ingest-error { color: #c0271b; font-size: 13px; margin: 0; }
 .ingest-done { color: #1b7a49; font-size: 13px; margin: 0; }
+.document-ingest__dropzone { display: grid; gap: 6px; padding: 20px; border: 1px dashed var(--line, #b9c6da); border-radius: 12px; background: #f8fbff; text-align: center; }
+.document-ingest__dropzone.is-dragging { border-color: #2457d6; background: #edf3ff; }
+.document-ingest__dropzone span { color: var(--muted, #5b6b85); font-size: 13px; }
+.document-ingest__queue { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.document-ingest__queue li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line, #e3eaf5); border-radius: 8px; }
+.document-ingest__queue li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

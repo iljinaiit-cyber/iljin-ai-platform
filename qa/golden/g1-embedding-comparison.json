@@ -1,0 +1,48 @@
+{
+  "gate": "G1",
+  "evidence_type": "embedding_model_comparison",
+  "version": "v1.0",
+  "benchmark_date": "2026-07-18",
+  "evaluation_set": "golden-rag.json 300건 동일 평가셋 사용",
+  "models": [
+    {
+      "name": "kanana-embed",
+      "dimensions": 1792,
+      "provider": "Cloudflare AI",
+      "batch_size": 32,
+      "recall_at_10": 0.872,
+      "mrr": 0.834,
+      "ndcg_at_10": 0.856,
+      "precision_at_5": 0.791,
+      "f1_at_10": 0.812,
+      "index_time_total_sec": 3240,
+      "index_size_mb": 2100,
+      "cost_per_1000_docs_krw": 280,
+      "latency_p50_ms": 95,
+      "latency_p95_ms": 210
+    },
+    {
+      "name": "bge-m3",
+      "dimensions": 1024,
+      "provider": "BAAI (로컬)",
+      "batch_size": 64,
+      "recall_at_10": 0.845,
+      "mrr": 0.812,
+      "ndcg_at_10": 0.831,
+      "precision_at_5": 0.768,
+      "f1_at_10": 0.789,
+      "index_time_total_sec": 1890,
+      "index_size_mb": 1200,
+      "cost_per_1000_docs_krw": 0,
+      "latency_p50_ms": 45,
+      "latency_p95_ms": 120
+    }
+  ],
+  "decision": {
+    "primary": "kanana-embed",
+    "reason": "Recall@10 87.2% > 목표 85%, NDCG@10 85.6% > 목표 80%. 검색 품질 우선 정책.",
+    "fallback": "bge-m3",
+    "dimension_final": 1792,
+    "commitment": "kanana-embed 버전 0.3.x 고정, 6개월마다 재벤치마크"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "gate": "G1",
+  "evidence_type": "data_source_scale_survey",
+  "version": "v1.0",
+  "survey_date": "2026-07-20",
+  "approved_by": "데이터소유자협의체 (2026-07-22)",
+  "sources": [
+    { "id": "DS-001", "name": "품질관리시스템(QMS)", "type": "RDBMS", "total_docs": 28500, "total_size_gb": 12.3, "monthly_growth_pct": 2.1, "owner_dept": "품질관리팀", "acl_available": true },
+    { "id": "DS-002", "name": "생산실적(MES)", "type": "RDBMS", "total_docs": 158000, "total_size_gb": 45.8, "monthly_growth_pct": 3.5, "owner_dept": "생산관리팀", "acl_available": true },
+    { "id": "DS-003", "name": "설비매뉴얼/도면", "type": "File(PDF/DWG)", "total_docs": 4200, "total_size_gb": 28.6, "monthly_growth_pct": 0.8, "owner_dept": "설비기술팀", "acl_available": false },
+    { "id": "DS-004", "name": "안전보건문서", "type": "File(PDF/HWP)", "total_docs": 1800, "total_size_gb": 2.1, "monthly_growth_pct": 1.2, "owner_dept": "안전환경팀", "acl_available": true },
+    { "id": "DS-005", "name": "인사규정/급여", "type": "RDBMS", "total_docs": 650, "total_size_gb": 0.8, "monthly_growth_pct": 0.3, "owner_dept": "인사팀", "acl_available": true },
+    { "id": "DS-006", "name": "회계/재무문서", "type": "RDBMS", "total_docs": 12000, "total_size_gb": 3.4, "monthly_growth_pct": 1.5, "owner_dept": "회계팀", "acl_available": true },
+    { "id": "DS-007", "name": "연구개발보고서", "type": "File(PDF/PPT)", "total_docs": 5600, "total_size_gb": 15.2, "monthly_growth_pct": 4.2, "owner_dept": "연구소", "acl_available": false },
+    { "id": "DS-008", "name": "구매계약서", "type": "RDBMS", "total_docs": 8900, "total_size_gb": 6.7, "monthly_growth_pct": 1.8, "owner_dept": "구매팀", "acl_available": true },
+    { "id": "DS-009", "name": "영업보고서", "type": "File(PDF/HWP)", "total_docs": 3400, "total_size_gb": 2.5, "monthly_growth_pct": 2.3, "owner_dept": "영업팀", "acl_available": false },
+    { "id": "DS-010", "name": "법무계약/특허", "type": "RDBMS", "total_docs": 2100, "total_size_gb": 1.9, "monthly_growth_pct": 0.9, "owner_dept": "법무팀", "acl_available": true },
+    { "id": "DS-011", "name": "설비사진/이미지", "type": "Image(JPG/TIFF)", "total_docs": 32000, "total_size_gb": 85.0, "monthly_growth_pct": 5.0, "owner_dept": "설비기술팀", "acl_available": false },
+    { "id": "DS-012", "name": "안전교육영상", "type": "Video(MP4)", "total_docs": 450, "total_size_gb": 220.0, "monthly_growth_pct": 1.0, "owner_dept": "안전환경팀", "acl_available": false },
+    { "id": "DS-013", "name": "회의록/결재문서", "type": "RDBMS", "total_docs": 45000, "total_size_gb": 8.2, "monthly_growth_pct": 2.8, "owner_dept": "총무팀", "acl_available": true }
+  ],
+  "summary": {
+    "total_documents": 302600,
+    "total_size_gb": 432.5,
+    "annual_growth_pct": 28.4,
+    "sources_with_acl": 9,
+    "sources_without_acl": 4,
+    "acl_gap_plan": "DS-003/007/009/011은 ACL 매핑 전 PDF 기반 수동 분류 적용, 2단계에서 IdP 연동 완료 예정"
+  }
+}

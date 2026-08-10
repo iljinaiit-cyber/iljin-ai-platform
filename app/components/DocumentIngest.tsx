@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, type ChangeEvent, type FormEvent } from "react";
+import { useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 import "./DocumentIngest.css";
 
 type IngestedDocument = { id: string; title: string; segmentCount?: number };
 type Props = { onIndexed?: (document: IngestedDocument, indexedTitle: string) => void };
+type QueuedFile = { id: string; file: File; status: "queued" | "uploading" | "done" | "failed"; error?: string };
 
 const CLASSIFICATIONS = [
   { value: "internal", label: "내부용", hint: "사내 구성원 열람" },
@@ -24,18 +25,63 @@ export function DocumentIngest({ onIndexed }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const [queue, setQueue] = useState<QueuedFile[]>([]);
+
+  const addFiles = (files: File[]) => {
+    setQueue((current) => {
+      const known = new Set(current.map((item) => item.id));
+      return [...current, ...files.map((file) => ({
+        id: `${file.name}-${file.size}-${file.lastModified}`,
+        file,
+        status: "queued" as const,
+      })).filter((item) => !known.has(item.id))];
+    });
+  };
 
   const pickFile = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = [...(event.target.files ?? [])];
+    if (!files.length) return;
+    addFiles(files);
+    const file = files[0];
     setError("");
-    if (!TEXT_LIKE.test(file.name)) {
-      setError("현재 화면은 텍스트 계열 파일(.txt .md .csv .json .yaml .html)만 받습니다. 그 외 형식은 관리자 수집 경로를 이용해 주세요.");
-      event.target.value = "";
-      return;
-    }
-    setContent(await file.text());
+    if (TEXT_LIKE.test(file.name)) setContent(await file.text());
     if (!title.trim()) setTitle(file.name.replace(/\.[^.]+$/, ""));
+    event.target.value = "";
+  };
+
+  const uploadFile = async (item: QueuedFile) => {
+    setQueue((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: "uploading", error: undefined } : entry));
+    try {
+      const form = new FormData();
+      form.set("file", item.file);
+      form.set("title", item.file.name.replace(/\.[^.]+$/, ""));
+      form.set("classification", classification);
+      form.set("department_scope", departmentScope);
+      const response = await fetch("/api/v1/assets", { method: "POST", body: form });
+      const payload = await response.json() as IngestedDocument & { error?: { message?: string } };
+      if (!response.ok) throw new Error(payload.error?.message || "문서를 색인하지 못했습니다.");
+      setQueue((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: "done" } : entry));
+      onIndexed?.(payload, item.file.name);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "문서를 색인하지 못했습니다.";
+      setQueue((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: "failed", error: message } : entry));
+    }
+  };
+
+  const runQueue = async () => {
+    if (busy) return;
+    setBusy(true);
+    for (const item of queue.filter((entry) => entry.status === "queued" || entry.status === "failed")) {
+      await uploadFile(item);
+    }
+    setBusy(false);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setDragging(false);
+    addFiles([...event.dataTransfer.files]);
   };
 
   const submit = async (event: FormEvent) => {
@@ -84,6 +130,25 @@ export function DocumentIngest({ onIndexed }: Props) {
       </div>
 
       <form className="ingest-form" onSubmit={submit}>
+        <div
+          className={`document-ingest__dropzone${dragging ? " is-dragging" : ""}`}
+          onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+        >
+          <strong>여기에 문서를 놓으세요</strong>
+          <span>문서·PDF·이미지를 Object Storage에 보관하고 Metadata Database에 색인합니다.</span>
+          <input type="file" multiple onChange={pickFile} aria-label="지식베이스 영구 등록 파일 선택" />
+        </div>
+
+        {queue.length ? (
+          <ul className="document-ingest__queue">
+            {queue.map((item) => <li key={item.id}><span>{item.file.name}</span><small>{item.status}</small>{item.status === "failed" ? <button type="button" onClick={() => void uploadFile(item)}>재시도</button> : null}</li>)}
+          </ul>
+        ) : null}
+        <button type="button" className="quiet-button" disabled={busy || !queue.some((item) => item.status !== "done")} onClick={() => void runQueue()}>
+          지식베이스 영구 등록
+        </button>
         <label className="ingest-field">
           문서 제목
           <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} required placeholder="예: 해외출장비 지급규정 v4.2" />

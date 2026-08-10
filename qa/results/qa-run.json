@@ -1,0 +1,41 @@
+{
+  "suite": "qa-gate-orchestrator",
+  "generated_at": "2026-07-24T08:10:16.412Z",
+  "mode": "static",
+  "strict": false,
+  "execution_status": "pass",
+  "production_release": "not_approved",
+  "results": [
+    {
+      "name": "browser-accessibility",
+      "status": "pass",
+      "exit_code": 0
+    },
+    {
+      "name": "security-negative",
+      "status": "pass",
+      "exit_code": 0
+    },
+    {
+      "name": "dr-rehearsal",
+      "status": "pass",
+      "exit_code": 0
+    },
+    {
+      "name": "g1",
+      "status": "pass",
+      "exit_code": 0
+    },
+    {
+      "name": "g2",
+      "status": "pass",
+      "exit_code": 0
+    },
+    {
+      "name": "gate-manifest",
+      "status": "pass",
+      "exit_code": 0
+    }
+  ],
+  "note": "A passing advisory run validates the QA package; it does not override HOLD/NOT_READY Gate decisions."
+}

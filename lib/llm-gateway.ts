@@ -6,6 +6,12 @@ import {
   isCloudflareAiConfigured,
 } from "./cloudflare-ai";
 import { FOLLOW_UP_INSTRUCTION } from "./question-rewriter";
+import {
+  CloudCostLimitError,
+  releaseCloudflareLlmSpend,
+  reserveCloudflareLlmSpend,
+  settleCloudflareLlmSpend,
+} from "./cloud-cost-guard";
 
 export type GatewayMessage = {
   role: "system" | "user" | "assistant";
@@ -14,6 +20,32 @@ export type GatewayMessage = {
 
 export type GatewayProvider = "local" | "cloudflare";
 export type GatewaySensitivity = "public" | "internal" | "confidential";
+
+/**
+ * 민감도 서열. 외부 송신 가부를 이 값으로 비교한다.
+ * hardening/src/egress-guard.ts 의 RANK 와 같은 순서를 쓴다 — 두 곳이
+ * 갈라지면 게이트웨이와 가드가 서로 다른 판정을 내린다.
+ */
+const SENSITIVITY_RANK: Record<GatewaySensitivity, number> = {
+  public: 0,
+  internal: 1,
+  confidential: 2,
+};
+
+/**
+ * 외부 Provider 로 내보낼 수 있는 최고 등급을 환경변수에서 읽는다.
+ *
+ * 기본은 public 이다. 값이 비었거나 오타면 기본값으로 떨어진다 —
+ * 설정 실수로 반출 범위가 넓어지는 일이 없어야 한다(fail-closed).
+ *
+ * 이 값을 public 보다 높이는 것은 데이터 반출 범위를 넓히는 결정이며,
+ * 발주사 승인과 위수탁 계약 정비가 선행되어야 한다(02 ADR-009).
+ */
+function normalizedMaxEgress(value: unknown): GatewaySensitivity {
+  return value === "public" || value === "internal" || value === "confidential"
+    ? value
+    : "public";
+}
 
 export type ReasoningTier = "swift" | "expert" | "deep";
 
@@ -54,6 +86,14 @@ export const DEFAULT_CLOUDFLARE_MODEL = "@cf/zai-org/glm-5.2";
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 2_400;
 const MAX_OUTPUT_TOKENS = 4_096;
+
+function selectCloudflareModel(runtime: RuntimeEnv, reasoningTier?: ReasoningTier, overrideModel?: string) {
+  if (overrideModel) return overrideModel;
+  if (reasoningTier === "deep" && runtime.CLOUDFLARE_AI_PREMIUM_MODEL) {
+    return runtime.CLOUDFLARE_AI_PREMIUM_MODEL;
+  }
+  return runtime.CLOUDFLARE_AI_MODEL || DEFAULT_CLOUDFLARE_MODEL;
+}
 const CIRCUIT_FAILURE_THRESHOLD = 5;
 const CIRCUIT_OPEN_MS = 60_000;
 
@@ -176,7 +216,7 @@ export function getGatewayStatus() {
     primaryConfigured: cloudflareConfigured,
     secondaryConfigured: localConfigured,
     fallbackConfigured: localConfigured,
-    routing: "cloudflare-glm-5.2-local" as const,
+    routing: `cloudflare-${active.model.replace("@cf/", "").replaceAll("/", "-")}-local`,
     sequence: ["cloudflare", "local"] as const,
     endpointConfigured: active.endpointConfigured,
     residency: active.residency,
@@ -502,7 +542,7 @@ async function cloudflareRunWithTimeout(
   }
 }
 
-export async function completeWithCloudflare(messages: GatewayMessage[], traceId: string, requestedMaxOutputTokens?: number, reasoningTier?: ReasoningTier, overrideModel?: string): Promise<GatewayCompletion> {
+async function completeWithCloudflareUnmetered(messages: GatewayMessage[], traceId: string, requestedMaxOutputTokens?: number, reasoningTier?: ReasoningTier, overrideModel?: string): Promise<GatewayCompletion> {
   validateMessages(messages);
   const runtime = getRuntimeEnv();
   if (!isCloudflareProviderConfigured(runtime)) {
@@ -515,7 +555,7 @@ export async function completeWithCloudflare(messages: GatewayMessage[], traceId
     );
   }
   assertProviderCircuitClosed("cloudflare");
-  const model = overrideModel || runtime.CLOUDFLARE_AI_MODEL || DEFAULT_CLOUDFLARE_MODEL;
+  const model = selectCloudflareModel(runtime, reasoningTier, overrideModel);
   const maxOutputTokens = normalizedMaxOutputTokens(requestedMaxOutputTokens, reasoningTier);
   const timeoutMs = Math.min(Math.max(Number(runtime.LLM_TIMEOUT_MS) || 60_000, 5_000), 120_000);
   const startedAt = Date.now();
@@ -604,6 +644,33 @@ export async function completeWithCloudflare(messages: GatewayMessage[], traceId
   };
 }
 
+export async function completeWithCloudflare(messages: GatewayMessage[], traceId: string, requestedMaxOutputTokens?: number, reasoningTier?: ReasoningTier, overrideModel?: string): Promise<GatewayCompletion> {
+  const runtime = getRuntimeEnv();
+  const model = selectCloudflareModel(runtime, reasoningTier, overrideModel);
+  let reservation;
+  try {
+    reservation = await reserveCloudflareLlmSpend(messages, model, requestedMaxOutputTokens);
+  } catch (error) {
+    if (error instanceof CloudCostLimitError) {
+      throw new GatewayError(error.message, 429, "CLOUD_COST_CAP_REACHED", false, "cloudflare");
+    }
+    throw error;
+  }
+  try {
+    const completion = await completeWithCloudflareUnmetered(messages, traceId, requestedMaxOutputTokens, reasoningTier, overrideModel);
+    try {
+      await settleCloudflareLlmSpend(reservation, completion.model || model, completion.usage);
+    } catch (error) {
+      // Keep the reservation in place if settlement fails: failing closed is safer than retrying a paid call.
+      console.error("[cloud-cost-guard] settlement failed; paid Cloudflare calls remain reserved", error);
+    }
+    return completion;
+  } catch (error) {
+    await releaseCloudflareLlmSpend(reservation);
+    throw error;
+  }
+}
+
 export async function completeWithGateway(
   messages: GatewayMessage[],
   traceId: string,
@@ -623,9 +690,22 @@ export async function completeWithGateway(
   const sensitivity = policy.sensitivity || "internal";
   let cloudflareFailure: GatewayError;
 
-  if (sensitivity === "confidential") {
+  // ── 외부 송신 초크포인트 ──────────────────────────────────────────────
+  // 2026-08-04 수정. 종전 코드는 `confidential` 만 막고 `internal` 은 Cloudflare 로
+  // **먼저** 보냈다. 문서(11 §11.4)는 "로컬 우선, internal 이상은 로컬 전용"이라고
+  // 적고 있었으므로 코드와 문서가 정반대였다. AIA-104 는 해소되지 않았고,
+  // 2차 검토가 지적한 "폴백 유출"보다 나빴다 — 폴백이 아니라 1순위였다.
+  //
+  // 원인은 민감도 판정이 분기 안에 흩어져 있었던 것이다. 이제 한 곳에서
+  // 정책과 대조한다. 임계값은 배포 설정(MAX_EGRESS_SENSITIVITY)이 정하며,
+  // 값이 없거나 이상하면 public 으로 떨어진다(fail-closed).
+  const runtimeEnv = getRuntimeEnv();
+  const maxEgress = normalizedMaxEgress(runtimeEnv.MAX_EGRESS_SENSITIVITY);
+  const externalAllowed = SENSITIVITY_RANK[sensitivity] <= SENSITIVITY_RANK[maxEgress];
+
+  if (!externalAllowed) {
     cloudflareFailure = new GatewayError(
-      "기밀 데이터(confidential)는 Cloud LLM으로 전송하지 않습니다.",
+      `${sensitivity} 등급은 외부 Provider로 전송하지 않습니다(정책 상한 ${maxEgress}).`,
       503,
       "CLOUDFLARE_RESIDENCY_POLICY_BLOCKED",
       false,
@@ -653,13 +733,12 @@ export async function completeWithGateway(
   if (policy.localEnabled !== false) {
     try {
       const local = await completeWithLocal(messages, traceId, policy.maxOutputTokens, tier, policy.localModelOverride);
-      if (sensitivity !== "confidential") {
-        local.fallback = {
-          from: "cloudflare",
-          path: ["cloudflare", "local"],
-          reason: cloudflareFailure.code,
-        };
-      }
+      if (sensitivity === "confidential") return local;
+      local.fallback = {
+        from: "cloudflare",
+        path: ["cloudflare", "local"],
+        reason: cloudflareFailure.code,
+      };
       return local;
     } catch (error) {
       if (!(error instanceof GatewayError)) throw error;
@@ -671,9 +750,11 @@ export async function completeWithGateway(
   }
 
   throw new GatewayError(
-    `Cloudflare GLM 5.2와 로컬 LLM이 모두 응답하지 않습니다. (${cloudflareFailure.code} → ${localFailure.code})`,
-    Math.max(localFailure.status, cloudflareFailure.status),
-    "ALL_PROVIDERS_UNAVAILABLE",
+    cloudflareFailure.code === "CLOUD_COST_CAP_REACHED"
+      ? `Cloud 비용 한도에 도달했고 로컬 모델도 사용할 수 없습니다. (${localFailure.code})`
+      : `Cloudflare GLM 5.2와 로컬 LLM이 모두 응답하지 않습니다. (${cloudflareFailure.code} → ${localFailure.code})`,
+    cloudflareFailure.code === "CLOUD_COST_CAP_REACHED" ? 429 : Math.max(localFailure.status, cloudflareFailure.status),
+    cloudflareFailure.code === "CLOUD_COST_CAP_REACHED" ? "CLOUD_COST_CAP_LOCAL_UNAVAILABLE" : "ALL_PROVIDERS_UNAVAILABLE",
     cloudflareFailure.retryable || localFailure.retryable,
   );
 }

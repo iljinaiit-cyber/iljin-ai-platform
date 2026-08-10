@@ -65,7 +65,7 @@ export function AgentTasksView() {
     <div className="view-stack agent-ops">
       <section className="panel">
         <div className="panel-title">
-          <div><span className="section-kicker">AGENT RUNS</span><h2>업무 실행 이력</h2></div>
+          <div><span className="section-kicker">DATABASE RUN HISTORY</span><h2>업무 실행 이력</h2></div>
           <span>{items.length}건</span>
         </div>
 
@@ -103,6 +103,7 @@ export function ToolApprovalsView({ currentUser }: { currentUser: { email: strin
   );
   const [busyId, setBusyId] = useState("");
   const [actionError, setActionError] = useState("");
+  const [confirmed, setConfirmed] = useState<Record<string, boolean>>({});
 
   const canDecide = currentUser.role === "admin" || currentUser.role === "manager";
 
@@ -138,7 +139,9 @@ export function ToolApprovalsView({ currentUser }: { currentUser: { email: strin
         </div>
 
         {!canDecide ? <p className="agent-ops-note">승인 처리는 관리자 또는 매니저만 가능합니다. 목록은 조회만 됩니다.</p> : null}
-        {actionError ? <p className="agent-ops-error" role="alert">{actionError}</p> : null}
+        <div aria-live="polite">
+          {actionError ? <p className="agent-ops-error" role="alert">{actionError}</p> : null}
+        </div>
 
         {loading ? <p className="agent-ops-note">불러오는 중…</p>
           : error ? <p className="agent-ops-error" role="alert">{error}</p>
@@ -166,8 +169,16 @@ export function ToolApprovalsView({ currentUser }: { currentUser: { email: strin
                       <div className="approval-actions">
                         {/* 자가 승인은 서버가 막는다. 여기서도 눌리지 않게 해 왕복을 줄인다. */}
                         {isSelf ? <span className="approval-blocked">본인이 요청한 건은 승인할 수 없습니다.</span> : null}
-                        <button type="button" className="danger-button" disabled={busyId === approval.id} onClick={() => void decide(approval, "rejected")}>거절</button>
-                        <button type="button" className="primary-button" disabled={isSelf || busyId === approval.id} onClick={() => void decide(approval, "approved")}>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(confirmed[approval.id])}
+                            onChange={(event) => setConfirmed((value) => ({ ...value, [approval.id]: event.target.checked }))}
+                          />
+                          영향 범위와 외부 변경 여부를 확인했습니다.
+                        </label>
+                        <button type="button" className="danger-button" disabled={!confirmed[approval.id] || busyId === approval.id} onClick={() => void decide(approval, "rejected")}>거절</button>
+                        <button type="button" className="primary-button" disabled={!confirmed[approval.id] || isSelf || busyId === approval.id} onClick={() => void decide(approval, "approved")}>
                           {busyId === approval.id ? "처리 중…" : "승인"}
                         </button>
                       </div>

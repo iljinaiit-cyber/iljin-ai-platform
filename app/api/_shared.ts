@@ -4,6 +4,7 @@
 // no-store 헤더를 반복하던 것을 한 곳으로 모은다 — AGENTS.md 사다리 2번(재사용).
 import { identityError } from "../../lib/identity";
 import { guardrailResponse } from "../../lib/guardrails";
+import { RagError } from "../../lib/rag";
 
 export const newTraceId = () => `trc_${crypto.randomUUID().replaceAll("-", "")}`;
 
@@ -29,6 +30,12 @@ export function ok(body: unknown, traceId: string, init: ResponseInit = {}) {
 export function fail(error: unknown, traceId: string) {
   const known = identityError(error, traceId) ?? guardrailResponse(error, traceId);
   if (known) return known;
+  if (error instanceof RagError) {
+    return Response.json(
+      { error: { code: error.code, message: error.message, trace_id: traceId } },
+      { status: error.status, headers: noStore(traceId) },
+    );
+  }
   console.error(`[${traceId}]`, error);
   return Response.json(
     { error: { code: "INTERNAL_ERROR", message: "요청을 처리하지 못했습니다.", trace_id: traceId } },

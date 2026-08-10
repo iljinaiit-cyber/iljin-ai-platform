@@ -1,11 +1,15 @@
 import { ingestDocument, listAssets } from "../../../../lib/rag";
 import { resolvePrincipal } from "../../../../lib/identity";
+import { authorizeFeature } from "../../../../lib/admin-governance";
+import { analyzeMultimodalFile, isMultimodalFile } from "../../../../lib/multimodal";
+import { attachConversationAsset } from "../../../../lib/conversations";
 import { fail, newTraceId, ok } from "../../_shared";
 
 export async function GET(request: Request) {
   const traceId = newTraceId();
   try {
     const principal = await resolvePrincipal(request);
+    await authorizeFeature(principal, "documents.manage", "documents.upload");
     const limit = Number(new URL(request.url).searchParams.get("limit"));
     return ok({ assets: await listAssets(principal, Number.isFinite(limit) && limit > 0 ? limit : undefined) }, traceId);
   } catch (error) { return fail(error, traceId); }
@@ -15,6 +19,43 @@ export async function POST(request: Request) {
   const traceId = newTraceId();
   try {
     const principal = await resolvePrincipal(request);
+    await authorizeFeature(principal, "documents.manage", "documents.upload");
+    if (request.headers.get("content-type")?.includes("multipart/form-data")) {
+      const form = await request.formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) {
+        return ok({ error: { code: "INVALID_FILE", message: "업로드할 파일이 필요합니다." } }, traceId, { status: 400 });
+      }
+      const originalData = await file.arrayBuffer();
+      const multimodal = isMultimodalFile(file);
+      const analysis = multimodal
+        ? await analyzeMultimodalFile(file, originalData)
+        : { markdown: new TextDecoder().decode(originalData), regions: [] };
+      const temporaryConversationId = form.get("retention") === "temporary"
+        ? String(form.get("conversation_id") || "")
+        : "";
+      const result = await ingestDocument({
+        title: String(form.get("title") || file.name),
+        content: analysis.markdown,
+        mimeType: file.type || "application/octet-stream",
+        sourceType: file.type.startsWith("image/") ? "image" : "upload",
+        classification: String(form.get("classification") || "internal") as "public" | "internal" | "confidential",
+        departmentScope: String(form.get("department_scope") || "").split(",").map((item) => item.trim()).filter(Boolean),
+        tenantId: principal.tenantId,
+        ownerEmail: principal.email,
+        originalData,
+        visualRegions: analysis.regions,
+        deduplicate: !temporaryConversationId,
+      });
+      if (temporaryConversationId) {
+        await attachConversationAsset(principal, temporaryConversationId, result.assetId);
+      }
+      return ok({
+        ...result,
+        regionCount: analysis.regions?.length || 0,
+        ...(multimodal ? { multimodal: { modality: analysis.modality, parser: analysis.parser } } : {}),
+      }, traceId, { status: 201 });
+    }
     const body = await request.json() as {
       title?: string; content?: string; mimeType?: string; sourceType?: string;
       classification?: "public" | "internal" | "confidential";

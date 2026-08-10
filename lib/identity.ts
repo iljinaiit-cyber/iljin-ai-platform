@@ -9,6 +9,9 @@ export type Principal = {
   displayName: string;
   tenantId: string;
   department: string;
+  /** 조직 마스터 참조. 미배정 사용자는 null 이다(추측 배정하지 않는다). */
+  corpId: string | null;
+  deptId: string | null;
   groups: string[];
   role: UserRole;
 };
@@ -38,6 +41,7 @@ export class AuthError extends Error {
       | "AUTH_INVALID_CREDENTIALS"
       | "AUTH_ACCOUNT_EXISTS"
       | "AUTH_BOOTSTRAP_REQUIRED"
+      | "AUTH_BOOTSTRAP_NOT_CONFIGURED"
       | "AUTH_RATE_LIMITED"
       | "AUTH_EMAIL_DOMAIN_NOT_ALLOWED",
   ) {
@@ -119,6 +123,10 @@ export function ensureIdentitySchema() {
         ["approved_at", "ALTER TABLE user_profiles ADD COLUMN approved_at TEXT"],
         ["rejection_reason", "ALTER TABLE user_profiles ADD COLUMN rejection_reason TEXT"],
         ["preferences_json", "ALTER TABLE user_profiles ADD COLUMN preferences_json TEXT DEFAULT '{}'"],
+        // 조직 마스터 참조. findProfile 이 항상 이 컬럼을 읽으므로 organization.ts
+        // 로딩 순서와 무관하게 여기서 보장한다.
+        ["corp_id", "ALTER TABLE user_profiles ADD COLUMN corp_id TEXT"],
+        ["dept_id", "ALTER TABLE user_profiles ADD COLUMN dept_id TEXT"],
       ] as const;
       const missing = additions.filter(([name]) => !names.has(name));
       if (missing.length) await db.batch(missing.map(([, sql]) => db.prepare(sql)));
@@ -145,6 +153,8 @@ type ProfileRow = {
   tenant_id: string;
   display_name: string;
   department: string;
+  corp_id: string | null;
+  dept_id: string | null;
   groups_json: string;
   role: UserRole;
   status: string;
@@ -163,6 +173,8 @@ function toAccessIdentity(row: ProfileRow): AccessIdentity {
     tenantId: row.tenant_id,
     displayName: row.display_name,
     department: row.department,
+    corpId: row.corp_id ?? null,
+    deptId: row.dept_id ?? null,
     groups: JSON.parse(row.groups_json || "[]") as string[],
     role: row.role,
     status: row.status === "unrequested" || row.status === "approved" || row.status === "rejected" ? row.status : "pending",
@@ -178,7 +190,8 @@ function toAccessIdentity(row: ProfileRow): AccessIdentity {
 
 async function findProfile(email: string) {
   return getD1().prepare(`SELECT email, tenant_id, display_name, department, groups_json, role, status,
-    approval_requested_at, application_note, approved_by, approved_at, rejection_reason, created_at, updated_at
+    approval_requested_at, application_note, approved_by, approved_at, rejection_reason, created_at, updated_at,
+    corp_id, dept_id
     FROM user_profiles WHERE email = ?`).bind(email).first<ProfileRow>();
 }
 
@@ -321,7 +334,11 @@ export async function registerEmailAccount(input: {
   traceId: string;
 }) {
   const email = normalizeEmail(input.email);
-  assertRegistrationEmailDomain(email);
+  // ADMIN_EMAILS 는 운영자가 배포 설정에 직접 적은 주소다. 최초 구축 시점에는
+  // 사내 메일 계정이 아직 없을 수 있으므로 도메인 게이트를 면제한다.
+  // 대신 아래에서 부트스트랩 코드를 예외 없이 요구한다 — 면제의 대가다.
+  const configuredAdmin = adminEmails().has(email);
+  if (!configuredAdmin) assertRegistrationEmailDomain(email);
   await ensureIdentitySchema();
   const password = input.password;
   if (password.length < 12 || password.length > 128) {
@@ -338,14 +355,20 @@ export async function registerEmailAccount(input: {
   if (existingCredential) {
     throw new AuthError("이미 가입된 이메일입니다. 로그인해 주세요.", 409, "AUTH_ACCOUNT_EXISTS");
   }
-  const configuredAdmin = adminEmails().has(email);
   const bootstrapToken = getRuntimeEnv().ADMIN_BOOTSTRAP_TOKEN || "";
-  const adminApproved = configuredAdmin
-    && bootstrapToken.length >= 16
-    && constantTimeEqual(input.adminCode || "", bootstrapToken);
-  if (configuredAdmin && bootstrapToken.length >= 16 && !adminApproved) {
+  if (configuredAdmin && bootstrapToken.length < 16) {
+    // 코드가 없다고 그냥 통과시키면 관리자 이메일이 도메인 게이트만 우회한 채
+    // 무방비로 열린다. 서버 설정 누락은 가입 거부로 끝낸다.
+    throw new AuthError(
+      "관리자 계정 초기 설정 코드가 서버에 구성되지 않았습니다. 운영자에게 문의해 주세요.",
+      403,
+      "AUTH_BOOTSTRAP_NOT_CONFIGURED",
+    );
+  }
+  if (configuredAdmin && !constantTimeEqual(input.adminCode || "", bootstrapToken)) {
     throw new AuthError("관리자 계정 초기 설정 코드가 필요합니다.", 403, "AUTH_BOOTSTRAP_REQUIRED");
   }
+  const adminApproved = configuredAdmin;
   const salt = randomBytes(16);
   let passwordHash: string;
   try {
@@ -478,6 +501,8 @@ export async function resolveAccessIdentity(request: Request): Promise<AccessIde
       tenantId,
       displayName,
       department: "미지정",
+      corpId: null,
+      deptId: null,
       groups: [],
       role: "user",
       status: "unrequested",
@@ -528,6 +553,8 @@ export async function resolvePrincipal(request: Request): Promise<Principal> {
     displayName: identity.displayName,
     tenantId: identity.tenantId,
     department: identity.department,
+    corpId: identity.corpId,
+    deptId: identity.deptId,
     groups: identity.groups,
     role: identity.role,
   };

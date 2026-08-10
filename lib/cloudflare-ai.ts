@@ -1,4 +1,5 @@
 import { getRuntimeEnv, type RuntimeEnv } from "./runtime-env";
+import { assertCloudCostAvailable } from "./cloud-cost-guard";
 
 export function hasCloudflareAiBinding(runtime: RuntimeEnv = getRuntimeEnv()) {
   return Boolean(runtime.AI && typeof runtime.AI.run === "function");
@@ -52,6 +53,7 @@ export async function runCloudflareWorkersAiModel<T>(
   runtime: RuntimeEnv = getRuntimeEnv(),
   timeoutMs = 60_000,
 ): Promise<T> {
+  await assertCloudCostAvailable();
   if (hasCloudflareAiBinding(runtime)) {
     // AI Gateway 를 경유시키면 세 가지를 얻는다.
     //   1) 관측 — 모델별 호출·토큰·비용이 Gateway 대시보드에 분해되어 남는다.
