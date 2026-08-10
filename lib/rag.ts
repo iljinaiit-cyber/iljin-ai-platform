@@ -6,6 +6,7 @@ import type { Principal } from "./identity";
 import { loadContextFiles } from "./context-files";
 import { rewriteQuery, generateInsufficiencyQuestions, FOLLOW_UP_INSTRUCTION, type FollowUpQuestion } from "./question-rewriter";
 import { isLikelyInjectedContent, maskPii } from "./guardrails";
+import { answerPreferenceInstruction } from "./answer-format";
 import { buildOrganizationDictionary, graphRelatedSegments, indexSegmentOntology } from "./ontology";
 
 export type ReasoningTier = "swift" | "expert" | "deep";
@@ -1923,7 +1924,7 @@ export async function completeWithRag(input: {
     : "";
 
   const preference = input.responsePreferences
-    ? `답변 수준은 ${input.responsePreferences.length === "brief" ? "핵심 결론과 필수 근거를 압축한 요약" : input.responsePreferences.length === "detailed" ? "결론·문서 골격 또는 비교 구조·상세 준비사항·실행 순서·정량 KPI·리스크·예상 반론·다음 행동을 갖춘 심층 의사결정 문서" : "결론·핵심 근거 3개 이상·실무 적용·주의사항을 갖춘 전문가 표준"}, 형식은 ${input.responsePreferences.format === "bullets" ? "명확한 소제목과 불릿 목록 중심" : input.responsePreferences.format === "table" ? "비교 내용은 Markdown 표로 정리하고 해석을 덧붙이는 방식" : "짧은 소제목과 문단 중심"}으로 작성하세요.\n`
+    ? `${answerPreferenceInstruction(input.responsePreferences.length, input.responsePreferences.format)}\n`
     : "";
 
   // Tier-specific reasoning instructions
@@ -2302,7 +2303,7 @@ export async function retryIndexJob(principal: Principal, jobId: string) {
 export type IngestionSource = {
   id: string;
   name: string;
-  source_type: "r2-folder" | "http-server";
+  source_type: "r2-folder" | "http-server" | "file-link" | "network-folder" | "pc-folder";
   connection_config: string;
   schedule_interval_minutes: number;
   classification: string;
@@ -2317,6 +2318,59 @@ export type IngestionSource = {
   created_by?: string;
 };
 
+type IngestionSourceType = IngestionSource["source_type"];
+type IngestionConnectionConfig = { prefix?: string; endpoint?: string; url?: string; urls?: string[]; path?: string; headers?: Record<string, string>; filePatterns?: string[]; manifestMethod?: "GET" | "POST" };
+const MAX_INGESTION_FILE_BYTES = 50 * 1024 * 1024;
+const MAX_INGESTION_MANIFEST_BYTES = 2 * 1024 * 1024;
+const MAX_INGESTION_ITEMS = 100;
+const MAX_INGESTION_HEADER_VALUE_LENGTH = 2048;
+
+function asRecord(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
+function isBlockedRemoteHost(hostname: string) {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || host === "metadata.google.internal" || host === "instance-data.ec2.internal" || host === "0.0.0.0" || host === "::1") return true;
+  const octets = host.split(".").map((part) => Number(part));
+  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd");
+  const [first, second] = octets;
+  return first === 10 || first === 127 || first === 0 || (first === 169 && second === 254) || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168);
+}
+function safeRemoteUrl(value: unknown, field: string) {
+  if (typeof value !== "string" || !value.trim()) throw new RagError(`${field} URL이 필요합니다.`, 400, "INVALID_SOURCE_URL");
+  let parsed: URL; try { parsed = new URL(value.trim()); } catch { throw new RagError(`${field} URL 형식이 올바르지 않습니다.`, 400, "INVALID_SOURCE_URL"); }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new RagError(`${field}는 HTTP 또는 HTTPS URL만 사용할 수 있습니다.`, 400, "UNSUPPORTED_SOURCE_PROTOCOL");
+  if (isBlockedRemoteHost(parsed.hostname)) throw new RagError(`${field}에 로컬 또는 사설 네트워크 주소를 사용할 수 없습니다.`, 400, "BLOCKED_SOURCE_HOST");
+  return parsed.toString();
+}
+function validateSourceHeaders(value: unknown) {
+  if (value === undefined) return undefined;
+  const result: Record<string, string> = {};
+  for (const [key, rawValue] of Object.entries(asRecord(value))) {
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(key) || /^(host|content-length|cookie|set-cookie)$/i.test(key)) throw new RagError(`허용되지 않는 수집 헤더입니다: ${key}`, 400, "INVALID_SOURCE_HEADER");
+    if (typeof rawValue !== "string" || rawValue.length > MAX_INGESTION_HEADER_VALUE_LENGTH) throw new RagError(`수집 헤더 값이 너무 깁니다: ${key}`, 400, "INVALID_SOURCE_HEADER");
+    result[key] = rawValue;
+  }
+  return result;
+}
+function validateIngestionConfig(sourceType: IngestionSourceType, input: unknown): IngestionConnectionConfig {
+  const config = asRecord(input); const normalized: IngestionConnectionConfig = {};
+  if (config.prefix !== undefined) { if (typeof config.prefix !== "string" || config.prefix.length > 512) throw new RagError("R2 prefix가 올바르지 않습니다.", 400, "INVALID_SOURCE_CONFIG"); normalized.prefix = config.prefix; }
+  if (config.filePatterns !== undefined) {
+    if (!Array.isArray(config.filePatterns) || config.filePatterns.length > 20) throw new RagError("파일 패턴은 최대 20개까지 등록할 수 있습니다.", 400, "INVALID_SOURCE_CONFIG");
+    normalized.filePatterns = config.filePatterns.map((pattern) => { if (typeof pattern !== "string" || pattern.length > 200) throw new RagError("파일 패턴이 올바르지 않습니다.", 400, "INVALID_SOURCE_CONFIG"); try { new RegExp(pattern); } catch { throw new RagError(`잘못된 파일 패턴입니다: ${pattern}`, 400, "INVALID_SOURCE_CONFIG"); } return pattern; });
+  }
+  normalized.headers = validateSourceHeaders(config.headers);
+  if (sourceType === "r2-folder") return normalized;
+  if (sourceType === "file-link") {
+    const urls = Array.isArray(config.urls) ? config.urls : config.url ? [config.url] : [];
+    if (!urls.length || urls.length > MAX_INGESTION_ITEMS) throw new RagError("파일 링크는 1~100개까지 등록할 수 있습니다.", 400, "INVALID_SOURCE_CONFIG");
+    normalized.urls = urls.map((url, index) => safeRemoteUrl(url, `파일 링크 ${index + 1}`)); normalized.url = normalized.urls[0]; return normalized;
+  }
+  normalized.endpoint = safeRemoteUrl(config.endpoint, "매니페스트 엔드포인트");
+  if (sourceType === "network-folder" || sourceType === "pc-folder") { if (typeof config.path !== "string" || !config.path.trim() || config.path.length > 1024) throw new RagError("동기화할 폴더 경로가 필요합니다.", 400, "INVALID_SOURCE_CONFIG"); normalized.path = config.path.trim(); }
+  if (config.manifestMethod !== undefined) { if (config.manifestMethod !== "GET" && config.manifestMethod !== "POST") throw new RagError("매니페스트 방식은 GET 또는 POST만 사용할 수 있습니다.", 400, "INVALID_SOURCE_CONFIG"); normalized.manifestMethod = config.manifestMethod; }
+  return normalized;
+}
+
 export async function listIngestionSources(tenantId: string): Promise<IngestionSource[]> {
   await ensureRagSchema();
   const result = await getD1().prepare(
@@ -2328,7 +2382,7 @@ export async function listIngestionSources(tenantId: string): Promise<IngestionS
 export async function createIngestionSource(input: {
   tenantId: string;
   name: string;
-  source_type: "r2-folder" | "http-server";
+  source_type: IngestionSourceType;
   connection_config: Record<string, unknown>;
   schedule_interval_minutes: number;
   classification: string;
@@ -2336,6 +2390,10 @@ export async function createIngestionSource(input: {
   created_by: string;
 }): Promise<string> {
   await ensureRagSchema();
+  const name = input.name.trim();
+  if (!name || name.length > 120) throw new RagError("수집 소스 이름은 1~120자로 입력해 주세요.", 400, "INVALID_SOURCE_NAME");
+  if (!Number.isInteger(input.schedule_interval_minutes) || input.schedule_interval_minutes < 5 || input.schedule_interval_minutes > 10080) throw new RagError("수집 주기는 5분~7일 사이여야 합니다.", 400, "INVALID_SOURCE_SCHEDULE");
+  const connectionConfig = validateIngestionConfig(input.source_type, input.connection_config);
   const id = `src_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
   await getD1().prepare(
@@ -2344,8 +2402,8 @@ export async function createIngestionSource(input: {
       total_ingested, created_at, updated_at, created_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?)`
   ).bind(
-    id, input.tenantId, input.name, input.source_type,
-    JSON.stringify(input.connection_config),
+    id, input.tenantId, name, input.source_type,
+    JSON.stringify(connectionConfig),
     input.schedule_interval_minutes, input.classification, input.department_scope,
     now, now, input.created_by,
   ).run();
@@ -2361,12 +2419,14 @@ export async function updateIngestionSource(tenantId: string, id: string, fields
   enabled?: boolean;
 }): Promise<void> {
   await ensureRagSchema();
+  const existing = await getD1().prepare("SELECT source_type FROM ingestion_sources WHERE id = ? AND tenant_id = ?").bind(id, tenantId).first<{ source_type: IngestionSourceType }>();
+  if (!existing) throw new RagError("수집 소스를 찾지 못했습니다.", 404, "SOURCE_NOT_FOUND");
   const now = new Date().toISOString();
   const sets: string[] = ["updated_at = ?"];
   const binds: unknown[] = [now];
-  if (fields.name !== undefined) { sets.push("name = ?"); binds.push(fields.name); }
-  if (fields.connection_config !== undefined) { sets.push("connection_config = ?"); binds.push(JSON.stringify(fields.connection_config)); }
-  if (fields.schedule_interval_minutes !== undefined) { sets.push("schedule_interval_minutes = ?"); binds.push(fields.schedule_interval_minutes); }
+  if (fields.name !== undefined) { const name = fields.name.trim(); if (!name || name.length > 120) throw new RagError("수집 소스 이름은 1~120자로 입력해 주세요.", 400, "INVALID_SOURCE_NAME"); sets.push("name = ?"); binds.push(name); }
+  if (fields.connection_config !== undefined) { sets.push("connection_config = ?"); binds.push(JSON.stringify(validateIngestionConfig(existing.source_type, fields.connection_config))); }
+  if (fields.schedule_interval_minutes !== undefined) { if (!Number.isInteger(fields.schedule_interval_minutes) || fields.schedule_interval_minutes < 5 || fields.schedule_interval_minutes > 10080) throw new RagError("수집 주기는 5분~7일 사이여야 합니다.", 400, "INVALID_SOURCE_SCHEDULE"); sets.push("schedule_interval_minutes = ?"); binds.push(fields.schedule_interval_minutes); }
   if (fields.classification !== undefined) { sets.push("classification = ?"); binds.push(fields.classification); }
   if (fields.department_scope !== undefined) { sets.push("department_scope = ?"); binds.push(fields.department_scope); }
   if (fields.enabled !== undefined) { sets.push("enabled = ?"); binds.push(fields.enabled ? 1 : 0); }
@@ -2398,6 +2458,26 @@ async function computeChecksum(bytes: Uint8Array): Promise<string> {
   return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function inferMimeType(key: string, fallback = "application/octet-stream") {
+  const normalizedFallback = fallback.split(";", 1)[0].trim().toLowerCase();
+  if (normalizedFallback && normalizedFallback !== "application/octet-stream") return normalizedFallback;
+  const ext = key.split("?")[0].split(".").pop()?.toLowerCase() || "";
+  return ext === "pdf" ? "application/pdf" : ext === "json" ? "application/json" : ext === "csv" ? "text/csv" : ext === "md" ? "text/markdown" : ext === "txt" ? "text/plain" : ext === "png" ? "image/png" : ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "webp" ? "image/webp" : "text/plain";
+}
+async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 15_000) {
+  const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try { return await fetch(url, { ...init, signal: controller.signal, redirect: "error" }); } finally { clearTimeout(timer); }
+}
+async function readResponseBytes(response: Response, maxBytes: number) {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) throw new Error("response_too_large");
+  if (!response.body) { const bytes = new Uint8Array(await response.arrayBuffer()); if (bytes.byteLength > maxBytes) throw new Error("response_too_large"); return bytes; }
+  const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let total = 0;
+  try { while (true) { const { done, value } = await reader.read(); if (done) break; const chunk = new Uint8Array(value); total += chunk.byteLength; if (total > maxBytes) { await reader.cancel(); throw new Error("response_too_large"); } chunks.push(chunk); } }
+  finally { reader.releaseLock(); }
+  const bytes = new Uint8Array(total); let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; } return bytes;
+}
+
 async function ingestBytesFromSource(
   source: IngestionSourceRow,
   fileKey: string,
@@ -2413,7 +2493,7 @@ async function ingestBytesFromSource(
   if (existing) return false;
   const scopeArray = source.department_scope === "*" ? ["*"] : source.department_scope.split(",").map((s) => s.trim()).filter(Boolean);
   const classification = source.classification as "public" | "internal" | "confidential";
-  const isText = /^text\/(plain|markdown|csv|json)$/.test(mimeType);
+  const isText = mimeType.startsWith("text/") || ["application/json", "application/xml", "application/csv"].includes(mimeType);
   if (isText) {
     const text = new TextDecoder().decode(bytes);
     await ingestDocument({
@@ -2449,12 +2529,7 @@ export async function runIngestionSource(sourceId: string, runtime: RuntimeEnv):
     `SELECT * FROM ingestion_sources WHERE id = ? AND enabled = 1`
   ).bind(sourceId).first<IngestionSourceRow>();
   if (!source) throw new RagError("수집 소스를 찾을 수 없거나 비활성화되어 있습니다.", 404, "SOURCE_NOT_FOUND");
-  const config = JSON.parse(source.connection_config) as {
-    prefix?: string;
-    endpoint?: string;
-    headers?: Record<string, string>;
-    filePatterns?: string[];
-  };
+  const config = JSON.parse(source.connection_config) as IngestionConnectionConfig;
   const now = new Date().toISOString();
   let ingested = 0;
   let skipped = 0;
@@ -2476,14 +2551,8 @@ export async function runIngestionSource(sourceId: string, runtime: RuntimeEnv):
             const r2Object = await bucket.get(key);
             if (!r2Object) continue;
             const bytes = new Uint8Array(await r2Object.arrayBuffer());
-            const ext = key.split(".").pop()?.toLowerCase() || "";
-            const mimeType = ext === "pdf" ? "application/pdf"
-              : ext === "json" ? "application/json"
-              : ext === "csv" ? "text/csv"
-              : ext === "md" ? "text/markdown"
-              : ext === "png" ? "image/png"
-              : ext === "jpg" || ext === "jpeg" ? "image/jpeg"
-              : "text/plain";
+            if (bytes.byteLength > MAX_INGESTION_FILE_BYTES) throw new Error("response_too_large");
+            const mimeType = inferMimeType(key);
             const title = key.split("/").pop() || key;
             const didIngest = await ingestBytesFromSource(source, key, bytes, mimeType, title);
             if (didIngest) ingested++; else skipped++;
@@ -2494,34 +2563,41 @@ export async function runIngestionSource(sourceId: string, runtime: RuntimeEnv):
         }
         cursor = listing.truncated ? listing.cursor : undefined;
       } while (cursor);
-    } else if (source.source_type === "http-server") {
-      if (!config.endpoint) throw new RagError("HTTP 엔드포인트가 구성되지 않았습니다.", 400, "ENDPOINT_NOT_CONFIGURED");
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 15_000);
-      try {
-        const response = await fetch(config.endpoint, {
-          signal: controller.signal,
-          headers: config.headers || {},
-        });
-        if (!response.ok) throw new Error(`http_${response.status}`);
-        const payload = await response.json() as Array<{ url: string; title?: string; mimeType?: string }>;
-        clearTimeout(timer);
-        for (const item of payload.slice(0, 50)) {
-          try {
-            const fileResponse = await fetch(item.url);
-            if (!fileResponse.ok) { errors++; continue; }
-            const bytes = new Uint8Array(await fileResponse.arrayBuffer());
-            const mimeType = item.mimeType || "text/plain";
-            const title = item.title || item.url.split("/").pop() || "untitled";
-            const didIngest = await ingestBytesFromSource(source, item.url, bytes, mimeType, title);
-            if (didIngest) ingested++; else skipped++;
-          } catch (e) {
-            errors++;
-            errorDetails.push(`${item.url}: ${e instanceof Error ? e.message : "unknown"}`);
-          }
-        }
-      } finally {
-        clearTimeout(timer);
+    } else if (source.source_type === "file-link") {
+      const urls = config.urls?.length ? config.urls : config.url ? [config.url] : [];
+      if (!urls.length) throw new RagError("파일 링크가 구성되지 않았습니다.", 400, "SOURCE_URL_NOT_CONFIGURED");
+      for (const url of urls.slice(0, MAX_INGESTION_ITEMS)) {
+        try {
+          const fileResponse = await fetchWithTimeout(safeRemoteUrl(url, "파일 링크"), { headers: config.headers || {} });
+          if (!fileResponse.ok) { errors++; errorDetails.push(`${url}: http_${fileResponse.status}`); continue; }
+          const bytes = await readResponseBytes(fileResponse, MAX_INGESTION_FILE_BYTES);
+          const mimeType = inferMimeType(url, fileResponse.headers.get("content-type") || undefined);
+          const title = url.split("?")[0].split("/").pop() || "untitled";
+          const didIngest = await ingestBytesFromSource(source, url, bytes, mimeType, title);
+          if (didIngest) ingested++; else skipped++;
+        } catch (e) { errors++; errorDetails.push(`${url}: ${e instanceof Error ? e.message : "unknown"}`); }
+      }
+    } else if (source.source_type === "http-server" || source.source_type === "network-folder" || source.source_type === "pc-folder") {
+      if (!config.endpoint) throw new RagError("매니페스트 엔드포인트가 구성되지 않았습니다.", 400, "ENDPOINT_NOT_CONFIGURED");
+      const method = config.manifestMethod || "GET"; const manifestUrl = new URL(safeRemoteUrl(config.endpoint, "매니페스트 엔드포인트"));
+      if (method === "GET" && config.path) manifestUrl.searchParams.set("path", config.path);
+      const response = await fetchWithTimeout(manifestUrl.toString(), { method, headers: { ...(config.headers || {}), ...(method === "POST" ? { "content-type": "application/json" } : {}) }, body: method === "POST" ? JSON.stringify({ path: config.path || undefined, filePatterns: config.filePatterns || undefined }) : undefined });
+      if (!response.ok) throw new Error(`manifest_http_${response.status}`);
+      const payload = JSON.parse(new TextDecoder().decode(await readResponseBytes(response, MAX_INGESTION_MANIFEST_BYTES))) as unknown;
+      const items = Array.isArray(payload) ? payload : Array.isArray(asRecord(payload).files) ? asRecord(payload).files as unknown[] : [];
+      if (!Array.isArray(payload) && !Array.isArray(asRecord(payload).files)) throw new RagError("매니페스트는 배열 또는 { files: [] } 형식이어야 합니다.", 400, "INVALID_SOURCE_MANIFEST");
+      for (const rawItem of items.slice(0, MAX_INGESTION_ITEMS)) {
+        const item = asRecord(rawItem); const url = safeRemoteUrl(item.url, "매니페스트 파일");
+        try {
+          // Connector credentials must not be forwarded to arbitrary file URLs.
+          const fileResponse = await fetchWithTimeout(url, {}, 15_000);
+          if (!fileResponse.ok) { errors++; errorDetails.push(`${url}: http_${fileResponse.status}`); continue; }
+          const bytes = await readResponseBytes(fileResponse, MAX_INGESTION_FILE_BYTES);
+          const mimeType = typeof item.mimeType === "string" ? inferMimeType(url, item.mimeType) : inferMimeType(url, fileResponse.headers.get("content-type") || undefined);
+          const title = typeof item.title === "string" && item.title.trim() ? item.title.trim().slice(0, 240) : url.split("?")[0].split("/").pop() || "untitled";
+          const didIngest = await ingestBytesFromSource(source, url, bytes, mimeType, title);
+          if (didIngest) ingested++; else skipped++;
+        } catch (e) { errors++; errorDetails.push(`${url}: ${e instanceof Error ? e.message : "unknown"}`); }
       }
     }
     const summary = `수집 ${ingested}건, 중복 스킵 ${skipped}건, 오류 ${errors}건${errorDetails.length ? ` (${errorDetails.slice(0, 3).join("; ")})` : ""}`;

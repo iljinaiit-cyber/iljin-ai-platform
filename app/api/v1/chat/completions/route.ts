@@ -9,6 +9,7 @@ import {
 import { loadUserPreferences, updateUserPreferencesFromRequest } from "../../../../../lib/user-memory";
 import { getConversationSensitivity, recordLlmInvocation } from "../../../../../lib/llm-telemetry";
 import { searchInternet, type InternetSearchResponse } from "../../../../../lib/internet-search";
+import { answerPreferenceInstruction } from "../../../../../lib/answer-format";
 import { extractRelatedQuestions, RELATED_QUESTION_INSTRUCTION, type FollowUpQuestion } from "../../../../../lib/question-rewriter";
 import { resolvePrincipal } from "../../../../../lib/identity";
 import { authorizeFeature } from "../../../../../lib/admin-governance";
@@ -20,6 +21,8 @@ import {
   inspectUserInput,
 } from "../../../../../lib/guardrails";
 import { fail, newTraceId, ok } from "../../../_shared";
+import { registerWorkItemFromText } from "../../../../../lib/schedule-planning";
+import { createScheduledTask, isValidCronExpression, parseNaturalLanguageSchedule } from "../../../../../lib/scheduled-tasks";
 
 type Body = {
   messages?: Array<{ role: string; content: string }>;
@@ -46,11 +49,7 @@ function maxOutputTokensFor(length: Body["answer_length"]) {
 }
 
 function responsePreferenceInstruction(length: Body["answer_length"], format: Body["answer_format"]) {
-  const depth = length === "brief" ? "핵심만 간결하게" : length === "detailed"
-    ? "핵심 결론 → 근거와 분석 → 실무적 의미 또는 실행 방안 → 리스크·한계 순서로 심층적으로"
-    : "핵심 결론과 근거, 실행 방안을 포함해";
-  const shape = format === "table" ? "비교 항목은 Markdown 표로" : format === "bullets" ? "소제목과 불릿으로" : "소제목과 문단으로";
-  return `${depth} 답하고 ${shape} 정리하세요.`;
+  return answerPreferenceInstruction(length, format);
 }
 
 function boundedSourceContext(result: InternetSearchResponse, budget: number) {
@@ -250,6 +249,15 @@ export async function POST(request: Request) {
     if (body.conversation_id && saved) {
       await maybeSummarizeConversation(principal, body.conversation_id, traceId).catch((error) => {
         console.error(`[${traceId}] maybeSummarizeConversation`, error);
+      });
+      const recurring = /매일|매주|매월|매달/.test(userContent) ? parseNaturalLanguageSchedule(userContent) : null;
+      if (recurring && isValidCronExpression(recurring.cronExpression) && recurring.prompt.trim()) {
+        await createScheduledTask(principal, recurring.prompt, recurring.cronExpression).catch((error) => {
+          console.error(`[${traceId}] auto schedule registration`, error);
+        });
+      }
+      await registerWorkItemFromText({ principal, text: userContent, sourceId: saved.userMessageId }).catch((error) => {
+        console.error(`[${traceId}] auto work registration`, error);
       });
     }
 

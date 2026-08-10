@@ -827,3 +827,21 @@ test("caps Cloudflare AI spend below $50 and reserves GLM 5.2 for deep reasoning
   assert.match(gateway, /reasoningTier === "deep"/);
   assert.match(config, /@cf\/zai-org\/glm-4\.7-flash/);
 });
+
+test("connects file links and local or network folders to scheduled embedding ingestion", async () => {
+  const [component, rag, worker] = await Promise.all([
+    readFile(new URL("app/components/IngestionSources.tsx", root), "utf8"),
+    readFile(new URL("lib/rag.ts", root), "utf8"),
+    readFile(new URL("indexer/worker.ts", root), "utf8"),
+  ]);
+  assert.match(component, /"file-link": "파일 링크"/);
+  assert.match(component, /"network-folder": "네트워크 폴더"/);
+  assert.match(component, /"pc-folder": "PC 폴더"/);
+  assert.match(component, /자동 임베딩 연결/);
+  assert.match(rag, /safeRemoteUrl/);
+  assert.match(rag, /BLOCKED_SOURCE_HOST/);
+  assert.match(rag, /MAX_INGESTION_FILE_BYTES/);
+  assert.match(rag, /source\.source_type === "network-folder"/);
+  assert.match(rag, /runIngestionSource/);
+  assert.match(worker, /getDueIngestionSources/);
+});

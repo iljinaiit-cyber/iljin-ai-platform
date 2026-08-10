@@ -357,6 +357,7 @@ export const feedbackPosts = sqliteTable(
     category: text("category").notNull(),
     title: text("title").notNull(),
     content: text("content").notNull(),
+    isNotice: integer("is_notice", { mode: "boolean" }).notNull().default(false),
     status: text("status").notNull().default("received"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
@@ -364,6 +365,36 @@ export const feedbackPosts = sqliteTable(
   (table) => [
     index("feedback_posts_tenant_created_idx").on(table.tenantId, table.createdAt),
     index("feedback_posts_tenant_category_idx").on(table.tenantId, table.category, table.createdAt),
+  ],
+);
+
+export const feedbackComments = sqliteTable(
+  "feedback_comments",
+  {
+    id: text("id").primaryKey(),
+    postId: text("post_id").notNull().references(() => feedbackPosts.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").notNull(),
+    authorEmail: text("author_email").notNull(),
+    authorDisplayName: text("author_display_name").notNull(),
+    authorDepartment: text("author_department"),
+    content: text("content").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [index("feedback_comments_post_created_idx").on(table.postId, table.createdAt)],
+);
+
+export const feedbackLikes = sqliteTable(
+  "feedback_likes",
+  {
+    postId: text("post_id").notNull().references(() => feedbackPosts.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").notNull(),
+    userEmail: text("user_email").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.postId, table.userEmail] }),
+    index("feedback_likes_tenant_post_idx").on(table.tenantId, table.postId),
   ],
 );
 

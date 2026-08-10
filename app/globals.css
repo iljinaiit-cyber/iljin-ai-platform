@@ -6384,3 +6384,259 @@ td {
   .feedback-post-summary { grid-template-columns: auto minmax(0, 1fr); }
   .feedback-post-summary > .status-pill { grid-column: 2; justify-self: start; }
 }
+
+/* Content-density pass: keep the existing visual system while making the data surface taller. */
+.main-content {
+  padding: clamp(12px, 2vw, 28px);
+}
+
+.view-stack,
+.knowledge-base {
+  gap: 16px;
+}
+
+.hero-panel {
+  padding: clamp(20px, 2.5vw, 36px);
+}
+
+.hero-stats {
+  margin-top: 16px;
+}
+
+.hero-composer {
+  margin-top: 18px;
+}
+
+.section-block {
+  padding: 10px;
+}
+
+.panel {
+  padding: 16px;
+}
+
+.section-heading,
+.page-heading,
+.panel-title,
+.result-heading {
+  gap: 12px;
+}
+
+.usecase-grid {
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.usecase-card {
+  min-height: 220px;
+  padding: 16px;
+}
+
+.home-bottom-grid,
+.admin-grid {
+  gap: 14px;
+}
+
+.recent-row {
+  min-height: 52px;
+  padding: 7px 4px;
+}
+
+.context-user {
+  margin: 14px 0;
+}
+
+.chat-workspace {
+  height: calc(100dvh - 116px);
+  max-height: calc(100dvh - 116px);
+}
+
+.message-list {
+  gap: 18px;
+  margin-top: 8px;
+  padding: 8px 0;
+}
+
+th,
+td {
+  padding: 10px 8px;
+}
+
+.search-hero {
+  padding: clamp(18px, 2.5vw, 30px);
+}
+
+.search-form {
+  margin-top: 16px;
+}
+
+.search-layout {
+  gap: 14px;
+}
+
+.filter-panel,
+.result-panel {
+  padding: 16px;
+}
+
+.knowledge-hero {
+  padding: clamp(20px, 2.5vw, 32px);
+}
+
+.knowledge-hero-heading {
+  gap: 18px;
+}
+
+.knowledge-hero .search-scope-switch {
+  margin-top: 16px;
+}
+
+.knowledge-stats {
+  margin-top: 14px;
+}
+
+.knowledge-catalog {
+  padding: 18px;
+}
+
+.knowledge-section-heading {
+  margin-bottom: 12px;
+}
+
+.admin-issue-summary {
+  padding: 16px;
+}
+
+.admin-issue-summary__grid {
+  gap: 6px;
+}
+
+.metric-grid {
+  gap: 10px;
+}
+
+.metric-card {
+  padding: 15px;
+}
+
+.control-tower {
+  padding: 8px;
+}
+
+.control-hero {
+  gap: 18px;
+}
+
+.release-gate,
+.control-card,
+.slo-card,
+.operations-card {
+  padding: 16px;
+}
+
+.control-summary {
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.control-summary article {
+  min-height: 64px;
+  padding: 12px 14px;
+}
+
+.control-card-grid,
+.slo-grid,
+.operations-layout {
+  gap: 12px;
+}
+
+.slo-grid,
+.operations-layout {
+  margin-top: 14px;
+}
+
+.control-filter {
+  margin: 14px 0 12px;
+}
+
+.probe-list,
+.provider-list {
+  margin-top: 12px;
+}
+
+.provider-list > div {
+  padding: 12px;
+}
+
+.schedule-view {
+  padding: 22px 18px;
+}
+
+.schedule-grid {
+  gap: 16px;
+}
+
+.schedule-calendar-panel,
+.schedule-side-panel {
+  padding: 16px;
+}
+
+.schedule-side-panel {
+  max-height: calc(100dvh - 110px);
+}
+
+.feedback-list-panel,
+.feedback-form-panel {
+  padding: 18px;
+}
+
+.feedback-filters {
+  margin-top: 14px;
+}
+
+.feedback-post-summary {
+  padding: 12px 0;
+}
+
+.feedback-post-content {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+}
+
+@media (max-width: 700px) {
+  .main-content {
+    padding: 10px;
+  }
+
+  .view-stack,
+  .knowledge-base {
+    gap: 12px;
+  }
+
+  .hero-panel,
+  .knowledge-hero {
+    padding: 18px;
+  }
+
+  .panel,
+  .filter-panel,
+  .result-panel,
+  .knowledge-catalog,
+  .feedback-list-panel,
+  .feedback-form-panel {
+    padding: 14px;
+  }
+
+  .chat-workspace {
+    height: calc(100dvh - 78px);
+    max-height: calc(100dvh - 78px);
+  }
+
+  .schedule-view {
+    padding: 16px 10px;
+  }
+
+  .schedule-side-panel {
+    max-height: none;
+  }
+}

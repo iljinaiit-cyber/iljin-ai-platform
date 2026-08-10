@@ -341,7 +341,7 @@ type ActivityItem = {
   title: string;
   status: string;
   createdAt: string;
-  target: "chat" | "search" | "tasks" | "approvals" | "documents";
+  target: "chat" | "search" | "tasks" | "approvals" | "documents" | "schedule";
   resourceId?: string;
   detail?: string;
 };
@@ -360,7 +360,7 @@ type ActivityDashboard = {
     level: "warning" | "error" | "info";
     title: string;
     description: string;
-    target: "chat" | "search" | "tasks" | "approvals" | "documents";
+    target: "chat" | "search" | "tasks" | "approvals" | "documents" | "schedule";
   }>;
   summary: {
     todayActivities: number;
@@ -1147,6 +1147,7 @@ export function AgentPortal() {
     setNotice("LLM Gateway가 보안 정책에 맞는 Provider를 선택하고 있습니다.");
     const controller = new AbortController();
     chatAbortRef.current = controller;
+    let cancelTypewriter: (() => void) | undefined;
 
     try {
       let activeConversationId = conversationId;
@@ -1255,6 +1256,42 @@ export function AgentPortal() {
                 streamingStage: generationStage,
               }]);
 
+        let displayedContent = "";
+        let typewriterQueue = "";
+        let typewriterTimer: ReturnType<typeof setInterval> | undefined;
+        let resolveTypewriter: (() => void) | undefined;
+        let typewriterDone = Promise.resolve();
+        const updateDisplayedContent = () => {
+          setChatMessages((messages) => messages.map((message, index) =>
+            index === messages.length - 1 && message.streamingResponse
+              ? { ...message, body: displayedContent }
+              : message
+          ));
+        };
+        const startTypewriter = () => {
+          if (typewriterTimer) return;
+          typewriterDone = new Promise<void>((resolve) => { resolveTypewriter = resolve; });
+          typewriterTimer = setInterval(() => {
+            if (!typewriterQueue) {
+              clearInterval(typewriterTimer);
+              typewriterTimer = undefined;
+              resolveTypewriter?.();
+              resolveTypewriter = undefined;
+              return;
+            }
+            displayedContent += typewriterQueue.slice(0, 3);
+            typewriterQueue = typewriterQueue.slice(3);
+            updateDisplayedContent();
+          }, 14);
+        };
+        cancelTypewriter = () => {
+          if (typewriterTimer) clearInterval(typewriterTimer);
+          typewriterTimer = undefined;
+          typewriterQueue = "";
+          resolveTypewriter?.();
+          resolveTypewriter = undefined;
+        };
+
         const applyEvent = (eventBlock: string) => {
           const lines = eventBlock.split(/\r?\n/);
           const eventName = lines.find((line) => line.startsWith("event:"))?.slice(6).trim();
@@ -1269,11 +1306,13 @@ export function AgentPortal() {
             ));
           } else if (eventName === "delta" && typeof eventPayload.text === "string") {
             streamedContent += eventPayload.text;
-            setChatMessages((messages) => messages.map((message, index) =>
-              index === messages.length - 1 && message.streamingResponse
-                ? { ...message, body: streamedContent }
-                : message
-            ));
+            if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+              displayedContent = streamedContent;
+              updateDisplayedContent();
+            } else {
+              typewriterQueue += eventPayload.text;
+              startTypewriter();
+            }
           } else if (eventName === "summary" && typeof eventPayload.text === "string") {
             streamedSummary = eventPayload.text;
             setChatMessages((messages) => messages.map((message, index) =>
@@ -1299,13 +1338,14 @@ export function AgentPortal() {
           if (readerDone) break;
         }
         if (buffer.trim()) applyEvent(buffer);
+        await typewriterDone;
         if (!streamedContent.trim() && !streamedSummary.trim()) throw new Error("LLM Gateway가 빈 Streaming 응답을 반환했습니다.");
         if (done.conversation_id) setConversationId(done.conversation_id);
         setChatMessages((messages) => messages.map((message, index) =>
           index === messages.length - 1 && message.streamingResponse
             ? {
                 ...message,
-                body: [streamedSummary, streamedContent.trim()].filter(Boolean).join("\n\n"),
+                body: [streamedSummary, displayedContent.trim()].filter(Boolean).join("\n\n"),
                 streamingResponse: false,
                 streamingStage: undefined,
                 streamingSummary: undefined,
@@ -1323,6 +1363,7 @@ export function AgentPortal() {
               }
             : message
         ));
+        cancelTypewriter = undefined;
         if (done.clarification_required) {
           setNotice("최종 답변 생성 전입니다. 정확한 답변을 위해 보충 정보를 입력해 주세요.");
         } else {
@@ -1370,6 +1411,7 @@ export function AgentPortal() {
         setNotice(`${providerLabel} 답변을 준비했습니다. ${payload.latency_ms ?? 0}밀리초가 걸렸습니다.`);
       }
     } catch (error) {
+      cancelTypewriter?.();
       if (error instanceof DOMException && error.name === "AbortError") {
         setChatMessages((messages) => {
           const withoutStream = messages.filter((message) => !message.streamingResponse);
@@ -2102,7 +2144,7 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
             </div>
             <select id="chat-sensitivity" value={sensitivity} disabled={streaming || searchScope === "internet"} onChange={(event) => setSensitivity(event.target.value as ChatSensitivity)}>{searchScope === "internet" ? <option value="public">공개 · 인터넷</option> : <><option value="internal">내부 · Cloudflare</option><option value="confidential" disabled={!providerAvailability.local}>기밀 · 로컬</option></>}</select>
             <label className="control-inline"><span>답변 분량</span><select id="chat-answer-length" value={answerLength} disabled={streaming} onChange={(event) => setAnswerLength(event.target.value as ChatAnswerLength)}><option value="brief">핵심</option><option value="standard">표준</option><option value="detailed">심층</option></select></label>
-            <label className="control-inline"><span>형식</span><select id="chat-answer-format" value={answerFormat} disabled={streaming} onChange={(event) => setAnswerFormat(event.target.value as ChatAnswerFormat)}><option value="paragraph">문단</option><option value="bullets">목록</option><option value="table">표</option></select></label>
+            <label className="control-inline"><span>답변 형식</span><select id="chat-answer-format" value={answerFormat} disabled={streaming} onChange={(event) => setAnswerFormat(event.target.value as ChatAnswerFormat)}><option value="paragraph">문단형 · 해설</option><option value="bullets">목록형 · 실행</option><option value="table">표형 · 비교</option></select></label>
           </div>
           <div className="composer-input-row">
             <div className="composer-attach-slot">{canUpload && <><input ref={fileInputRef} className="sr-only" type="file" accept=".txt,.md,.csv,.json,.pdf,.jpg,.jpeg,.png,.webp,.svg,.gif,.bmp,text/plain,text/markdown,text/csv,application/json,application/pdf,image/*" onChange={(event) => void attachDocument(event.target.files?.[0])} /><button type="button" className="quiet-button composer-attach-btn" aria-label="멀티모달 첨부" disabled={!providerAvailability.rag} onClick={() => fileInputRef.current?.click()}>+</button></>}</div>
@@ -2470,6 +2512,96 @@ function AdminIssueSummary({ items, onSelect }: {
 
 type AdminSection = "overview" | "access" | "organization" | "governance" | "knowledge";
 
+type AdminOverviewData = {
+  generatedAt: string;
+  usage: {
+    users: { total: number; approved: number; pending: number; active30d: number };
+    conversations: { total: number; last30d: number };
+    agentRuns24h: { total: number; completed: number; failed: number };
+    llm24h: { total: number; totalTokens: number; averageLatencyMs: number | null };
+    retrieval24h: { total: number; averageLatencyMs: number | null };
+  };
+  management: {
+    assets: { total: number; indexed: number; segments: number };
+    failedIndexJobs: number;
+    pendingApprovals: number;
+    openFeedback: number;
+    enabledTools: number;
+    enabledSchedules: number;
+    openWorkItems: number;
+    auditEvents7d: number;
+  };
+};
+
+function AdminOverviewDashboard({
+  overview,
+  health,
+  qualityGates,
+  loading,
+  onSelect,
+}: {
+  overview?: AdminOverviewData;
+  health: { gateway?: { configured?: boolean }; rag?: { d1Configured?: boolean; r2Configured?: boolean; embeddingConfigured?: boolean; rerankConfigured?: boolean } };
+  qualityGates: Array<{ passed: boolean }>;
+  loading: boolean;
+  onSelect: (section: AdminSection) => void;
+}) {
+  const services = [
+    health.gateway?.configured,
+    health.rag?.d1Configured,
+    health.rag?.r2Configured,
+    health.rag?.embeddingConfigured,
+    health.rag?.rerankConfigured,
+  ];
+  const readyServices = services.filter(Boolean).length;
+  const passedGates = qualityGates.filter((gate) => gate.passed).length;
+  const value = (amount: number | null | undefined) => amount === null || amount === undefined ? "—" : amount.toLocaleString("ko-KR");
+  const latency = (amount: number | null | undefined) => amount === null || amount === undefined ? "데이터 없음" : `${Math.round(amount).toLocaleString("ko-KR")}ms 평균`;
+  const usage = overview?.usage;
+  const management = overview?.management;
+  const metricCards = [
+    ["전체 사용자", value(usage?.users.total), usage ? `승인 ${value(usage.users.approved)}명` : "집계 대기"],
+    ["최근 30일 활성 사용자", value(usage?.users.active30d), usage ? `승인 사용자 ${value(usage.users.approved)}명 기준` : "집계 대기"],
+    ["최근 30일 대화", value(usage?.conversations.last30d), usage ? `전체 ${value(usage.conversations.total)}건` : "집계 대기"],
+    ["최근 24시간 LLM 호출", value(usage?.llm24h.total), usage ? `${value(usage.llm24h.totalTokens)} tokens` : "집계 대기"],
+  ];
+
+  return (
+    <section className="admin-overview-dashboard" aria-labelledby="admin-overview-title">
+      <header className="admin-overview-dashboard__header">
+        <div><span className="section-kicker">PLATFORM OVERVIEW</span><h2 id="admin-overview-title">전체 플랫폼 현황</h2><p>사용 현황과 운영·관리 상태를 한 화면에서 확인합니다.</p></div>
+        <span className="admin-overview-dashboard__stamp">{loading ? "집계 중" : overview ? `기준 ${new Date(overview.generatedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}` : "데이터 없음"}</span>
+      </header>
+      <div className="admin-overview-dashboard__metrics">
+        {metricCards.map(([label, metric, detail]) => <article key={label} className="admin-overview-dashboard__metric"><span>{label}</span><strong>{metric}</strong><small>{detail}</small></article>)}
+      </div>
+      <div className="admin-overview-dashboard__columns">
+        <section className="admin-overview-dashboard__panel">
+          <div className="panel-title"><div><span className="section-kicker">USAGE</span><h3>플랫폼 사용 현황</h3></div><span className="admin-overview-dashboard__period">24시간 / 30일</span></div>
+          <div className="admin-overview-dashboard__rows">
+            <div><span>Agent 실행</span><strong>{value(usage?.agentRuns24h.total)}</strong><small>완료 {value(usage?.agentRuns24h.completed)} · 실패 {value(usage?.agentRuns24h.failed)}</small></div>
+            <div><span>RAG 검색</span><strong>{value(usage?.retrieval24h.total)}</strong><small>{latency(usage?.retrieval24h.averageLatencyMs)}</small></div>
+            <div><span>LLM 평균 응답</span><strong>{latency(usage?.llm24h.averageLatencyMs)}</strong><small>{value(usage?.llm24h.totalTokens)} tokens 사용</small></div>
+            <div><span>지식 자산</span><strong>{value(management?.assets.indexed)}</strong><small>Indexed / 전체 {value(management?.assets.total)} · {value(management?.assets.segments)} segments</small></div>
+          </div>
+        </section>
+        <section className="admin-overview-dashboard__panel">
+          <div className="panel-title"><div><span className="section-kicker">MANAGEMENT</span><h3>관리 현황</h3></div><span className="admin-overview-dashboard__period">실시간 집계</span></div>
+          <div className="admin-overview-dashboard__rows">
+            <button type="button" onClick={() => onSelect("access")}><span>접근 요청 대기</span><strong>{value(usage?.users.pending)}</strong><small>{usage?.users.pending ? "검토가 필요합니다" : "대기 요청 없음"}</small></button>
+            <button type="button" onClick={() => onSelect("knowledge")}><span>인덱싱 실패</span><strong>{value(management?.failedIndexJobs)}</strong><small>{management?.failedIndexJobs ? "재처리가 필요합니다" : "실패 작업 없음"}</small></button>
+            <button type="button" onClick={() => onSelect("governance")}><span>Tool 승인 대기</span><strong>{value(management?.pendingApprovals)}</strong><small>{management?.pendingApprovals ? "승인 검토가 필요합니다" : "대기 승인 없음"}</small></button>
+            <div><span>서비스·품질 준비도</span><strong>{readyServices}/5 · {passedGates}/{qualityGates.length || 0}</strong><small>연결 서비스 / 통과 Quality Gate</small></div>
+          </div>
+        </section>
+      </div>
+      <div className="admin-overview-dashboard__footer" aria-label="관리 리소스 요약">
+        <span>활성 Tool {value(management?.enabledTools)}</span><span>예약 작업 {value(management?.enabledSchedules)}</span><span>진행 업무 {value(management?.openWorkItems)}</span><span>미해결 피드백 {value(management?.openFeedback)}</span><span>최근 7일 감사 이벤트 {value(management?.auditEvents7d)}</span>
+      </div>
+    </section>
+  );
+}
+
 function AdminSectionNav({ activeSection, onSelect }: { activeSection: AdminSection; onSelect: (section: AdminSection) => void }) {
   const sections = [
     ["overview", "운영 개요"],
@@ -2517,6 +2649,7 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, { department: string; role: "user" | "manager" }>>({});
   const [reviewingEmail, setReviewingEmail] = useState("");
   const [health, setHealth] = useState<Health>({});
+  const [overview, setOverview] = useState<AdminOverviewData>();
   const [qualityGates, setQualityGates] = useState<QualityGate[]>([]);
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -2536,17 +2669,19 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
       return payload;
     };
     try {
-      const [assetData, jobData, accessData, healthData, qualityData] = await Promise.all([
+      const [assetData, jobData, accessData, healthData, qualityData, overviewData] = await Promise.all([
         checkedJson<{ assets?: AssetRow[] }>("/api/admin/assets"),
         checkedJson<{ jobs?: JobRow[] }>("/api/admin/index-jobs"),
         checkedJson<{ items?: AccessUser[] }>("/api/admin/access-requests"),
         checkedJson<Health>("/api/health"),
         checkedJson<{ gates?: QualityGate[] }>("/api/admin/quality-gates"),
+        checkedJson<AdminOverviewData>("/api/admin/overview"),
       ]);
       setAssets(assetData.assets || []);
       setJobs(jobData.jobs || []);
       setAccessRequests(accessData.items || []);
       setHealth(healthData);
+      setOverview(overviewData);
       setQualityGates(qualityData.gates || []);
       setLoadError("");
       setLastSyncedAt(new Date());
@@ -2629,10 +2764,8 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
     }
   };
 
-  const completedJobs = jobs.filter((job) => job.status === "completed").length;
   const failedJobs = jobs.filter((job) => job.status === "failed").length;
   const pendingAccess = accessRequests.filter((user) => user.status === "pending").length;
-  const segmentCount = assets.reduce((sum, asset) => sum + Number(asset.segment_count || 0), 0);
   const filteredAssets = assets.filter((asset) => {
     const query = assetQuery.trim().toLocaleLowerCase("ko-KR");
     if (query && !asset.title.toLocaleLowerCase("ko-KR").includes(query)) return false;

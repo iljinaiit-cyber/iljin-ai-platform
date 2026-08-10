@@ -4,8 +4,9 @@ import type { Principal } from "./identity";
 import { ensureAgentSchema } from "./agent-orchestrator";
 import { ensureConversationSchema } from "./conversations";
 import { ensureRagSchema } from "./rag";
+import { ensureSchedulePlanningSchema, listScheduleAlerts } from "./schedule-planning";
 
-export type ActivityTarget = "chat" | "search" | "tasks" | "approvals" | "documents";
+export type ActivityTarget = "chat" | "search" | "tasks" | "approvals" | "documents" | "schedule";
 
 export type ActivityItem = {
   id: string;
@@ -37,7 +38,7 @@ function compactQuestion(value: unknown) {
 
 export async function getActivityDashboard(principal: Principal, limit = 50) {
   await authorizeFeature(principal, "activity.read", "activity");
-  await Promise.all([ensureConversationSchema(), ensureAgentSchema(), ensureRagSchema()]);
+  await Promise.all([ensureConversationSchema(), ensureAgentSchema(), ensureRagSchema(), ensureSchedulePlanningSchema()]);
   const db = getD1();
   const safeLimit = Math.min(Math.max(limit, 1), 100);
   const canReview = principal.role === "admin" || principal.role === "manager";
@@ -160,6 +161,7 @@ export async function getActivityDashboard(principal: Principal, limit = 50) {
   const today = new Date().toISOString().slice(0, 10);
   const pendingApprovals = (approvals.results || []).filter((row) => row.status === "pending").length;
   const failedRuns = (runs.results || []).filter((row) => row.status === "failed").length;
+  const scheduleAlerts = await listScheduleAlerts(principal, 6);
   const notifications = [
     ...(pendingApprovals ? [{
       id: "pending-approvals",
@@ -175,6 +177,13 @@ export async function getActivityDashboard(principal: Principal, limit = 50) {
       description: "실행 상세에서 오류 코드와 Trace를 확인해 주세요.",
       target: "tasks" as ActivityTarget,
     }] : []),
+    ...scheduleAlerts.slice(0, 3).map((item) => ({
+      id: `schedule-${item.id}`,
+      level: item.alert_type === "overdue" ? "error" as const : "info" as const,
+      title: item.alert_type === "overdue" ? `기한 초과: ${item.title}` : `예정된 업무: ${item.title}`,
+      description: item.due_at ? new Date(item.due_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "업무 일정을 확인해 주세요.",
+      target: "schedule" as ActivityTarget,
+    })),
   ];
 
   const frequentSuggestions: SuggestedQuestion[] = (frequentQuestions.results || [])
