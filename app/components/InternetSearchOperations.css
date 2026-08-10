@@ -14,16 +14,16 @@
 .internet-search-operations__flow span {
   flex: 0 0 auto;
   border-radius: 999px;
-  background: #eaf3fb;
+  background: var(--accent-soft);
   padding: 6px 9px;
-  color: #174b7d;
+  color: var(--accent-ink);
   font-size: 10px;
   font-weight: 800;
 }
 
 .internet-search-operations__flow b,
 .internet-search-operations__route-item > b {
-  color: #87a0b8;
+  color: var(--line-strong);
   font-size: 11px;
 }
 
@@ -48,14 +48,14 @@
   min-width: 0;
   border: 1px solid var(--line, #d6e1ec);
   border-radius: 11px;
-  background: #f8fbfe;
+  background: var(--surface-soft);
   padding: 11px;
 }
 
 .internet-search-operations__route-item article[data-active="true"] {
-  border-color: #78aee1;
-  background: #eef7ff;
-  box-shadow: inset 3px 0 #0563c1;
+  border-color: var(--brand-500);
+  background: var(--brand-100);
+  box-shadow: inset 3px 0 var(--brand-700);
 }
 
 .internet-search-operations__route-item article[data-configured="false"] {
@@ -63,14 +63,14 @@
 }
 
 .internet-search-operations__route span {
-  color: var(--muted, #68788b);
+  color: var(--muted);
   font-size: 10px;
   font-weight: 800;
 }
 
 .internet-search-operations__route strong {
   overflow: hidden;
-  color: var(--ink, #0d1c2e);
+  color: var(--ink);
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -78,7 +78,7 @@
 
 .internet-search-operations__route small,
 .internet-search-operations__security {
-  color: var(--muted, #68788b);
+  color: var(--muted);
   font-size: 10px;
 }
 
@@ -107,7 +107,7 @@
   display: grid;
   gap: 3px;
   border-radius: 9px;
-  background: #f5f8fb;
+  background: var(--surface-soft);
   padding: 9px;
 }
 
@@ -116,22 +116,22 @@
 }
 
 .internet-search-operations__probe dt {
-  color: var(--muted, #68788b);
+  color: var(--muted);
   font-size: 10px;
 }
 
 .internet-search-operations__probe dd {
   margin: 0;
-  color: var(--ink, #0d1c2e);
+  color: var(--ink);
   font-size: 12px;
   font-weight: 750;
 }
 
 .internet-search-operations__error {
   border-radius: 9px;
-  background: #fff1f3;
+  background: var(--danger-soft);
   padding: 9px;
-  color: #a52a3a;
+  color: var(--danger);
   font-size: 12px;
 }
 
@@ -158,11 +158,11 @@
 }
 
 .internet-search-operations__attempts [data-state="success"] {
-  color: #087650;
+  color: var(--success);
 }
 
 .internet-search-operations__attempts [data-state="failed"] {
-  color: #b42336;
+  color: var(--danger);
 }
 
 .internet-search-operations .provider-actions {

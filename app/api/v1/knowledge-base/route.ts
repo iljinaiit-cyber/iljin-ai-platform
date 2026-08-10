@@ -19,26 +19,46 @@ export async function GET(request: Request) {
     await authorizeFeature(principal, "rag.search", "rag.search");
     const items = await listAssets(principal, 100);
     const counts = new Map<string, number>();
+    const statusCounts = new Map<string, number>();
+    const embeddingModels = new Map<string, number>();
     let totalSegments = 0;
+    let totalBytes = 0;
+    let vectorReadyDocuments = 0;
     let latestUpdatedAt: string | undefined;
     for (const a of items) {
       const src = a.source_type || "upload";
       counts.set(src, (counts.get(src) ?? 0) + 1);
+      statusCounts.set(a.status, (statusCounts.get(a.status) ?? 0) + 1);
+      if (a.embedding_model && a.embedding_dimensions) {
+        vectorReadyDocuments += 1;
+        embeddingModels.set(a.embedding_model, (embeddingModels.get(a.embedding_model) ?? 0) + 1);
+      }
       totalSegments += Number(a.segment_count || 0);
+      totalBytes += Number(a.original_size || 0);
       const updated = a.updated_at || "";
       if (updated && (!latestUpdatedAt || updated > latestUpdatedAt)) latestUpdatedAt = updated;
     }
-    const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+    const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
     const recentUpdates = items.filter((a) => a.updated_at >= since).slice(0, 12);
+    const indexedDocuments = statusCounts.get("indexed") ?? 0;
+    const embeddingModel = [...embeddingModels].sort((left, right) => right[1] - left[1])[0]?.[0];
+    const embeddingDimensions = items.find((item) => item.embedding_model === embeddingModel)?.embedding_dimensions;
     return ok({
       items,
       recent: recentUpdates,
       categories: [...counts].map(([sourceType, count]) => ({ sourceType, label: SOURCE_LABELS[sourceType] ?? sourceType, count })),
       summary: {
         totalDocuments: items.length,
+        indexedDocuments,
+        processingDocuments: (statusCounts.get("queued") ?? 0) + (statusCounts.get("indexing") ?? 0) + (statusCounts.get("processing") ?? 0),
+        failedDocuments: statusCounts.get("failed") ?? 0,
         totalSegments,
         recentUpdates: recentUpdates.length,
         sourceCount: counts.size,
+        totalBytes,
+        vectorCoverage: items.length ? Math.round((vectorReadyDocuments / items.length) * 100) : 0,
+        embeddingModel,
+        embeddingDimensions,
         latestUpdatedAt,
         department: principal.department,
       },

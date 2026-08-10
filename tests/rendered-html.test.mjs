@@ -563,7 +563,7 @@ test("uses the latest available dates and document versions as the default answe
   assert.match(portal, /updatedAt: formatSearchDate\(citation\.updatedAt/);
 });
 
-test("upgrades integrated search into an ACL-aware ILJIN Knowledge Base", async () => {
+test("upgrades integrated search into an ACL-aware ILJIN Knowledge Data Base", async () => {
   const [portal, route, governance, ragResults, css] = await Promise.all([
     readFile(new URL("app/AgentPortal.tsx", root), "utf8"),
     readFile(new URL("app/api/v1/knowledge-base/route.ts", root), "utf8"),
@@ -571,7 +571,7 @@ test("upgrades integrated search into an ACL-aware ILJIN Knowledge Base", async 
     readFile(new URL("app/components/RagResults.tsx", root), "utf8"),
     readFile(new URL("app/globals.css", root), "utf8"),
   ]);
-  assert.match(portal, /ILJIN Knowledge Base/);
+  assert.match(portal, /ILJIN Knowledge Data Base/);
   assert.match(portal, /\/api\/v1\/knowledge-base/);
   assert.match(portal, /최근 업데이트 지식/);
   assert.match(portal, /AI에게 질문/);
@@ -579,17 +579,25 @@ test("upgrades integrated search into an ACL-aware ILJIN Knowledge Base", async 
   assert.match(portal, /encodeURIComponent\(asset\.id\).*\/original/);
   assert.match(portal, /사내 지식/);
   assert.match(portal, /외부 참고자료/);
+  assert.match(portal, /knowledge-operational-strip/);
+  assert.match(portal, /knowledge-refresh-button/);
+  assert.match(portal, /knowledgeStatusLabel/);
   assert.match(route, /authorizeFeature\(principal, "rag\.search", "rag\.search"\)/);
   assert.match(route, /listAssets\(principal, 100\)/);
   assert.match(route, /totalDocuments/);
   assert.match(route, /totalSegments/);
   assert.match(route, /recentUpdates/);
+  assert.match(route, /vectorCoverage/);
+  assert.match(route, /indexedDocuments/);
+  assert.match(route, /failedDocuments/);
   assert.match(route, /latestUpdatedAt/);
-  assert.match(governance, /label: "ILJIN Knowledge Base"/);
+  assert.match(governance, /label: "ILJIN Knowledge Data Base"/);
   assert.match(ragResults, /지식 검색 결과/);
   assert.match(css, /\.knowledge-hero/);
   assert.match(css, /\.knowledge-stats/);
   assert.match(css, /\.knowledge-card-grid/);
+  assert.match(css, /\.knowledge-operational-strip/);
+  assert.match(css, /\.knowledge-refresh-button/);
 });
 
 test("uses Cloudflare AI, Database, and Storage terminology in user-facing surfaces", async () => {

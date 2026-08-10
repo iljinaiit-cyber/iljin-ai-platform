@@ -4,7 +4,7 @@
 .rag-results--loading { align-items: center; padding: 32px 0; color: var(--muted, #5b6b85); }
 .rag-results--empty,
 .rag-results--error { padding: 22px; border: 1px solid var(--line, #e3eaf5); border-radius: 12px; }
-.rag-results--error { border-color: #e0392c; background: #fdecea; }
+.rag-results--error { border-color: var(--danger); background: var(--danger-soft); }
 .rag-results-hint { font-size: 13px; color: var(--muted, #5b6b85); }
 
 .rag-spinner { width: 22px; height: 22px; border: 2px solid var(--line, #e3eaf5); border-top-color: var(--accent, #0f6fff); border-radius: 50%; animation: rag-spin .8s linear infinite; }
@@ -13,15 +13,15 @@
 
 .rag-results-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--muted, #5b6b85); }
 .rag-chip { padding: 1px 9px; border-radius: 999px; background: var(--accent-soft, #eaf3ff); color: var(--accent-ink, #0954cc); font-size: 11.5px; font-weight: 700; }
-.rag-chip--access { background: #e6f7ee; color: #1b7a49; }
+.rag-chip--access { background: var(--success-soft); color: var(--success); }
 
 .rag-result-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .rag-result { border: 1px solid var(--line, #e3eaf5); border-radius: 12px; padding: 14px 16px; }
 .rag-result-head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
 .rag-result-head h3 { margin: 0; font-size: 15.5px; flex: 1; min-width: 0; }
 .rag-badge { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft, #eaf3ff); color: var(--accent-ink, #0954cc); }
-.rag-badge--web { background: #fdf2dc; color: #8a5800; }
-.rag-badge--image, .rag-badge--video, .rag-badge--audio { background: #f1eafd; color: #5b3ba8; }
+.rag-badge--web { background: var(--warning-soft); color: var(--warning); }
+.rag-badge--image, .rag-badge--video, .rag-badge--audio { background: var(--accent-soft); color: var(--accent-ink); }
 .rag-score { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted, #5b6b85); }
 
 .rag-snippet { margin: 8px 0 0; font-size: 14px; line-height: 1.7; }

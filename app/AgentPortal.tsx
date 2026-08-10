@@ -293,17 +293,21 @@ type AccessState =
   | { state: "unrequested" | "pending" | "rejected"; user: AccessUser }
   | { state: "error"; message: string };
 
-type ThemeColor = "blue" | "violet" | "emerald" | "amber";
+type ThemeColor = "blue" | "violet" | "emerald" | "amber" | "rose" | "slate" | "indigo" | "cyan";
 
 const themeColorOptions: Array<{ value: ThemeColor; label: string }> = [
   { value: "blue", label: "기본 블루" },
   { value: "violet", label: "바이올렛" },
   { value: "emerald", label: "에메랄드" },
   { value: "amber", label: "앰버" },
+  { value: "rose", label: "로즈" },
+  { value: "slate", label: "슬레이트" },
+  { value: "indigo", label: "인디고" },
+  { value: "cyan", label: "시안" },
 ];
 
 function isThemeColor(value: string | null): value is ThemeColor {
-  return value === "blue" || value === "violet" || value === "emerald" || value === "amber";
+  return value === "blue" || value === "violet" || value === "emerald" || value === "amber" || value === "rose" || value === "slate" || value === "indigo" || value === "cyan";
 }
 
 type FollowUpQuestion = { question: string; intent: string };
@@ -482,7 +486,7 @@ type UseCase = {
 const navItems: Array<{ id: View; label: string; mark: string; req: string; permission: string; feature?: string; icon: string }> = [
   { id: "home", label: "홈", mark: "HM", req: "U-01", permission: "workspace.home", feature: "workspace.home", icon: '<path d="M3 12L12 3l9 9v9a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1v-9z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>' },
   { id: "chat", label: "AI Chat Agent", mark: "AI", req: "U-02", permission: "ai.chat", feature: "ai.chat", icon: '<path d="M21 11.5a8.38 8.38 0 0 1-9 8.5 8.5 8.5 0 0 1-3.6-.8L3 21l1.9-4.4A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3a8.38 8.38 0 0 1 8.5 8.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><circle cx="9" cy="11.5" r="1" fill="currentColor"/><circle cx="12.5" cy="11.5" r="1" fill="currentColor"/><circle cx="16" cy="11.5" r="1" fill="currentColor"/>' },
-  { id: "search", label: "ILJIN Knowledge Base", mark: "KB", req: "U-03", permission: "rag.search", feature: "rag.search", icon: '<circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="m21 21-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' },
+  { id: "search", label: "ILJIN Knowledge Data Base", mark: "KDB", req: "U-03", permission: "rag.search", feature: "rag.search", icon: '<circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="m21 21-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' },
   { id: "tasks", label: "작업", mark: "TK", req: "U-05", permission: "agent.run", feature: "agent", icon: '<path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' },
   { id: "approvals", label: "승인", mark: "AP", req: "U-06", permission: "tools.review", feature: "tool.approvals", icon: '<path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" fill="none"/>' },
   { id: "activity", label: "내 활동", mark: "MY", req: "U-07", permission: "activity.read", feature: "activity", icon: '<path d="M3 3v18h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M7 14l3-4 3 2 5-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' },
@@ -1684,8 +1688,8 @@ export function AgentPortal() {
               <label><span>이름</span><input value={profileDraft.displayName} onChange={(event) => setProfileDraft((draft) => ({ ...draft, displayName: event.target.value }))} maxLength={120} autoComplete="name" required /></label>
               <label><span>소속 부서</span><input value={profileDraft.department} onChange={(event) => setProfileDraft((draft) => ({ ...draft, department: event.target.value }))} maxLength={120} required /></label>
               <fieldset className="theme-picker">
-                <legend>플랫폼 테마 컬러</legend>
-                <div className="theme-choice-grid" role="radiogroup" aria-label="플랫폼 테마 컬러">
+                <legend>플랫폼 컬러 팔레트</legend>
+                <div className="theme-choice-grid" role="radiogroup" aria-label="플랫폼 컬러 팔레트">
                   {themeColorOptions.map((option) => (
                     <button key={option.value} type="button" className={`theme-choice theme-choice-${option.value} ${themeColor === option.value ? "selected" : ""}`} aria-pressed={themeColor === option.value} onClick={() => changeThemeColor(option.value)}>
                       <span className="theme-swatch" aria-hidden="true" />
@@ -2141,6 +2145,7 @@ type KnowledgeAsset = {
   title: string;
   source_type: string;
   mime_type: string;
+  status: string;
   classification: string;
   department_scope: string;
   version: number;
@@ -2158,13 +2163,27 @@ type KnowledgeOverview = {
   categories: Array<{ sourceType: string; label: string; count: number }>;
   summary: {
     totalDocuments: number;
+    indexedDocuments: number;
+    processingDocuments: number;
+    failedDocuments: number;
     totalSegments: number;
     recentUpdates: number;
     sourceCount: number;
+    totalBytes: number;
+    vectorCoverage: number;
+    embeddingModel?: string;
+    embeddingDimensions?: number;
     latestUpdatedAt?: string;
     department: string;
   };
 };
+
+function knowledgeStatusLabel(status: string) {
+  if (status === "indexed") return "색인 완료";
+  if (status === "queued" || status === "indexing" || status === "processing") return "처리 중";
+  if (status === "failed") return "검토 필요";
+  return status || "상태 미확인";
+}
 
 function SearchView({ type, setType, canUpload, onChat }: { type: string; setType: (type: string) => void; canUpload: boolean; onChat: (prompt: string, scope: SearchScope) => void }) {
   const [term, setTerm] = useState("");
@@ -2332,7 +2351,7 @@ function SearchView({ type, setType, canUpload, onChat }: { type: string; setTyp
     <div className="view-stack knowledge-base">
       <section className="knowledge-hero">
         <div className="knowledge-hero-heading">
-          <div><span className="knowledge-eyebrow">ILJIN ENTERPRISE KNOWLEDGE</span><h1>ILJIN Knowledge Base</h1><p>{scope === "internal" ? "질의를 재작성하고 Dense·BM25 결과를 RRF로 융합한 뒤 재정렬·근거 검증까지 수행합니다." : "사내 정보와 분리된 공개 웹에서 최신 외부 참고자료를 조사합니다."}</p></div>
+          <div><span className="knowledge-eyebrow">ILJIN ENTERPRISE KNOWLEDGE DATA</span><h1>ILJIN Knowledge Data Base</h1><p>{scope === "internal" ? "질의를 재작성하고 Dense·BM25 결과를 RRF로 융합한 뒤 재정렬·근거 검증까지 수행합니다." : "사내 정보와 분리된 공개 웹에서 최신 외부 참고자료를 조사합니다."}</p></div>
           <div className="knowledge-policy"><span>ACL</span><strong>권한 기반 지식 접근</strong><small>{overview?.summary.department || "소속 부서"} Context 적용</small></div>
         </div>
         <div className="search-scope-switch search-scope-switch--hero" role="group" aria-label="지식 검색 범위">
@@ -2345,6 +2364,13 @@ function SearchView({ type, setType, canUpload, onChat }: { type: string; setTyp
           <div><span>최근 갱신</span><strong>{overviewLoading ? "—" : (overview?.summary.recentUpdates || 0).toLocaleString("ko-KR")}</strong><small>최근 30일</small></div>
           <div><span>최종 업데이트</span><strong className="knowledge-date">{overview?.summary.latestUpdatedAt ? formatSearchDate(overview.summary.latestUpdatedAt) : "—"}</strong><small>최신 버전 우선</small></div>
         </div>}
+        {scope === "internal" && <div className="knowledge-operational-strip" aria-label="Knowledge Data Base 운영 상태">
+          <span><strong>{overview?.summary.indexedDocuments || 0}</strong> 색인 완료</span>
+          <span><strong>{overview?.summary.processingDocuments || 0}</strong> 처리 중</span>
+          <span><strong>{overview?.summary.failedDocuments || 0}</strong> 검토 필요</span>
+          <span><strong>{overview?.summary.vectorCoverage || 0}%</strong> 벡터 커버리지</span>
+          {overview?.summary.embeddingModel && <span className="knowledge-model">{overview.summary.embeddingModel} · {overview.summary.embeddingDimensions || "?"}D</span>}
+        </div>}
         <form className="search-form knowledge-search-form" onSubmit={runSearch}>
           <label className="sr-only" htmlFor="search-term">지식 검색어</label>
           <input id="search-term" value={term} onChange={(event) => setTerm(event.target.value)} placeholder={scope === "internal" ? "규정, 매뉴얼, 보고서, 설비 지식을 질문하세요" : "최신 외부 자료를 검색하세요"} />
@@ -2353,13 +2379,14 @@ function SearchView({ type, setType, canUpload, onChat }: { type: string; setTyp
         <div className="knowledge-quick-topics" aria-label="추천 검색어"><span>추천</span>{quickTopics.map((topic) => <button type="button" key={topic} onClick={() => void executeSearch(topic)}>{topic}</button>)}</div>
       </section>
       {overviewError && scope === "internal" && <p className="form-error" role="alert">{overviewError}</p>}
+      {scope === "internal" && <div className="knowledge-catalog-toolbar"><span>Knowledge Data Base 카탈로그</span><button className="knowledge-refresh-button" type="button" onClick={() => { setOverviewLoading(true); setCatalogRefreshKey((key) => key + 1); }} disabled={overviewLoading}>새로고침</button></div>}
       {scope === "internal" && <section className="knowledge-catalog" aria-labelledby="recent-knowledge-title">
         <div className="knowledge-section-heading"><div><span className="section-kicker">LATEST KNOWLEDGE</span><h2 id="recent-knowledge-title">최근 업데이트 지식</h2><p>접근 가능한 최신 버전의 문서와 원문 상태를 보여줍니다.</p></div><div className="knowledge-category-summary">{(overview?.categories || []).slice(0, 4).map((category) => <span key={category.sourceType}>{category.label} {category.count}</span>)}</div></div>
         {overviewLoading ? <div className="knowledge-catalog-loading" role="status">지식 카탈로그를 불러오고 있습니다.</div> : overview?.recent.length ? <div className="knowledge-card-grid">{overview.recent.slice(0, 6).map((asset) => <article className="knowledge-card" key={asset.id}>
           <div className="knowledge-card-top"><span className="knowledge-file-mark">{asset.mime_type.includes("csv") ? "DATA" : asset.mime_type.includes("json") ? "JSON" : "DOC"}</span><span className={`knowledge-classification knowledge-${asset.classification}`}>{asset.classification === "confidential" ? "기밀" : asset.classification === "public" ? "공개" : "사내"}</span></div>
-          <h3>{asset.title}</h3>
+           <div className={`knowledge-status knowledge-status-${asset.status}`}>{knowledgeStatusLabel(asset.status)}</div><h3>{asset.title}</h3>
           <p>{asset.segment_count.toLocaleString("ko-KR")}개 검색 단위 · v{asset.version}</p>
-          <dl><div><dt>최종 갱신</dt><dd>{formatSearchDate(asset.updated_at)}</dd></div><div><dt>범위</dt><dd>{asset.department_scope === "*" ? "전사" : asset.department_scope}</dd></div></dl>
+           <p className="knowledge-embedding-meta">{asset.embedding_model ? `${asset.embedding_model} · ${asset.embedding_dimensions || "?"}D` : "임베딩 대기"}</p><dl><div><dt>최종 갱신</dt><dd>{formatSearchDate(asset.updated_at)}</dd></div><div><dt>범위</dt><dd>{asset.department_scope === "*" ? "전사" : asset.department_scope}</dd></div></dl>
           <div className="knowledge-card-actions"><button type="button" onClick={() => void executeSearch(asset.title, "internal")}>이 문서 검색</button><button type="button" onClick={() => onChat(`${asset.title} v${asset.version}의 최신 근거를 바탕으로 핵심 내용과 실무 적용 사항을 설명해줘.`, "internal")}>AI에게 질문</button>{asset.original_uploaded_at && <a href={`/api/v1/assets/${encodeURIComponent(asset.id)}/original`}>원문</a>}</div>
         </article>)}</div> : <div className="knowledge-catalog-loading">접근 가능한 색인 문서가 없습니다.</div>}
       </section>}
@@ -2370,7 +2397,7 @@ function SearchView({ type, setType, canUpload, onChat }: { type: string; setTyp
           <p className="filter-scope"><strong>{scope === "internal" ? "사내 지식" : "외부 참고자료"}</strong><span>{scope === "internal" ? "Tenant · 부서 · 문서등급 ACL 적용" : "공개 웹 출처 · 내부정보 전송 금지"}</span></p>
           {scope === "internal" && <>
             <fieldset><legend>콘텐츠 유형</legend>{["전체", "문서", "이미지", "영상"].map((item) => <label key={item}><input type="radio" name="content-type" checked={type === item} onChange={() => setType(item)} />{item}</label>)}</fieldset>
-            <label className="filter-select">수집 소스<select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}><option value="">전체 소스</option><option value="upload">사용자 업로드</option><option value="requirements-seed">요구사항 기준 문서</option></select></label>
+            <label className="filter-select">수집 소스<select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}><option value="">전체 소스</option>{(overview?.categories || []).map((category) => <option key={category.sourceType} value={category.sourceType}>{category.label} ({category.count})</option>)}</select></label>
             <label className="filter-select">수집 기간<select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)}><option value="all">전체 기간</option><option value="7">최근 7일</option><option value="30">최근 30일</option><option value="365">최근 1년</option></select></label>
             <p className="filter-scope"><strong>부서</strong><span>로그인 사용자의 부서 ACL 자동 적용</span></p>
           </>}
@@ -2685,6 +2712,8 @@ interface ScheduledTaskItem {
   last_result: string | null;
 }
 
+type ScheduleFilter = "all" | "enabled" | "paused";
+
 const WEEKDAYS_KO = ["일", "월", "화", "수", "목", "금", "토"];
 const MONTHS_KO = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
 
@@ -2697,17 +2726,26 @@ function ScheduleView() {
   const [newPrompt, setNewPrompt] = useState("");
   const [newScheduleType, setNewScheduleType] = useState<"daily" | "weekly" | "monthly">("daily");
   const [newHour, setNewHour] = useState(9);
+  const [newMinute, setNewMinute] = useState(0);
   const [newWeekday, setNewWeekday] = useState(1);
   const [newMonthDay, setNewMonthDay] = useState(1);
   const [creating, setCreating] = useState(false);
+  const [filter, setFilter] = useState<ScheduleFilter>("all");
+  const [error, setError] = useState("");
+  const [actionTaskId, setActionTaskId] = useState<string | null>(null);
 
   const loadTasks = useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
       const res = await fetch("/api/v1/scheduled-tasks", { headers: { Accept: "application/json" } });
-      const data = await res.json() as { items?: ScheduledTaskItem[] };
+      const data = await res.json() as { items?: ScheduledTaskItem[]; error?: { message?: string } };
+      if (!res.ok) throw new Error(data.error?.message || "스케쥴을 불러오지 못했습니다.");
       setTasks(data.items || []);
-    } catch { setTasks([]); }
+    } catch (loadError) {
+      setTasks([]);
+      setError(loadError instanceof Error ? loadError.message : "스케쥴을 불러오지 못했습니다.");
+    }
     setLoading(false);
   }, []);
 
@@ -2715,46 +2753,74 @@ function ScheduleView() {
     let ignore = false;
     fetch("/api/v1/scheduled-tasks", { headers: { Accept: "application/json" } })
       .then(async (res) => {
-        if (res.ok && !ignore) {
-          const data = await res.json() as { items?: ScheduledTaskItem[] };
-          setTasks(data.items || []);
+        const data = await res.json() as { items?: ScheduledTaskItem[]; error?: { message?: string } };
+        if (!res.ok) throw new Error(data.error?.message || "스케쥴을 불러오지 못했습니다.");
+        if (!ignore) setTasks(data.items || []);
+      })
+      .catch((loadError) => {
+        if (!ignore) {
+          setTasks([]);
+          setError(loadError instanceof Error ? loadError.message : "스케쥴을 불러오지 못했습니다.");
         }
       })
-      .catch(() => { if (!ignore) setTasks([]); })
       .finally(() => { if (!ignore) setLoading(false); });
     return () => { ignore = true; };
   }, []);
 
   const cronFromForm = (): string => {
-    if (newScheduleType === "daily") return `0 ${newHour} * * *`;
-    if (newScheduleType === "weekly") return `0 ${newHour} * * ${newWeekday}`;
-    return `0 ${newHour} ${newMonthDay} * *`;
+    if (newScheduleType === "daily") return `${newMinute} ${newHour} * * *`;
+    if (newScheduleType === "weekly") return `${newMinute} ${newHour} * * ${newWeekday}`;
+    return `${newMinute} ${newHour} ${newMonthDay} * *`;
   };
 
   const handleCreate = async () => {
     if (!newPrompt.trim()) return;
     setCreating(true);
+    setError("");
     try {
-      await fetch("/api/v1/scheduled-tasks", {
+      const res = await fetch("/api/v1/scheduled-tasks", {
         method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ prompt: newPrompt.trim(), cron: cronFromForm() }),
       });
+      const data = await res.json() as { error?: { message?: string } };
+      if (!res.ok) throw new Error(data.error?.message || "예약 작업을 생성하지 못했습니다.");
       setNewPrompt(""); setShowCreateModal(false); void loadTasks();
-    } catch { /* ignore */ }
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "예약 작업을 생성하지 못했습니다.");
+    }
     setCreating(false);
   };
 
   const handleToggle = async (taskId: string, enabled: boolean) => {
-    await fetch("/api/v1/scheduled-tasks", {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: taskId, enabled: !enabled }),
-    });
-    void loadTasks();
+    setActionTaskId(taskId);
+    setError("");
+    try {
+      const res = await fetch("/api/v1/scheduled-tasks", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: taskId, enabled: !enabled }),
+      });
+      if (!res.ok) throw new Error("예약 작업 상태를 변경하지 못했습니다.");
+      await loadTasks();
+    } catch (toggleError) {
+      setError(toggleError instanceof Error ? toggleError.message : "예약 작업 상태를 변경하지 못했습니다.");
+    } finally {
+      setActionTaskId(null);
+    }
   };
 
   const handleDelete = async (taskId: string) => {
-    await fetch(`/api/v1/scheduled-tasks?id=${encodeURIComponent(taskId)}`, { method: "DELETE" });
-    void loadTasks();
+    if (!window.confirm("이 예약 작업을 삭제할까요?")) return;
+    setActionTaskId(taskId);
+    setError("");
+    try {
+      const res = await fetch(`/api/v1/scheduled-tasks?id=${encodeURIComponent(taskId)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("예약 작업을 삭제하지 못했습니다.");
+      await loadTasks();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "예약 작업을 삭제하지 못했습니다.");
+    } finally {
+      setActionTaskId(null);
+    }
   };
 
   const calendarDays = useMemo(() => {
@@ -2783,7 +2849,10 @@ function ScheduleView() {
   const isToday = (d: Date) => d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
   const isSelected = (d: Date) => selectedDate && d.getFullYear() === selectedDate.getFullYear() && d.getMonth() === selectedDate.getMonth() && d.getDate() === selectedDate.getDate();
   const selectedTasks = selectedDate ? tasksOnDate(selectedDate) : [];
-  const upcomingTasks = tasks.filter((t) => t.enabled).sort((a, b) => new Date(a.next_run_at).getTime() - new Date(b.next_run_at).getTime()).slice(0, 10);
+  const filteredTasks = tasks.filter((task) => filter === "all" || (filter === "enabled" ? task.enabled : !task.enabled));
+  const upcomingTasks = filteredTasks.slice().sort((a, b) => new Date(a.next_run_at).getTime() - new Date(b.next_run_at).getTime()).slice(0, 10);
+  const activeCount = tasks.filter((task) => task.enabled).length;
+  const pausedCount = tasks.length - activeCount;
 
   return (
     <div className="schedule-view">
@@ -2791,17 +2860,26 @@ function ScheduleView() {
         <div>
           <span className="section-kicker">SCHEDULE</span>
           <h1>스케줄 관리</h1>
-          <p className="schedule-subtitle">자연어로 예약 작업을 생성하고 달력에서 실행 계획을 확인하세요.</p>
+          <p className="schedule-subtitle">반복 작업의 다음 실행 시각과 최근 결과를 한 곳에서 확인하세요.</p>
         </div>
         <button type="button" className="schedule-create-btn" onClick={() => setShowCreateModal(true)}>+ 새 예약 작업</button>
       </div>
 
+      {error && <div className="schedule-alert" role="alert">{error}<button type="button" onClick={() => setError("")}>닫기</button></div>}
+
+      <section className="schedule-summary" aria-label="스케줄 요약">
+        <article><span>전체 일정</span><strong>{tasks.length}</strong><small>등록된 예약 작업</small></article>
+        <article><span>활성 일정</span><strong>{activeCount}</strong><small>다음 실행 예정</small></article>
+        <article><span>일시정지</span><strong>{pausedCount}</strong><small>실행하지 않음</small></article>
+        <article><span>다음 실행</span><strong>{activeCount ? new Date(tasks.filter((task) => task.enabled).sort((a, b) => new Date(a.next_run_at).getTime() - new Date(b.next_run_at).getTime())[0].next_run_at).toLocaleDateString("ko-KR", { month: "short", day: "numeric" }) : "—"}</strong><small>{activeCount ? "가장 가까운 실행일" : "활성 일정 없음"}</small></article>
+      </section>
+
       <div className="schedule-grid">
         <section className="schedule-calendar-panel">
           <div className="calendar-nav">
-            <button type="button" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))} aria-label="이전 달">‹</button>
-            <strong>{calendarMonth.getFullYear()}년 {MONTHS_KO[calendarMonth.getMonth()]}</strong>
-            <button type="button" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))} aria-label="다음 달">›</button>
+            <button type="button" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))} aria-label="이전 달">이전</button>
+            <div><strong>{calendarMonth.getFullYear()}년 {MONTHS_KO[calendarMonth.getMonth()]}</strong><button type="button" className="calendar-today-btn" onClick={() => { const d = new Date(); setCalendarMonth(new Date(d.getFullYear(), d.getMonth(), 1)); setSelectedDate(d); }}>오늘</button></div>
+            <button type="button" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))} aria-label="다음 달">다음</button>
           </div>
           <div className="calendar-grid">
             {WEEKDAYS_KO.map((wd) => <div key={wd} className="calendar-weekday">{wd}</div>)}
@@ -2826,30 +2904,40 @@ function ScheduleView() {
         </section>
 
         <aside className="schedule-side-panel">
+          <div className="schedule-panel-heading">
+            <div>
+              <span className="section-kicker">TASKS</span>
+              <h2>{selectedDate ? "선택한 날짜" : "예정된 작업"}</h2>
+            </div>
+            {!selectedDate && <span className="schedule-count">{upcomingTasks.length}개 표시</span>}
+          </div>
+          {!selectedDate && <div className="schedule-filters" role="group" aria-label="작업 필터">
+            {([["all", "전체"], ["enabled", "활성"], ["paused", "일시정지"]] as const).map(([value, label]) => <button key={value} type="button" className={filter === value ? "active" : ""} onClick={() => setFilter(value)}>{label}</button>)}
+          </div>}
           {selectedDate ? (
             <div className="schedule-day-detail">
-              <h2>{selectedDate.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}</h2>
+              <p className="schedule-selected-date">{selectedDate.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}</p>
               {selectedTasks.length === 0 ? <p className="empty-state">예약된 작업이 없습니다.</p> : selectedTasks.map((task) => (
                 <div key={task.id} className="schedule-task-card">
                   <div className="schedule-task-time">{new Date(task.next_run_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</div>
-                  <div className="schedule-task-body"><strong>{task.prompt}</strong><small>반복: {task.cron_expression}</small></div>
+                  <div className="schedule-task-body"><strong>{task.prompt}</strong><small>반복: {task.cron_expression}</small><small>{task.last_run_at ? `최근 실행 ${new Date(task.last_run_at).toLocaleString("ko-KR")}` : "아직 실행되지 않음"}</small></div>
+                  <div className="schedule-task-actions"><button type="button" disabled={actionTaskId === task.id} onClick={() => void handleToggle(task.id, task.enabled)}>{actionTaskId === task.id ? "처리 중" : "일시정지"}</button><button type="button" disabled={actionTaskId === task.id} onClick={() => void handleDelete(task.id)}>삭제</button></div>
                 </div>
               ))}
             </div>
           ) : (
             <div className="schedule-upcoming">
-              <h2>예정된 작업</h2>
               {loading ? <p className="empty-state">불러오는 중...</p> : upcomingTasks.length === 0 ? <p className="empty-state">예약된 작업이 없습니다.</p> : upcomingTasks.map((task) => (
                 <div key={task.id} className={`schedule-task-card ${task.enabled ? "" : "disabled"}`}>
                   <div className="schedule-task-time">{new Date(task.next_run_at).toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
                   <div className="schedule-task-body">
                     <strong>{task.prompt}</strong>
-                    <small>반복: {task.cron_expression}</small>
+                    <small>반복: {task.cron_expression} · {task.enabled ? "활성" : "일시정지"}</small>
                     {task.last_result && <details className="schedule-task-result"><summary>최근 실행 결과</summary><p>{task.last_result.slice(0, 500)}</p></details>}
                   </div>
                   <div className="schedule-task-actions">
-                    <button type="button" onClick={() => void handleToggle(task.id, task.enabled)} aria-label={task.enabled ? "비활성화" : "활성화"}>{task.enabled ? "ON" : "OFF"}</button>
-                    <button type="button" onClick={() => void handleDelete(task.id)} aria-label="삭제">×</button>
+                    <button type="button" disabled={actionTaskId === task.id} onClick={() => void handleToggle(task.id, task.enabled)} aria-label={task.enabled ? "일시정지" : "활성화"}>{actionTaskId === task.id ? "처리 중" : task.enabled ? "일시정지" : "활성화"}</button>
+                    <button type="button" disabled={actionTaskId === task.id} onClick={() => void handleDelete(task.id)} aria-label="삭제">삭제</button>
                   </div>
                 </div>
               ))}
@@ -2863,13 +2951,13 @@ function ScheduleView() {
           <div className="modal-content schedule-modal" onClick={(e) => e.stopPropagation()}>
             <h2>새 예약 작업</h2>
             <label className="form-label">실행할 작업 (프롬프트)<textarea value={newPrompt} onChange={(e) => setNewPrompt(e.target.value)} placeholder="예: 지난주 불량률 분석 리포트를 작성해줘" rows={3} /></label>
-            <div className="form-row">
+            <div className="form-row schedule-time-row">
               <label className="form-label">반복 주기<select value={newScheduleType} onChange={(e) => setNewScheduleType(e.target.value as "daily" | "weekly" | "monthly")}>
                 <option value="daily">매일</option><option value="weekly">매주</option><option value="monthly">매월</option>
               </select></label>
-              <label className="form-label">실행 시간<select value={newHour} onChange={(e) => setNewHour(Number(e.target.value))}>
+              <label className="form-label"><span>실행 시간</span><span className="schedule-time-selects"><select value={newHour} onChange={(e) => setNewHour(Number(e.target.value))} aria-label="실행 시">
                 {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{h.toString().padStart(2, "0")}시</option>)}
-              </select></label>
+              </select><select value={newMinute} onChange={(e) => setNewMinute(Number(e.target.value))} aria-label="실행 분">{[0, 15, 30, 45].map((minute) => <option key={minute} value={minute}>{minute.toString().padStart(2, "0")}분</option>)}</select></span></label>
             </div>
             {newScheduleType === "weekly" && (
               <label className="form-label">요일<select value={newWeekday} onChange={(e) => setNewWeekday(Number(e.target.value))}>

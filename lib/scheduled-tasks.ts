@@ -8,16 +8,20 @@ import { buildSkillContextBlock } from "./skills";
 
 export interface ScheduledTask {
   id: string;
-  tenantId: string;
-  ownerEmail: string;
+  tenant_id: string;
+  owner_email: string;
   prompt: string;
-  cronExpression: string;
-  lastRunAt: string | null;
-  nextRunAt: string;
+  cron_expression: string;
+  last_run_at: string | null;
+  next_run_at: string;
   enabled: boolean;
-  lastResult: string | null;
-  createdAt: string;
-  updatedAt: string;
+  last_result: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ScheduledTaskRow extends Omit<ScheduledTask, "enabled"> {
+  enabled: number;
 }
 
 export async function ensureScheduledTaskSchema() {
@@ -41,9 +45,6 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-const DAY_OF_WEEK_MAP: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
-const MONTH_MAP: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
-
 export function parseNaturalLanguageSchedule(text: string): { cronExpression: string; prompt: string } | null {
   const lower = text.toLowerCase().trim();
   const timeMatch = lower.match(/(\d{1,2})\s*(?:시|:00)/);
@@ -66,11 +67,19 @@ export function parseNaturalLanguageSchedule(text: string): { cronExpression: st
   return null;
 }
 
+export function isValidCronExpression(expression: string): boolean {
+  const parts = expression.trim().split(/\s+/);
+  if (parts.length !== 5) return false;
+  const ranges = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 7]];
+  return parts.every((part, index) => part === "*" || (/^\d+$/.test(part) && Number(part) >= ranges[index][0] && Number(part) <= ranges[index][1]));
+}
+
 export async function createScheduledTask(principal: Principal, prompt: string, cronExpression: string): Promise<string> {
   await ensureScheduledTaskSchema();
+  if (!prompt.trim() || !isValidCronExpression(cronExpression)) throw new Error("Invalid scheduled task input");
   const sid = taskId();
   const timestamp = nowIso();
-  const nextRun = computeNextRun(cronExpression);
+  const nextRun = computeNextRun(cronExpression.trim());
   await getD1().prepare(`INSERT INTO scheduled_tasks
     (id, tenant_id, owner_email, prompt, cron_expression, next_run_at, enabled, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`).bind(
@@ -82,8 +91,8 @@ export async function createScheduledTask(principal: Principal, prompt: string, 
 export async function listScheduledTasks(principal: Principal): Promise<ScheduledTask[]> {
   await ensureScheduledTaskSchema();
   const rows = await getD1().prepare(`SELECT * FROM scheduled_tasks WHERE tenant_id = ? AND owner_email = ? ORDER BY next_run_at ASC`)
-    .bind(principal.tenantId, principal.email).all<ScheduledTask>();
-  return rows.results || [];
+    .bind(principal.tenantId, principal.email).all<ScheduledTaskRow>();
+  return (rows.results || []).map((task) => ({ ...task, enabled: Boolean(task.enabled) }));
 }
 
 export async function toggleScheduledTask(principal: Principal, taskId: string, enabled: boolean): Promise<void> {
@@ -102,14 +111,14 @@ export async function runDueTasks(): Promise<{ executed: number; errors: number 
   await ensureScheduledTaskSchema();
   const now = nowIso();
   const rows = await getD1().prepare(`SELECT * FROM scheduled_tasks WHERE enabled = 1 AND next_run_at <= ?`)
-    .bind(now).all<ScheduledTask>();
+    .bind(now).all<ScheduledTaskRow>();
   const tasks = rows.results || [];
   let executed = 0;
   let errors = 0;
   for (const task of tasks) {
     const traceId = createTraceId();
     try {
-      const principal = { tenantId: task.tenantId, email: task.ownerEmail, department: "*", role: "user" } as Principal;
+      const principal = { tenantId: task.tenant_id, email: task.owner_email, department: "*", role: "user" } as Principal;
       const savedPrefs = await loadUserPreferences(principal).catch(() => ({} as Record<string, unknown>));
       const contextFileBlock = await loadContextFiles(principal).catch(() => "");
       const skillBlock = await buildSkillContextBlock(principal, task.prompt).catch(() => "");
@@ -128,13 +137,13 @@ export async function runDueTasks(): Promise<{ executed: number; errors: number 
         return { completion: await completeWithGateway([{ role: "user", content: task.prompt }], traceId, { sensitivity: "internal" }, "expert") };
       });
       const content = "completion" in result ? result.completion.content : "";
-      const nextRun = computeNextRun(task.cronExpression);
+      const nextRun = computeNextRun(task.cron_expression);
       await getD1().prepare("UPDATE scheduled_tasks SET last_run_at = ?, next_run_at = ?, last_result = ?, updated_at = ? WHERE id = ?")
         .bind(now, nextRun, content.slice(0, 5000), nowIso(), task.id).run();
       executed++;
     } catch (error) {
       console.error("[scheduled-tasks] run failed", { taskId: task.id, error: error instanceof Error ? error.message : String(error) });
-      const nextRun = computeNextRun(task.cronExpression);
+      const nextRun = computeNextRun(task.cron_expression);
       await getD1().prepare("UPDATE scheduled_tasks SET last_run_at = ?, next_run_at = ?, last_result = ?, updated_at = ? WHERE id = ?")
         .bind(now, nextRun, `오류: ${error instanceof Error ? error.message : String(error)}`, nowIso(), task.id).run();
       errors++;
@@ -143,25 +152,23 @@ export async function runDueTasks(): Promise<{ executed: number; errors: number 
   return { executed, errors };
 }
 
-function computeNextRun(cronExpression: string): string {
-  const parts = cronExpression.split(/\s+/);
-  if (parts.length !== 5) return new Date(Date.now() + 86400000).toISOString();
+export function computeNextRun(cronExpression: string, from = new Date()): string {
+  const parts = cronExpression.trim().split(/\s+/);
+  if (!isValidCronExpression(cronExpression)) return new Date(from.getTime() + 86400000).toISOString();
   const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-  const now = new Date();
-  const next = new Date(now);
-  next.setSeconds(0, 0);
-  const targetHour = hour === "*" ? now.getHours() : parseInt(hour);
-  const targetMinute = minute === "*" ? 0 : parseInt(minute);
-  next.setHours(targetHour, targetMinute, 0, 0);
-  if (next <= now) next.setDate(next.getDate() + 1);
-  if (dayOfWeek !== "*") {
-    const targetDow = parseInt(dayOfWeek);
-    while (next.getDay() !== targetDow) next.setDate(next.getDate() + 1);
+  const start = new Date(from);
+  start.setSeconds(0, 0);
+  start.setMinutes(start.getMinutes() + 1);
+
+  for (let offset = 0; offset <= 366 * 24 * 60; offset++) {
+    const candidate = new Date(start.getTime() + offset * 60_000);
+    const matchesMinute = minute === "*" || candidate.getMinutes() === Number(minute);
+    const matchesHour = hour === "*" || candidate.getHours() === Number(hour);
+    const matchesMonth = month === "*" || candidate.getMonth() + 1 === Number(month);
+    const matchesDayOfMonth = dayOfMonth === "*" || candidate.getDate() === Number(dayOfMonth);
+    const matchesDayOfWeek = dayOfWeek === "*" || candidate.getDay() === Number(dayOfWeek) || (dayOfWeek === "7" && candidate.getDay() === 0);
+    const dayMatches = dayOfMonth === "*" || dayOfWeek === "*" ? matchesDayOfMonth && matchesDayOfWeek : matchesDayOfMonth || matchesDayOfWeek;
+    if (matchesMinute && matchesHour && matchesMonth && dayMatches) return candidate.toISOString();
   }
-  if (dayOfMonth !== "*") {
-    const targetDom = parseInt(dayOfMonth);
-    next.setDate(targetDom);
-    if (next <= now) next.setMonth(next.getMonth() + 1);
-  }
-  return next.toISOString();
+  return new Date(start.getTime() + 86400000).toISOString();
 }

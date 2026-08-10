@@ -10,12 +10,11 @@
 .platform-console {
   display: grid;
   gap: 18px;
-  border: 1px solid var(--admin-line, #18202a);
-  border-left: 8px solid var(--admin-accent, #ff4f00);
-  border-radius: 8px;
-  background: var(--admin-surface, #fff);
-  color: var(--admin-ink, #18202a);
-  padding: clamp(18px, 3vw, 30px);
+  border: 1px solid var(--admin-line);
+  border-radius: 10px;
+  background: var(--admin-surface);
+  color: var(--admin-ink);
+  padding: 22px;
 }
 
 .platform-console__header,
@@ -31,7 +30,7 @@
 
 .platform-console__header > div:first-child > span,
 .platform-console__section-head > span {
-  color: var(--admin-accent, #ff4f00);
+  color: var(--admin-accent);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.14em;
@@ -61,10 +60,10 @@
 
 .platform-console button {
   min-height: 36px;
-  border: 1px solid var(--admin-line, #18202a);
+  border: 1px solid var(--admin-line);
   border-radius: 6px;
-  background: var(--admin-surface, #fff);
-  color: var(--admin-ink, #18202a);
+  background: var(--admin-surface);
+  color: var(--admin-ink);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
@@ -74,11 +73,11 @@
 }
 
 .platform-console button:hover:not(:disabled) {
-  border-color: var(--admin-accent, #ff4f00);
-  background: var(--admin-accent, #ff4f00);
-  color: #fff;
+  border-color: var(--admin-accent);
+  background: var(--admin-accent);
+  color: var(--surface);
 }
-.platform-console button:focus-visible { outline: 3px solid var(--admin-accent, #ff4f00); outline-offset: 2px; }
+.platform-console button:focus-visible { outline: 3px solid var(--admin-accent); outline-offset: 2px; }
 .platform-console button:disabled { cursor: wait; opacity: .56; }
 
 .platform-console__actions strong,
@@ -97,7 +96,7 @@
 .platform-console__list [data-state="failed"] { color: var(--danger); }
 
 .platform-console__message {
-  border-left: 3px solid var(--admin-accent, #ff4f00);
+  border-left: 3px solid var(--admin-accent);
   border-radius: 6px;
   background: var(--surface-soft);
   padding: 10px 12px;
@@ -117,7 +116,7 @@
 .platform-console__bindings > div:last-child { border-right: 0; }
 
 .platform-console__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
-.platform-console__grid > section { border-top: 2px solid var(--admin-line, #18202a); padding-top: 10px; }
+.platform-console__grid > section { border-top: 1px solid var(--line); padding-top: 14px; }
 .platform-console__list { display: grid; margin: 10px 0 0; padding: 0; list-style: none; }
 .platform-console__list li { align-items: flex-start; border-top: 1px solid var(--line); padding: 12px 0; }
 .platform-console__list li > div:first-child { display: grid; gap: 4px; min-width: 0; }

@@ -1,25 +1,25 @@
 /* globals.css 가 panel·status-pill·approval-card 를 이미 정의한다. 보완만 한다. */
 .agent-ops-note { font-size: 13.5px; color: var(--muted, #5b6b85); margin: 10px 0 0; }
-.agent-ops-error { font-size: 13.5px; color: #c0271b; margin: 10px 0 0; }
+.agent-ops-error { font-size: 13.5px; color: var(--danger); margin: 10px 0 0; }
 
 .agent-run-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .agent-run { border: 1px solid var(--line, #e3eaf5); border-radius: 10px; padding: 12px 14px; }
-.agent-run--failed { border-color: #e0392c; background: rgba(224, 57, 44, .04); }
-.agent-run--awaiting_approval { border-color: #d68c00; background: rgba(214, 140, 0, .05); }
+.agent-run--failed { border-color: var(--danger); background: color-mix(in srgb, var(--danger-soft) 72%, transparent); }
+.agent-run--awaiting_approval { border-color: var(--warning); background: color-mix(in srgb, var(--warning-soft) 72%, transparent); }
 .agent-run-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .agent-run-head strong { flex: 1; min-width: 0; }
 .agent-run-meta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; font-size: 12px; color: var(--muted, #5b6b85); }
-.agent-run-error { margin: 8px 0 0; font-size: 12.5px; color: #c0271b; }
+.agent-run-error { margin: 8px 0 0; font-size: 12.5px; color: var(--danger); }
 
 .approval-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .approval-head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
 .approval-head strong { flex: 1; min-width: 0; }
 .approval-meta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; font-size: 12px; color: var(--muted, #5b6b85); }
-.approval-input { margin: 9px 0 0; padding: 9px 11px; background: rgba(127,127,127,.07); border-radius: 8px; font-size: 11.5px; overflow-x: auto; }
+.approval-input { margin: 9px 0 0; padding: 9px 11px; background: color-mix(in srgb, var(--surface-soft) 78%, var(--line)); border-radius: 8px; font-size: 11.5px; overflow-x: auto; }
 .approval-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
-.approval-blocked { font-size: 12px; color: #8a5800; flex: 1; }
+.approval-blocked { font-size: 12px; color: var(--warning); flex: 1; }
 
-.risk-pill { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: #e6f7ee; color: #1b7a49; }
-.risk-R2 { background: #eaf3ff; color: #0954cc; }
-.risk-R3 { background: #fdf2dc; color: #a86b00; }
-.risk-R4 { background: #fdecea; color: #c0271b; }
+.risk-pill { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--success-soft); color: var(--success); }
+.risk-R2 { background: var(--accent-soft); color: var(--accent-ink); }
+.risk-R3 { background: var(--warning-soft); color: var(--warning); }
+.risk-R4 { background: var(--danger-soft); color: var(--danger); }

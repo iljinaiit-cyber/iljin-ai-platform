@@ -1,10 +1,10 @@
-import { createScheduledTask, deleteScheduledTask, listScheduledTasks, parseNaturalLanguageSchedule, toggleScheduledTask } from "../../../../lib/scheduled-tasks";
+import { createScheduledTask, deleteScheduledTask, isValidCronExpression, listScheduledTasks, parseNaturalLanguageSchedule, toggleScheduledTask } from "../../../../lib/scheduled-tasks";
 import { resolvePrincipal } from "../../../../lib/identity";
 import { fail, newTraceId, ok } from "../../_shared";
 
 export async function GET(request: Request) {
   const traceId = newTraceId();
-  try { return ok({ tasks: await listScheduledTasks(await resolvePrincipal(request)) }, traceId); }
+  try { return ok({ items: await listScheduledTasks(await resolvePrincipal(request)) }, traceId); }
   catch (error) { return fail(error, traceId); }
 }
 
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     const parsed = body.text ? parseNaturalLanguageSchedule(body.text) : null;
     const prompt = parsed?.prompt ?? body.prompt ?? "";
     const cron = parsed?.cronExpression ?? body.cron ?? "";
-    if (!prompt || !cron) {
+    if (!prompt.trim() || prompt.trim().length > 4000 || !isValidCronExpression(cron)) {
       return ok({ error: { code: "INVALID_INPUT", message: "prompt 와 cron(또는 해석 가능한 text)이 필요합니다.", trace_id: traceId } }, traceId, { status: 400 });
     }
     return ok({ id: await createScheduledTask(principal, prompt, cron) }, traceId, { status: 201 });
