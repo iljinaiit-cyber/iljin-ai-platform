@@ -33,7 +33,7 @@ const INTERNET_GROUNDING_MESSAGE_BUDGET = 7_600;
 const INTERNET_GROUNDING_SOURCE_LIMIT = 6;
 
 function maxOutputTokensFor(length: Body["answer_length"]) {
-  return Math.round(4_096 * (length === "brief" ? 0.35 : length === "detailed" ? 1 : 0.65));
+  return length === "brief" ? 600 : length === "detailed" ? 1_800 : 1_200;
 }
 
 function responsePreferenceInstruction(length: Body["answer_length"], format: Body["answer_format"]) {
@@ -135,8 +135,6 @@ export async function POST(request: Request) {
         internetGrounded = true;
         console.info(JSON.stringify({ event: "internet-grounded", traceId, providerPath: webSearch.providerPath }));
       } catch (error) {
-        // A search outage must not turn a general chat request into a blank screen.
-        // Invalid requests still retain their normal client-facing validation error.
         if (!(error instanceof RagError) || !["INTERNET_SEARCH_UNAVAILABLE", "INTERNET_SEARCH_NO_RESULTS"].includes(error.code)) throw error;
         completion = await completeWithGateway(
           [...messages, {

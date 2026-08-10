@@ -412,7 +412,7 @@ async function requestCompletion(
         timeoutMs,
       );
     } catch (error) {
-      if (attempt === 0) continue;
+      if (attempt === 0 && !(error instanceof Error && error.name === "AbortError")) continue;
       recordProviderFailure(provider);
       if (error instanceof Error && error.name === "AbortError") {
         throw new GatewayError(`${providerLabel(provider)} 응답 시간이 초과되었습니다.`, 504, "PROVIDER_TIMEOUT", true, provider);

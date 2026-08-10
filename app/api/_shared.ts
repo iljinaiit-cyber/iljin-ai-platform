@@ -5,6 +5,7 @@
 import { identityError } from "../../lib/identity";
 import { guardrailResponse } from "../../lib/guardrails";
 import { RagError } from "../../lib/rag";
+import { GatewayError } from "../../lib/llm-gateway";
 
 export const newTraceId = () => `trc_${crypto.randomUUID().replaceAll("-", "")}`;
 
@@ -33,6 +34,12 @@ export function fail(error: unknown, traceId: string) {
   if (error instanceof RagError) {
     return Response.json(
       { error: { code: error.code, message: error.message, trace_id: traceId } },
+      { status: error.status, headers: noStore(traceId) },
+    );
+  }
+  if (error instanceof GatewayError) {
+    return Response.json(
+      { error: { code: error.code, message: error.message, trace_id: traceId, retryable: error.retryable } },
       { status: error.status, headers: noStore(traceId) },
     );
   }
