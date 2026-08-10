@@ -5736,3 +5736,197 @@ td {
     max-height: 400px;
   }
 }
+
+.feedback-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.75fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.feedback-list-panel,
+.feedback-form-panel {
+  min-width: 0;
+  padding: 24px;
+}
+
+.feedback-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.feedback-refresh {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.feedback-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 22px 0 8px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+
+.feedback-filters button {
+  min-height: 34px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.feedback-filters button:hover,
+.feedback-filters button.selected {
+  border-color: var(--brand-200);
+  background: var(--brand-100);
+  color: var(--brand-700);
+}
+
+.feedback-post-list {
+  display: grid;
+}
+
+.feedback-post {
+  border-bottom: 1px solid var(--line);
+}
+
+.feedback-post:last-child { border-bottom: 0; }
+
+.feedback-post-summary {
+  display: grid;
+  width: 100%;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 17px 0;
+  text-align: left;
+}
+
+.feedback-post-summary:hover .feedback-post-main strong { color: var(--brand-700); }
+
+.feedback-category {
+  display: inline-flex;
+  min-height: 25px;
+  align-items: center;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.feedback-category-feature { background: #eaf5ff; color: #0563c1; }
+.feedback-category-bug { background: #fff0ef; color: #b53a35; }
+.feedback-category-question { background: #eef8f3; color: #15704f; }
+.feedback-category-other { background: #f1f3f6; color: #586678; }
+
+.feedback-post-main {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.feedback-post-main strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feedback-post-main small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feedback-status-received { background: #edf5ff; color: var(--brand-700); }
+.feedback-status-reviewing { background: #fff5e4; color: #9a5b0d; }
+.feedback-status-resolved { background: #e7f8f0; color: #0c754e; }
+
+.feedback-post-content {
+  margin: -3px 0 17px;
+  border-left: 2px solid var(--brand-200);
+  background: var(--surface-soft);
+  padding: 13px 16px;
+}
+
+.feedback-post-content p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.feedback-form-panel > div:first-child h2 {
+  margin: 5px 0 4px;
+  font-size: 21px;
+}
+
+.feedback-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+
+.feedback-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.feedback-form input,
+.feedback-form textarea,
+.feedback-form select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  color: var(--ink);
+  padding: 10px 11px;
+  font-size: 13px;
+}
+
+.feedback-form textarea { min-height: 142px; resize: vertical; }
+.feedback-form input::placeholder,
+.feedback-form textarea::placeholder { color: #9aa7b6; }
+
+.feedback-form-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.feedback-form-foot small { color: var(--muted); font-size: 10px; }
+.feedback-notice { margin: 12px 0 0; color: var(--success); font-size: 12px; font-weight: 750; }
+
+@media (max-width: 900px) {
+  .feedback-layout { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .feedback-list-panel,
+  .feedback-form-panel { padding: 18px; }
+  .feedback-post-summary { grid-template-columns: auto minmax(0, 1fr); }
+  .feedback-post-summary > .status-pill { grid-column: 2; justify-self: start; }
+}

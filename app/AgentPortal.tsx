@@ -1084,6 +1084,8 @@ export function AgentPortal() {
   const visibleUseCases = useMemo(() => useCases.filter((item) => item.scope === scope), [scope]);
   const currentLabel = navItems.find((item) => item.id === view)?.label ?? "홈";
 
+  const displayedLabel = view === "feedback" ? "사용자 의견" : currentLabel;
+
   const navigate = (next: View) => {
     setView(next);
     setMobileNavOpen(false);
@@ -1622,7 +1624,7 @@ export function AgentPortal() {
           <button ref={menuButtonRef} className="menu-button" type="button" aria-expanded={mobileNavOpen} aria-controls="mobile-navigation" onClick={() => setMobileNavOpen((open) => !open)}>메뉴</button>
           <div className="page-identity">
             <span>AI Works</span>
-            <strong>{currentLabel}</strong>
+            <strong>{displayedLabel}</strong>
           </div>
           <div className="topbar-actions">
             <time className="live-clock" dateTime={currentTime?.toISOString()} title="한국 표준시 (Asia/Seoul)">

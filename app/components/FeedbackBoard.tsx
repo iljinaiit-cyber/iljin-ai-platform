@@ -66,7 +66,10 @@ export function FeedbackBoard() {
     }
   };
 
-  useEffect(() => { void loadPosts(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void loadPosts(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const visiblePosts = useMemo(
     () => filter === "all" ? posts : posts.filter((post) => post.category === filter),
