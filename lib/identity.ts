@@ -476,6 +476,15 @@ export async function resolveAccessIdentity(request: Request): Promise<AccessIde
 
   let row = await findProfile(email);
   if (row) {
+    // An operator may add an existing account to ADMIN_EMAILS after it has
+    // already registered as a pending user. Reconcile that explicit server-side
+    // allowlist here so the account can recover without a second admin session.
+    if (adminEmails().has(email) && (row.status !== "approved" || row.role !== "admin")) {
+      await db.prepare(`UPDATE user_profiles SET status = 'approved', role = 'admin', approved_by = ?,
+        approved_at = COALESCE(approved_at, ?), rejection_reason = NULL, updated_at = ? WHERE email = ?`)
+        .bind("system:configured-admin", now, now, email).run();
+      row = await findProfile(email);
+    }
     if (usingDevelopmentIdentity && (row.status !== "approved" || row.role !== developmentRole)) {
       const role: UserRole = developmentRole;
       if (row.status !== "approved" || row.role !== role) {
