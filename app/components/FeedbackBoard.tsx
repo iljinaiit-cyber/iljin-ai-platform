@@ -33,7 +33,7 @@ type FeedbackPost = {
   comments: FeedbackComment[];
 };
 
-type Capabilities = { canModerate: boolean; canNotice: boolean };
+type Capabilities = { canModerate: boolean; canNotice: boolean; canEditAny: boolean };
 
 const text = {
   all: "\uC804\uCCB4",
@@ -46,6 +46,11 @@ const text = {
   reviewing: "\uAC80\uD1A0 \uC911",
   resolved: "\uC644\uB8CC",
   authorMine: "\uB0B4 \uAC8C\uC2DC\uAE00",
+  edit: "\uC218\uC815",
+  save: "\uC800\uC7A5",
+  cancel: "\uCDE8\uC18C",
+  noticeOn: "\uACF5\uC9C0 \uC9C0\uC815",
+  noticeOff: "\uACF5\uC9C0 \uD574\uC81C",
 };
 
 const categoryLabels: Record<FeedbackCategory, string> = {
@@ -88,7 +93,10 @@ export function FeedbackBoard() {
   const [commentSavingId, setCommentSavingId] = useState<string | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [noticeSaving, setNoticeSaving] = useState(false);
-  const [capabilities, setCapabilities] = useState<Capabilities>({ canModerate: false, canNotice: false });
+  const [editSavingId, setEditSavingId] = useState<string | null>(null);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState({ title: "", content: "", category: "other" as FeedbackCategory });
+  const [capabilities, setCapabilities] = useState<Capabilities>({ canModerate: false, canNotice: false, canEditAny: false });
   const [draft, setDraft] = useState({ category: "feature" as FeedbackCategory, title: "", content: "" });
   const [noticeDraft, setNoticeDraft] = useState({ title: "", content: "" });
 
@@ -225,6 +233,62 @@ export function FeedbackBoard() {
     }
   };
 
+  const startEdit = (post: FeedbackPost) => {
+    setEditingPostId(post.id);
+    setEditDraft({
+      title: post.title,
+      content: post.content,
+      category: post.category === "notice" ? "other" : post.category,
+    });
+    setError("");
+  };
+
+  const saveEdit = async (event: FormEvent, post: FeedbackPost) => {
+    event.preventDefault();
+    const title = editDraft.title.trim();
+    const content = editDraft.content.trim();
+    if (!title || !content || editSavingId) return;
+    setEditSavingId(post.id);
+    setError("");
+    try {
+      const response = await fetch(`/api/v1/feedback/${encodeURIComponent(post.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ title, content, category: editDraft.category }),
+      });
+      const payload = await response.json() as { item?: { title: string; content: string; category: FeedbackCategory; isNotice: boolean }; error?: { message?: string } };
+      if (!response.ok || !payload.item) throw new Error(payload.error?.message || "게시글 수정에 실패했습니다.");
+      setPosts((current) => current.map((item) => item.id === post.id ? { ...item, ...payload.item!, category: payload.item!.category, isNotice: Boolean(payload.item!.isNotice) } : item));
+      setEditingPostId(null);
+      setNotice("게시글이 수정되었습니다.");
+    } catch (editError) {
+      setError(editError instanceof Error ? editError.message : "게시글 수정에 실패했습니다.");
+    } finally {
+      setEditSavingId(null);
+    }
+  };
+
+  const toggleNotice = async (post: FeedbackPost) => {
+    if (editSavingId) return;
+    setEditSavingId(post.id);
+    setError("");
+    try {
+      const response = await fetch(`/api/v1/feedback/${encodeURIComponent(post.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ isNotice: !post.isNotice, category: post.isNotice ? "other" : "notice" }),
+      });
+      const payload = await response.json() as { item?: { title: string; content: string; category: FeedbackCategory; isNotice: boolean }; error?: { message?: string } };
+      if (!response.ok || !payload.item) throw new Error(payload.error?.message || "공지 설정 변경에 실패했습니다.");
+      setPosts((current) => current.map((item) => item.id === post.id ? { ...item, ...payload.item!, category: payload.item!.category, isNotice: Boolean(payload.item!.isNotice) } : item));
+      setNotice(payload.item.isNotice ? "게시글이 공지로 지정되었습니다." : "게시글의 공지 지정이 해제되었습니다.");
+    } catch (noticeError) {
+      setError(noticeError instanceof Error ? noticeError.message : "공지 설정 변경에 실패했습니다.");
+    } finally {
+      setEditSavingId(null);
+    }
+  };
+
   return (
     <div className="view-stack feedback-board">
       <div className="page-heading">
@@ -250,10 +314,17 @@ export function FeedbackBoard() {
                   <span className={`status-pill feedback-status-${post.status}`}>{statusLabels[post.status]}</span>
                 </button>
                 {isOpen && <div className="feedback-post-content">
-                  <p>{post.content}</p>
+                  {editingPostId === post.id ? <form className="feedback-edit-form" onSubmit={(event) => void saveEdit(event, post)}>
+                    <label>{"제목"}<input value={editDraft.title} onChange={(event) => setEditDraft((current) => ({ ...current, title: event.target.value }))} maxLength={120} required /></label>
+                    <label>{"분류"}<select value={editDraft.category} onChange={(event) => setEditDraft((current) => ({ ...current, category: event.target.value as FeedbackCategory }))}><option value="feature">{text.feature}</option><option value="bug">{text.bug}</option><option value="question">{text.question}</option><option value="other">{text.other}</option></select></label>
+                    <label>{"내용"}<textarea value={editDraft.content} onChange={(event) => setEditDraft((current) => ({ ...current, content: event.target.value }))} maxLength={5000} rows={6} required /></label>
+                    <div className="feedback-edit-actions"><button className="button button-primary" type="submit" disabled={editSavingId === post.id}>{text.save}</button><button className="button button-secondary" type="button" onClick={() => setEditingPostId(null)} disabled={editSavingId === post.id}>{text.cancel}</button></div>
+                  </form> : <p>{post.content}</p>}
                   <div className="feedback-post-toolbar">
                     <button type="button" className={`feedback-like-button ${post.likedByMe ? "liked" : ""}`} onClick={() => void toggleLike(post)} disabled={likeSavingId === post.id}>{"\uC88B\uC544\uC694"} {post.likeCount}</button>
                     <span className="feedback-comment-count">{"\uB313\uae00"} {post.commentCount}</span>
+                    {(post.isMine || capabilities.canEditAny) && <button type="button" className="feedback-like-button" onClick={() => startEdit(post)} disabled={editSavingId === post.id}>{text.edit}</button>}
+                    {capabilities.canNotice && <button type="button" className="feedback-like-button" onClick={() => void toggleNotice(post)} disabled={editSavingId === post.id}>{post.isNotice ? text.noticeOff : text.noticeOn}</button>}
                     {capabilities.canModerate && !post.isNotice && <span className="feedback-moderation-actions"><button className={post.status === "reviewing" ? "active" : ""} type="button" onClick={() => void updateStatus(post, "reviewing")} disabled={statusSavingId === post.id || post.status === "reviewing"}>{text.reviewing}</button><button className={post.status === "resolved" ? "active" : ""} type="button" onClick={() => void updateStatus(post, "resolved")} disabled={statusSavingId === post.id || post.status === "resolved"}>{text.resolved}</button></span>}
                   </div>
                   <div className="feedback-comments">

@@ -246,3 +246,49 @@ export async function updateFeedbackStatus(principal: Principal, postId: string,
     .bind(value, new Date().toISOString(), postId, principal.tenantId).run();
   return { id: postId, status: value };
 }
+
+export async function updateFeedbackPost(
+  principal: Principal,
+  postId: string,
+  input: { title?: unknown; content?: unknown; category?: unknown; isNotice?: unknown },
+) {
+  await ensureFeedbackSchema();
+  const db = getD1();
+  const current = await db.prepare(`SELECT id, author_email, title, content, category, is_notice
+    FROM feedback_posts WHERE id = ? AND tenant_id = ?`)
+    .bind(postId, principal.tenantId)
+    .first<{ id: string; author_email: string; title: string; content: string; category: FeedbackCategory; is_notice: number }>();
+  if (!current) throw new AuthError("게시글을 찾을 수 없습니다.", 400, "AUTH_INVALID_INPUT");
+
+  if (current.author_email !== principal.email && principal.role !== "admin") {
+    throw new AuthError("작성자 본인 또는 관리자만 게시글을 수정할 수 있습니다.", 403, "AUTH_FORBIDDEN");
+  }
+  if (input.isNotice !== undefined && typeof input.isNotice !== "boolean") {
+    throw new AuthError("공지 여부 값이 올바르지 않습니다.", 400, "AUTH_INVALID_INPUT");
+  }
+  const currentIsNotice = Boolean(current.is_notice);
+  const nextIsNotice = input.isNotice === undefined ? currentIsNotice : input.isNotice;
+  if (input.isNotice !== undefined && principal.role !== "admin") {
+    throw new AuthError("공지 지정과 해제는 관리자만 할 수 있습니다.", 403, "AUTH_FORBIDDEN");
+  }
+
+  const title = input.title === undefined ? current.title : String(input.title || "").trim().slice(0, 120);
+  const content = input.content === undefined ? current.content : String(input.content || "").trim().slice(0, 5000);
+  if (!title || !content) throw new AuthError("제목과 내용을 입력해 주세요.", 400, "AUTH_INVALID_INPUT");
+
+  let category = input.category === undefined ? current.category : input.category;
+  if (input.category !== undefined) assertCategory(category);
+  if (nextIsNotice) {
+    category = "notice";
+  } else if (category === "notice") {
+    category = "other";
+  }
+
+  const timestamp = new Date().toISOString();
+  await db.prepare(`UPDATE feedback_posts
+    SET title = ?, content = ?, category = ?, is_notice = ?, updated_at = ?
+    WHERE id = ? AND tenant_id = ?`)
+    .bind(title, content, category, nextIsNotice ? 1 : 0, timestamp, postId, principal.tenantId)
+    .run();
+  return { id: postId, title, content, category, isNotice: nextIsNotice };
+}

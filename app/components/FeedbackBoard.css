@@ -218,3 +218,42 @@
     flex-direction: column;
   }
 }
+
+.feedback-edit-form {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafcff;
+  padding: 14px;
+}
+
+.feedback-edit-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.feedback-edit-form input,
+.feedback-edit-form select,
+.feedback-edit-form textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 9px 10px;
+  font-size: 12px;
+}
+
+.feedback-edit-form textarea {
+  resize: vertical;
+}
+
+.feedback-edit-actions {
+  display: flex;
+  gap: 8px;
+}

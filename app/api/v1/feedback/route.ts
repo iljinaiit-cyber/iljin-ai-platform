@@ -13,6 +13,7 @@ export async function GET(request: Request) {
       capabilities: {
         canModerate: principal.role === "admin" || principal.role === "manager",
         canNotice: principal.role === "admin",
+        canEditAny: principal.role === "admin",
       },
     }, traceId);
   } catch (error) {
