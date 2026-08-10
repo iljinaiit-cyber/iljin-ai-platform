@@ -1,4 +1,4 @@
-import { completeWithRag, type WebRagCitation } from "../../../../../lib/rag";
+import { completeWithRag, RagError, type WebRagCitation } from "../../../../../lib/rag";
 import { completeWithGateway, type GatewaySensitivity } from "../../../../../lib/llm-gateway";
 import { getConversationAttachmentAssetIds, recordExchange } from "../../../../../lib/conversations";
 import { getConversationSensitivity, recordLlmInvocation } from "../../../../../lib/llm-telemetry";
@@ -115,22 +115,41 @@ export async function POST(request: Request) {
     let citations: Awaited<ReturnType<typeof completeWithRag>>["search"]["citations"] | WebRagCitation[];
     let followUpQuestions: Awaited<ReturnType<typeof completeWithRag>>["followUpQuestions"] = [];
 
+    let internetGrounded = false;
     if (body.search_mode === "internet") {
-      const webSearch = await searchInternet(userContent, { principal, traceId, limit: INTERNET_GROUNDING_SOURCE_LIMIT });
-      completion = await completeWithGateway(
-        [{ role: "user", content: buildInternetGroundingPrompt(userContent, webSearch, preference) }],
-        traceId,
-        { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength) },
-        body.reasoning_tier as Parameters<typeof completeWithRag>[0]["reasoningTier"],
-      );
-      citations = webSearch.results.slice(0, INTERNET_GROUNDING_SOURCE_LIMIT).map((item, index) => ({
-        id: `W${index + 1}`, assetId: item.url, segmentId: item.id, title: item.title, version: 1,
-        updatedAt: item.publishedAt, excerpt: item.snippet, score: item.score, lexicalScore: item.score,
-        denseScore: item.score, url: item.url, sourceType: "web" as const, source: item.source,
-        publishedAt: item.publishedAt,
-      }));
-      completion.content = ensureInternetCitationCoverage(completion.content, citations);
-      console.info(JSON.stringify({ event: "internet-grounded", traceId, providerPath: webSearch.providerPath }));
+      try {
+        const webSearch = await searchInternet(userContent, { principal, traceId, limit: INTERNET_GROUNDING_SOURCE_LIMIT });
+        completion = await completeWithGateway(
+          [{ role: "user", content: buildInternetGroundingPrompt(userContent, webSearch, preference) }],
+          traceId,
+          { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength) },
+          body.reasoning_tier as Parameters<typeof completeWithRag>[0]["reasoningTier"],
+        );
+        citations = webSearch.results.slice(0, INTERNET_GROUNDING_SOURCE_LIMIT).map((item, index) => ({
+          id: `W${index + 1}`, assetId: item.url, segmentId: item.id, title: item.title, version: 1,
+          updatedAt: item.publishedAt, excerpt: item.snippet, score: item.score, lexicalScore: item.score,
+          denseScore: item.score, url: item.url, sourceType: "web" as const, source: item.source,
+          publishedAt: item.publishedAt,
+        }));
+        completion.content = ensureInternetCitationCoverage(completion.content, citations);
+        internetGrounded = true;
+        console.info(JSON.stringify({ event: "internet-grounded", traceId, providerPath: webSearch.providerPath }));
+      } catch (error) {
+        // A search outage must not turn a general chat request into a blank screen.
+        // Invalid requests still retain their normal client-facing validation error.
+        if (!(error instanceof RagError) || !["INTERNET_SEARCH_UNAVAILABLE", "INTERNET_SEARCH_NO_RESULTS"].includes(error.code)) throw error;
+        completion = await completeWithGateway(
+          [...messages, {
+            role: "user",
+            content: `${userContent}\n\n${preference}\n\n실시간 웹 검색 결과를 가져올 수 없습니다. 최신 사실이라고 단정하지 말고, 일반 지식 범위에서 답변한 뒤 필요한 경우 사용자가 재검색할 수 있도록 안내하세요.`,
+          }],
+          traceId,
+          { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength) },
+          body.reasoning_tier as Parameters<typeof completeWithRag>[0]["reasoningTier"],
+        );
+        citations = [];
+        console.warn(JSON.stringify({ event: "internet-search-fallback", traceId, code: error.code }));
+      }
     } else {
       const ragResult = await completeWithRag({
         messages,
@@ -145,7 +164,7 @@ export async function POST(request: Request) {
       citations = ragResult.search.citations;
       followUpQuestions = ragResult.followUpQuestions;
     }
-    completion.content = ensureReferenceDateHeader(completion.content);
+    if (internetGrounded) completion.content = ensureReferenceDateHeader(completion.content);
     await recordLlmInvocation({ principal, conversationId: body.conversation_id || "", completion, sensitivity })
       .catch((error) => console.error(`[${traceId}] recordLlmInvocation`, error));
 

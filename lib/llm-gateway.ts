@@ -82,7 +82,9 @@ export class GatewayError extends Error {
 }
 
 const DEFAULT_LOCAL_MODEL = "gemma4:latest";
-export const DEFAULT_CLOUDFLARE_MODEL = "@cf/zai-org/glm-5.2";
+// Fast multilingual default for interactive chat. Operators can still override this
+// per environment when a heavier model is justified for a specific workload.
+export const DEFAULT_CLOUDFLARE_MODEL = "@cf/zai-org/glm-4.7-flash";
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 2_400;
 const MAX_OUTPUT_TOKENS = 4_096;

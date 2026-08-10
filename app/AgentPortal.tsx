@@ -848,7 +848,7 @@ export function AgentPortal() {
   const [conversationId, setConversationId] = useState<string>();
   const [chatSensitivity, setChatSensitivity] = useState<ChatSensitivity>("public");
   const [chatSearchScope, setChatSearchScope] = useState<SearchScope>("internet");
-  const [chatAnswerLength, setChatAnswerLength] = useState<ChatAnswerLength>("detailed");
+  const [chatAnswerLength, setChatAnswerLength] = useState<ChatAnswerLength>("standard");
   const [chatAnswerFormat, setChatAnswerFormat] = useState<ChatAnswerFormat>("paragraph");
   const [streaming, setStreaming] = useState(false);
   const [providerAvailability, setProviderAvailability] = useState({
