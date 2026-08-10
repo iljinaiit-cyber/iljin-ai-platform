@@ -11,6 +11,7 @@ export type FeedbackPost = {
   content: string;
   status: FeedbackStatus;
   authorName: string;
+  authorDepartment?: string;
   isMine: boolean;
   createdAt: string;
 };
@@ -23,6 +24,7 @@ type FeedbackRow = {
   status: FeedbackStatus;
   author_email: string;
   author_display_name: string;
+  author_department: string | null;
   created_at: string;
 };
 
@@ -64,6 +66,7 @@ function mapPost(row: FeedbackRow, email: string): FeedbackPost {
     content: row.content,
     status: row.status,
     authorName: row.author_display_name,
+    authorDepartment: row.author_department || undefined,
     isMine: row.author_email === email,
     createdAt: row.created_at,
   };
@@ -73,10 +76,16 @@ export async function listFeedbackPosts(principal: Principal, category?: string)
   await ensureFeedbackSchema();
   const db = getD1();
   const query = category
-    ? db.prepare(`SELECT id, category, title, content, status, author_email, author_display_name, created_at
-      FROM feedback_posts WHERE tenant_id = ? AND category = ? ORDER BY created_at DESC LIMIT 200`).bind(principal.tenantId, category)
-    : db.prepare(`SELECT id, category, title, content, status, author_email, author_display_name, created_at
-      FROM feedback_posts WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 200`).bind(principal.tenantId);
+    ? db.prepare(`SELECT f.id, f.category, f.title, f.content, f.status, f.author_email, f.author_display_name,
+        COALESCE(u.department, '') AS author_department, f.created_at
+      FROM feedback_posts f LEFT JOIN user_profiles u
+        ON u.tenant_id = f.tenant_id AND u.email = f.author_email
+      WHERE f.tenant_id = ? AND f.category = ? ORDER BY f.created_at DESC LIMIT 200`).bind(principal.tenantId, category)
+    : db.prepare(`SELECT f.id, f.category, f.title, f.content, f.status, f.author_email, f.author_display_name,
+        COALESCE(u.department, '') AS author_department, f.created_at
+      FROM feedback_posts f LEFT JOIN user_profiles u
+        ON u.tenant_id = f.tenant_id AND u.email = f.author_email
+      WHERE f.tenant_id = ? ORDER BY f.created_at DESC LIMIT 200`).bind(principal.tenantId);
   const result = await query.all<FeedbackRow>();
   return (result.results || []).map((row) => mapPost(row, principal.email));
 }
@@ -101,6 +110,7 @@ export async function createFeedbackPost(principal: Principal, input: { category
     content,
     status: "received" as const,
     authorName: principal.displayName,
+    authorDepartment: principal.department,
     isMine: true,
     createdAt: timestamp,
   } satisfies FeedbackPost;

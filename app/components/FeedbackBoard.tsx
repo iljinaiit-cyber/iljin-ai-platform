@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import "./FeedbackBoard.css";
 
 type FeedbackCategory = "feature" | "bug" | "question" | "other";
 type FeedbackStatus = "received" | "reviewing" | "resolved";
@@ -12,6 +13,7 @@ type FeedbackPost = {
   content: string;
   status: FeedbackStatus;
   authorName: string;
+  authorDepartment?: string;
   isMine: boolean;
   createdAt: string;
 };
@@ -123,7 +125,7 @@ export function FeedbackBoard() {
               return <article className={"feedback-post " + (isOpen ? "is-open" : "")} key={post.id}>
                 <button className="feedback-post-summary" type="button" aria-expanded={isOpen} onClick={() => setOpenPostId(isOpen ? null : post.id)}>
                   <span className={"feedback-category feedback-category-" + post.category}>{categoryLabels[post.category]}</span>
-                  <span className="feedback-post-main"><strong>{post.title}</strong><small>{post.authorName}{post.isMine ? " · 내 의견" : ""} · {formatDate(post.createdAt)}</small></span>
+                  <span className="feedback-post-main"><strong>{post.title}</strong><span className="feedback-author"><span className="feedback-author-avatar" aria-hidden="true">{post.authorName.slice(0, 1)}</span><span><b>{post.authorName}{post.isMine ? " · 내 의견" : ""}</b><small>{post.authorDepartment ? post.authorDepartment + " · " : ""}{formatDate(post.createdAt)}</small></span></span></span>
                   <span className={"status-pill feedback-status-" + post.status}>{statusLabels[post.status]}</span>
                 </button>
                 {isOpen && <div className="feedback-post-content"><p>{post.content}</p></div>}
