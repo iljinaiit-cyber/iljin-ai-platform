@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 type Dashboard = {
   permissions?: Array<{ key: string; label: string }>;
-  users?: Array<{ email: string; displayName?: string; department?: string; role: string; status?: string }>;
+  users?: Array<{ email: string; displayName?: string; department?: string; role: "user" | "manager" | "admin"; status?: "approved" | "rejected" }>;
   rolePermissions?: Array<{ role: string; permissions: Record<string, boolean> }>;
   features?: Array<{ key: string; enabled: boolean; label?: string }>;
   audit?: Array<{ id: string; actorEmail?: string; action: string; createdAt?: string }>;
@@ -14,6 +14,8 @@ export function AdminGovernance({ currentEmail }: { currentEmail: string }) {
   const [data, setData] = useState<Dashboard>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [userDrafts, setUserDrafts] = useState<Record<string, { displayName: string; department: string; role: "user" | "manager" | "admin"; status: "approved" | "rejected" }>>({});
+  const [savingEmail, setSavingEmail] = useState("");
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -49,6 +51,28 @@ export function AdminGovernance({ currentEmail }: { currentEmail: string }) {
     await load();
   };
 
+  const userDraft = (user: NonNullable<Dashboard["users"]>[number]) => userDrafts[user.email] || {
+    displayName: user.displayName || "",
+    department: user.department || "",
+    role: user.role,
+    status: user.status === "rejected" ? "rejected" as const : "approved" as const,
+  };
+
+  const saveUser = async (user: NonNullable<Dashboard["users"]>[number]) => {
+    const draft = userDraft(user);
+    if (!draft.displayName.trim() || !draft.department.trim()) {
+      setError("이름과 부서를 입력해 주세요.");
+      return;
+    }
+    setSavingEmail(user.email);
+    try {
+      await update({ action: "user", email: user.email, ...draft });
+      setUserDrafts((drafts) => { const next = { ...drafts }; delete next[user.email]; return next; });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "가입자 정보를 저장하지 못했습니다.");
+    } finally { setSavingEmail(""); }
+  };
+
   return (
     <section className="panel governance-panel">
       <div className="panel-title">
@@ -66,14 +90,17 @@ export function AdminGovernance({ currentEmail }: { currentEmail: string }) {
                 <caption className="sr-only">사용자 권한</caption>
                 <thead><tr><th>이메일</th><th>부서</th><th>역할</th><th>상태</th></tr></thead>
                 <tbody>
-                  {(data?.users ?? []).slice(0, 12).map((u) => (
-                    <tr key={u.email}>
-                      <td><strong>{u.displayName || u.email}</strong><small className="table-subtext">{u.email}</small></td>
-                      <td>{u.department || "—"}</td>
-                      <td>{u.role}</td>
-                      <td>{u.status || "—"}</td>
-                    </tr>
-                  ))}
+                  {(data?.users ?? []).map((u) => {
+                    const draft = userDraft(u);
+                    const saving = savingEmail === u.email;
+                    return <tr key={u.email}>
+                      <td><input className="table-input" value={draft.displayName} onChange={(event) => setUserDrafts((drafts) => ({ ...drafts, [u.email]: { ...draft, displayName: event.target.value } }))} aria-label={`${u.email} 이름`} /><small className="table-subtext">{u.email}</small></td>
+                      <td><input className="table-input" value={draft.department} onChange={(event) => setUserDrafts((drafts) => ({ ...drafts, [u.email]: { ...draft, department: event.target.value } }))} aria-label={`${u.email} 부서`} /></td>
+                      <td><select className="table-select" value={draft.role} onChange={(event) => setUserDrafts((drafts) => ({ ...drafts, [u.email]: { ...draft, role: event.target.value as typeof draft.role } }))} aria-label={`${u.email} 역할`}><option value="user">사용자</option><option value="manager">매니저</option><option value="admin">관리자</option></select></td>
+                      <td><select className="table-select" value={draft.status} onChange={(event) => setUserDrafts((drafts) => ({ ...drafts, [u.email]: { ...draft, status: event.target.value as typeof draft.status } }))} aria-label={`${u.email} 승인 상태`}><option value="approved">승인</option><option value="rejected">접근 중지</option></select></td>
+                      <td><button className="button button-secondary" type="button" disabled={saving} onClick={() => void saveUser(u)}>{saving ? "저장 중" : "저장"}</button></td>
+                    </tr>;
+                  })}
                 </tbody>
               </table>
             </div>

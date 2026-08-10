@@ -46,6 +46,7 @@ export async function POST(request: Request) {
         await updateManagedUser({
           principal,
           email: String(body.email ?? ""),
+          displayName: String(body.displayName ?? ""),
           role: body.role as Parameters<typeof updateManagedUser>[0]["role"],
           status: body.status as Parameters<typeof updateManagedUser>[0]["status"],
           department: String(body.department ?? ""),

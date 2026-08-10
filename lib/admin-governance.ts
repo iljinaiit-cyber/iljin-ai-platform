@@ -442,6 +442,7 @@ export async function updateFeatureSetting(input: {
 export async function updateManagedUser(input: {
   principal: Principal;
   email: string;
+  displayName: string;
   role: UserRole;
   status: "approved" | "rejected";
   department: string;
@@ -453,8 +454,8 @@ export async function updateManagedUser(input: {
     throw new AuthError("현재 로그인한 관리자 자신의 권한이나 승인 상태는 낮출 수 없습니다.", 403, "AUTH_FORBIDDEN");
   }
   const db = getD1();
-  const target = await db.prepare("SELECT role, status FROM user_profiles WHERE tenant_id = ? AND email = ?")
-    .bind(input.principal.tenantId, email).first<{ role: UserRole; status: string }>();
+  const target = await db.prepare("SELECT display_name, role, status, department FROM user_profiles WHERE tenant_id = ? AND email = ?")
+    .bind(input.principal.tenantId, email).first<{ display_name: string; role: UserRole; status: string; department: string }>();
   if (!target) throw new AuthError("관리할 사용자를 찾을 수 없습니다.", 400, "AUTH_INVALID_INPUT");
   if (target.role === "admin" && input.role !== "admin") {
     const admins = await db.prepare(`SELECT COUNT(*) AS count FROM user_profiles
@@ -466,11 +467,14 @@ export async function updateManagedUser(input: {
   }
   const department = input.department.trim().slice(0, 120);
   if (!department) throw new AuthError("부서를 입력해 주세요.", 400, "AUTH_INVALID_INPUT");
+  const displayName = input.displayName.trim().slice(0, 120);
+  if (!displayName) throw new AuthError("Display name is required.", 400, "AUTH_INVALID_INPUT");
   const now = new Date().toISOString();
-  await db.prepare(`UPDATE user_profiles SET role = ?, status = ?, department = ?,
+  await db.prepare(`UPDATE user_profiles SET display_name = ?, role = ?, status = ?, department = ?,
     approved_by = ?, approved_at = CASE WHEN ? = 'approved' THEN ? ELSE approved_at END,
     rejection_reason = CASE WHEN ? = 'rejected' THEN '관리자 계정 관리에서 접근이 중지되었습니다.' ELSE NULL END,
     updated_at = ? WHERE tenant_id = ? AND email = ?`).bind(
+      displayName,
       input.role,
       input.status,
       department,
@@ -490,8 +494,8 @@ export async function updateManagedUser(input: {
     traceId: input.traceId,
     details: {
       email,
-      before: { role: target.role, status: target.status },
-      after: { role: input.role, status: input.status, department },
+      before: { displayName: target.display_name, department: target.department, role: target.role, status: target.status },
+      after: { displayName, department, role: input.role, status: input.status },
     },
   });
 }
