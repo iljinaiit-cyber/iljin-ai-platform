@@ -347,6 +347,26 @@ export const messageFeedback = sqliteTable(
   (table) => [index("message_feedback_message_idx").on(table.messageId)],
 );
 
+export const feedbackPosts = sqliteTable(
+  "feedback_posts",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    authorEmail: text("author_email").notNull(),
+    authorDisplayName: text("author_display_name").notNull(),
+    category: text("category").notNull(),
+    title: text("title").notNull(),
+    content: text("content").notNull(),
+    status: text("status").notNull().default("received"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("feedback_posts_tenant_created_idx").on(table.tenantId, table.createdAt),
+    index("feedback_posts_tenant_category_idx").on(table.tenantId, table.category, table.createdAt),
+  ],
+);
+
 export const auditLogs = sqliteTable(
   "audit_logs",
   {
