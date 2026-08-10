@@ -53,13 +53,13 @@ function responsePreferenceInstruction(length: Body["answer_length"], format: Bo
 
 function boundedSourceContext(result: InternetSearchResponse) {
   return result.results.slice(0, INTERNET_GROUNDING_SOURCE_LIMIT).map((item, index) =>
-    `[W${index + 1}] ${item.title}\nURL: ${item.url}\n게시일: ${item.publishedAt || "미확인"}\n${item.snippet}`,
+    `[W${index + 1}] ${item.title}\n출처: ${item.source} (${item.sourceCategoryLabel})\nURL: ${item.url}\n게시일: ${item.publishedAt || "미확인"}\n${item.snippet}`,
   ).join("\n\n").slice(0, INTERNET_GROUNDING_MESSAGE_BUDGET);
 }
 
 function buildInternetGroundingPrompt(query: string, webSearch: InternetSearchResponse, preference: string) {
   const today = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "long" }).format(new Date());
-  return `현재 날짜(대한민국): ${today}\n검색 결과에 있는 사실만 사용하고 각 핵심 주장 뒤에 [W1] 형식으로 인용하세요. 최신 게시·갱신일을 우선하고 날짜를 확인할 수 없으면 명시하세요.\n${preference}${RELATED_QUESTION_INSTRUCTION}\n\n검색 근거:\n${boundedSourceContext(webSearch)}\n\n질문:\n${query}`;
+  return `현재 날짜(대한민국): ${today}\n검색 결과는 최신 사실을 확인하기 위한 참고 근거입니다. 최종 답변은 LLM이 질문의 의도와 검색 근거를 종합해 직접 작성하세요. 검색 결과의 문장·제목을 그대로 복사하거나 검색 결과 목록을 답변처럼 나열하지 마세요. 검색 근거로 확인 가능한 사실만 단정하고, 각 핵심 주장 뒤에 [W1] 형식으로 인용하세요. 최신 게시·갱신일을 우선하고 날짜를 확인할 수 없으면 명시하세요. Wikimedia/Wikipedia는 다른 출처가 없을 때만 보조 배경지식으로 사용하고, 그 한계를 밝혀야 합니다.\n${preference}${RELATED_QUESTION_INSTRUCTION}\n\n검색 근거:\n${boundedSourceContext(webSearch)}\n\n질문:\n${query}`;
 }
 
 function buildConversationAwareInternetPrompt(
@@ -82,6 +82,19 @@ function ensureReferenceDateHeader(content: string) {
   if (/^> 기준일:/m.test(content)) return content;
   const date = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "long" }).format(new Date());
   return `> 기준일: ${date} · 검색 및 접근 가능 문서의 최신 확인 버전 기준\n\n${content}`;
+}
+
+function splitStreamingAnswer(content: string) {
+  const lines = content.trim().split(/\r?\n/);
+  const summaryIndex = lines.findIndex((line) => {
+    const value = line.trim();
+    return value && !/^>\s*기준일:/.test(value) && !/^#{1,3}\s+/.test(value);
+  });
+  if (summaryIndex < 0) return { summary: "", remainder: content };
+  return {
+    summary: lines[summaryIndex].trim(),
+    remainder: [...lines.slice(0, summaryIndex), ...lines.slice(summaryIndex + 1)].join("\n").trim(),
+  };
 }
 
 function buildFallbackRelatedQuestions(query: string, webSearch: InternetSearchResponse): FollowUpQuestion[] {
@@ -263,10 +276,14 @@ export async function POST(request: Request) {
     // 동일하므로 Provider 실시간 스트림으로 바꿔도 이 라우트만 고치면 된다.
     // ponytail: 사후 분할, 상한 = 첫 토큰까지 전체 생성 대기. passthrough 로 이관 예정.
     const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(sse("stage", { stage: "답변 생성", tokens: completion.usage?.completion_tokens }));
+      async start(controller) {
+        const { summary, remainder } = splitStreamingAnswer(completion.content ?? "");
+        controller.enqueue(sse("stage", { stage: "답변 요약 준비 중", tokens: completion.usage?.completion_tokens }));
+        if (summary) controller.enqueue(sse("summary", { text: summary }));
+        if (summary) await new Promise((resolve) => setTimeout(resolve, 120));
+        controller.enqueue(sse("stage", { stage: "상세 답변 생성 중", tokens: completion.usage?.completion_tokens }));
         for (const citation of citations) controller.enqueue(sse("citation", citation));
-        const text = completion.content ?? "";
+        const text = summary ? remainder : completion.content ?? "";
         for (let i = 0; i < text.length; i += 48) {
           controller.enqueue(sse("delta", { text: text.slice(i, i + 48) }));
         }

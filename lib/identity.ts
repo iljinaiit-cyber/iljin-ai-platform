@@ -554,6 +554,48 @@ export async function resolveAccessIdentity(request: Request): Promise<AccessIde
   return toAccessIdentity(row);
 }
 
+export async function updateOwnProfile(input: {
+  request: Request;
+  displayName: string;
+  department: string;
+  traceId: string;
+}) {
+  const identity = await resolveAccessIdentity(input.request);
+  await ensureIdentitySchema();
+  const existing = await findProfile(identity.email);
+  if (!existing || existing.tenant_id !== identity.tenantId) {
+    throw new AuthError("사용자 프로필을 찾을 수 없습니다.", 403, "AUTH_FORBIDDEN");
+  }
+
+  const displayName = input.displayName.trim().slice(0, 120);
+  const department = input.department.trim().slice(0, 120);
+  if (!displayName || !department) {
+    throw new AuthError("이름과 소속 부서를 입력해 주세요.", 400, "AUTH_INVALID_INPUT");
+  }
+
+  const now = new Date().toISOString();
+  const db = getD1();
+  await db.batch([
+    db.prepare(`UPDATE user_profiles SET display_name = ?, department = ?, updated_at = ?
+      WHERE email = ? AND tenant_id = ?`).bind(displayName, department, now, identity.email, identity.tenantId),
+    db.prepare(`INSERT INTO audit_logs
+      (id, tenant_id, actor_email, action, resource_type, resource_id, trace_id, outcome, details_json, created_at)
+      VALUES (?, ?, ?, 'profile.updated', 'user_profile', ?, ?, 'success', ?, ?)`).bind(
+        `aud_${crypto.randomUUID().replaceAll("-", "")}`,
+        identity.tenantId,
+        identity.email,
+        identity.email,
+        input.traceId,
+        JSON.stringify({ displayName, department }),
+        now,
+      ),
+  ]);
+
+  const updated = await findProfile(identity.email);
+  if (!updated) throw new Error("사용자 프로필을 불러오지 못했습니다.");
+  return toAccessIdentity(updated);
+}
+
 export async function resolvePrincipal(request: Request): Promise<Principal> {
   const identity = await resolveAccessIdentity(request);
   if (identity.status === "unrequested") {

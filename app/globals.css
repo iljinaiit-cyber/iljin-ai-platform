@@ -645,13 +645,13 @@ h3 {
 
 .live-clock-date {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 15px;
   font-weight: 700;
 }
 
 .live-clock strong {
   min-width: 65px;
-  font-size: 14px;
+  font-size: 20px;
   letter-spacing: 0.02em;
 }
 
@@ -729,6 +729,50 @@ h3 {
   gap: 10px;
   padding: 4px 8px;
   text-align: left;
+}
+
+.profile-button:hover {
+  background: var(--surface-soft);
+}
+
+.logout-button {
+  display: inline-flex;
+  width: 34px;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  overflow: hidden;
+  transition: width 160ms ease, border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.logout-button:hover,
+.logout-button:focus-visible {
+  width: 82px;
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--ink-soft);
+}
+
+.logout-label {
+  max-width: 0;
+  opacity: 0;
+  white-space: nowrap;
+  transition: max-width 160ms ease, opacity 160ms ease;
+}
+
+.logout-button:hover .logout-label,
+.logout-button:focus-visible .logout-label {
+  max-width: 42px;
+  opacity: 1;
 }
 
 .avatar {
@@ -965,23 +1009,6 @@ h3 {
   justify-content: space-between;
   gap: 8px;
   flex-shrink: 0;
-}
-
-.conversation-context-status {
-  display: grid;
-  gap: 5px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--brand-500);
-  background: var(--surface-soft);
-  padding: 12px 14px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.conversation-context-status strong {
-  color: var(--ink);
-  font-size: 13px;
 }
 
 .section-heading h2,
@@ -1739,6 +1766,29 @@ h3 {
   color: var(--ink);
   line-height: 1.85;
   font-size: 15px;
+}
+
+.answer-summary {
+  margin-bottom: 8px;
+  border-left: 3px solid var(--brand-600);
+  border-radius: 4px 10px 10px 4px;
+  background: #eef6ff;
+  padding: 10px 12px;
+  color: var(--ink);
+}
+
+.answer-summary > span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--brand-700);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.answer-summary p {
+  margin: 0;
+  line-height: 1.55;
+  font-size: 14px;
 }
 
 .message-content > :first-child {
@@ -4115,7 +4165,7 @@ td {
 
   .live-clock strong {
     min-width: 60px;
-    font-size: 12px;
+    font-size: 16px;
   }
 
   .page-identity strong {
@@ -5479,6 +5529,60 @@ td {
   justify-content: flex-end;
   gap: 12px;
   margin-top: 20px;
+}
+
+.profile-modal {
+  max-width: 460px;
+}
+
+.profile-modal-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.profile-modal-heading h2 {
+  margin-top: 6px;
+}
+
+.profile-form {
+  display: grid;
+  gap: 16px;
+}
+
+.profile-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.profile-form input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.profile-form input:focus {
+  outline: 3px solid rgba(0, 105, 202, 0.16);
+  border-color: var(--brand-500);
+}
+
+.profile-form input:disabled {
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.profile-form .modal-actions {
+  margin-top: 4px;
 }
 
 @media (max-width: 1080px) {

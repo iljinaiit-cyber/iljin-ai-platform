@@ -882,6 +882,7 @@ function providerOrder(runtime: RuntimeEnv) {
  * 배치 크기를 상한으로 묶어 두 극단 사이에서 다양성과 비용을 함께 잡는다.
  */
 const MAX_PARALLEL_PROVIDERS = 3;
+const REFERENCE_FALLBACK_PROVIDER: InternetSearchProvider = "wikimedia";
 
 async function runProviderBatch(
   providerIds: InternetSearchProvider[],
@@ -933,7 +934,11 @@ async function executeInternetSearch(plan: InternetSearchPlan, limit: number) {
   const successfulProviders: InternetSearchProvider[] = [];
   const minimumResults = Math.min(4, limit);
 
+  // Wikimedia is a reference-only safety net. Running it in the same batch as
+  // web providers lets its high-scoring encyclopedia extracts crowd out live
+  // sources before the final rerank.
   const configuredOrder = providerOrder(runtime).filter((providerId) => {
+    if (providerId === REFERENCE_FALLBACK_PROVIDER) return false;
     const configured = PROVIDER_ADAPTERS[providerId].configured(runtime);
     if (!configured) {
       attempts.push({
@@ -960,7 +965,25 @@ async function executeInternetSearch(plan: InternetSearchPlan, limit: number) {
     if (rerankResults(plan.searchQuery, collected, limit).length >= minimumResults) break;
   }
 
-  const results = rerankResults(plan.searchQuery, collected, limit);
+  let results = rerankResults(plan.searchQuery, collected, limit);
+  if (!results.length) {
+    const fallbackStartedAt = Date.now();
+    const fallback = await runProviderBatch(
+      [REFERENCE_FALLBACK_PROVIDER],
+      plan,
+      limit,
+      runtime,
+    );
+    const fallbackResult = fallback[0];
+    attempts.push({
+      ...fallbackResult.attempt,
+      latencyMs: Date.now() - fallbackStartedAt,
+      detail: `${fallbackResult.attempt.detail} (reference fallback)`,
+    });
+    collected.push(...fallbackResult.results);
+    if (fallbackResult.results.length) successfulProviders.push(REFERENCE_FALLBACK_PROVIDER);
+    results = rerankResults(plan.searchQuery, collected, limit);
+  }
   // 실제로 최종 결과에 살아남은 출처만 "사용됨"으로 센다 — 응답은 왔지만
   // 중복·저관련으로 rerankResults 에서 전부 걸러진 Provider 는 제외한다.
   const providersUsed = [...new Set(results.map(providerOfResult).filter((id): id is InternetSearchProvider => Boolean(id)))];

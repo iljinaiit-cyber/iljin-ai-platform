@@ -1,4 +1,4 @@
-import { resolveAccessIdentity } from "../../../../lib/identity";
+import { resolveAccessIdentity, updateOwnProfile } from "../../../../lib/identity";
 import { fail, newTraceId, ok } from "../../_shared";
 
 // 승인 대기·거절 상태도 200 으로 돌려준다(openapi 명시). 업무 API 접근 차단은
@@ -8,6 +8,22 @@ export async function GET(request: Request) {
   const traceId = newTraceId();
   try {
     return ok({ user: await resolveAccessIdentity(request) }, traceId);
+  } catch (error) {
+    return fail(error, traceId);
+  }
+}
+
+export async function PATCH(request: Request) {
+  const traceId = newTraceId();
+  try {
+    const body = await request.json() as { displayName?: string; department?: string };
+    const user = await updateOwnProfile({
+      request,
+      displayName: body.displayName ?? "",
+      department: body.department ?? "",
+      traceId,
+    });
+    return ok({ user }, traceId);
   } catch (error) {
     return fail(error, traceId);
   }

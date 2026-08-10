@@ -129,3 +129,20 @@ test("첫 배치가 전부 실패해도 다음 배치(무료 폴백)로 계속 �
   assert.ok(response.providerPath.some((a) => a.provider === "exa" && a.status === "failed"));
   assert.equal(response.provider, "duckduckgo");
 });
+
+test("Wikimedia는 실시간 출처가 없을 때만 reference fallback으로 사용한다", async (t) => {
+  if (!requireBundle(t)) return;
+  globalThis.__ILJIN_RUNTIME_ENV__ = {};
+  const ddgHtml = '<a class="result__a" href="https://live-source.example/x">실시간 출처</a>'
+    + '<span class="result__snippet">현재 확인 가능한 실시간 검색 결과입니다.</span>';
+  const calls = stubFetch([
+    ["html.duckduckgo.com", () => ({ ok: true, headers: { get: () => "text/html" }, text: async () => ddgHtml })],
+    ["wikipedia.org/w/api.php", () => jsonResponse({ query: { pages: [{ pageid: 1, title: "Wikipedia", fullurl: "https://ko.wikipedia.org/wiki/Test", extract: "백과사전 본문" }] } })],
+  ]);
+
+  const response = await internetSearch.searchInternet("현재 확인할 내용", { principal, traceId: "TRC-4", limit: 6 });
+
+  assert.equal(response.provider, "duckduckgo");
+  assert.ok(response.results.every((result) => result.source !== "ko.wikipedia.org"));
+  assert.ok(!calls.some((url) => url.includes("wikipedia.org/w/api.php")));
+});

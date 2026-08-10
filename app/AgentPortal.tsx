@@ -307,6 +307,7 @@ type ChatMessage = {
   error?: boolean;
   streamingResponse?: boolean;
   streamingStage?: string;
+  streamingSummary?: string;
   tokenCount?: number;
   citations?: RagResultItem[];
   followUpQuestions?: FollowUpQuestion[];
@@ -858,6 +859,7 @@ export function AgentPortal() {
   const [chatAnswerLength, setChatAnswerLength] = useState<ChatAnswerLength>("standard");
   const [chatAnswerFormat, setChatAnswerFormat] = useState<ChatAnswerFormat>("paragraph");
   const [streaming, setStreaming] = useState(false);
+  const [generationStage, setGenerationStage] = useState("질문 분석 중");
   const [providerAvailability, setProviderAvailability] = useState({
     cloudflare: false,
     local: false,
@@ -880,9 +882,27 @@ export function AgentPortal() {
     summary: { todayActivities: 0, pendingApprovals: 0, enabledTools: 0, failedRuns: 0 },
   });
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileDraft, setProfileDraft] = useState({ displayName: "", department: "" });
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState("");
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const navigationRef = useRef<HTMLElement>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!streaming) return;
+    const stages = chatSearchScope === "internet"
+      ? ["질문 분석 중", "인터넷 검색 중", "검색 결과 정리 중", "답변 준비 중"]
+      : ["질문 분석 중", "사내 문서 검색 중", "근거 확인 중", "답변 준비 중"];
+    const timer = window.setInterval(() => {
+      setGenerationStage((currentStage) => {
+        const currentIndex = stages.indexOf(currentStage);
+        return stages[Math.min(Math.max(currentIndex, 0) + 1, stages.length - 1)];
+      });
+    }, 900);
+    return () => window.clearInterval(timer);
+  }, [streaming, chatSearchScope]);
 
   useEffect(() => {
     const updateClock = () => setCurrentTime(new Date());
@@ -1083,6 +1103,7 @@ export function AgentPortal() {
     }];
     setChatMessages(nextMessages);
     setQuery("");
+    setGenerationStage("질문 분석 중");
     setStreaming(true);
     setNotice("LLM Gateway가 보안 정책에 맞는 Provider를 선택하고 있습니다.");
     const controller = new AbortController();
@@ -1133,6 +1154,7 @@ export function AgentPortal() {
         const decoder = new TextDecoder();
         let buffer = "";
         let streamedContent = "";
+        let streamedSummary = "";
         const streamedCitations: NonNullable<GatewayResponse["citations"]> = [];
         let done: {
           message_id?: string;
@@ -1146,13 +1168,13 @@ export function AgentPortal() {
           related_questions?: FollowUpQuestion[];
           clarification_required?: boolean;
         } = {};
-        setChatMessages((messages) => [...messages, {
-          role: "assistant",
-          body: "",
-          provider,
-          streamingResponse: true,
-          streamingStage: "검색 중",
-        }]);
+          setChatMessages((messages) => [...messages, {
+            role: "assistant",
+            body: "",
+            provider,
+            streamingResponse: true,
+            streamingStage: generationStage,
+          }]);
 
         const applyEvent = (eventBlock: string) => {
           const lines = eventBlock.split(/\r?\n/);
@@ -1173,6 +1195,13 @@ export function AgentPortal() {
                 ? { ...message, body: streamedContent }
                 : message
             ));
+          } else if (eventName === "summary" && typeof eventPayload.text === "string") {
+            streamedSummary = eventPayload.text;
+            setChatMessages((messages) => messages.map((message, index) =>
+              index === messages.length - 1 && message.streamingResponse
+                ? { ...message, streamingSummary: streamedSummary }
+                : message
+            ));
           } else if (eventName === "citation") {
             streamedCitations.push(eventPayload as NonNullable<GatewayResponse["citations"]>[number]);
           } else if (eventName === "error" && typeof eventPayload.message === "string") {
@@ -1191,15 +1220,16 @@ export function AgentPortal() {
           if (readerDone) break;
         }
         if (buffer.trim()) applyEvent(buffer);
-        if (!streamedContent.trim()) throw new Error("LLM Gateway가 빈 Streaming 응답을 반환했습니다.");
+        if (!streamedContent.trim() && !streamedSummary.trim()) throw new Error("LLM Gateway가 빈 Streaming 응답을 반환했습니다.");
         if (done.conversation_id) setConversationId(done.conversation_id);
         setChatMessages((messages) => messages.map((message, index) =>
           index === messages.length - 1 && message.streamingResponse
             ? {
                 ...message,
-                body: streamedContent.trim(),
+                body: [streamedSummary, streamedContent.trim()].filter(Boolean).join("\n\n"),
                 streamingResponse: false,
                 streamingStage: undefined,
+                streamingSummary: undefined,
                 tokenCount: (done.usage as Record<string, number> | undefined)?.total_tokens || message.tokenCount,
                 messageId: done.message_id,
                 provider: done.provider || provider,
@@ -1431,6 +1461,35 @@ export function AgentPortal() {
     }
   };
 
+  const openProfile = () => {
+    setProfileDraft({ displayName: currentUser.displayName, department: currentUser.department });
+    setProfileError("");
+    setProfileOpen(true);
+  };
+
+  const saveProfile = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!profileDraft.displayName.trim() || !profileDraft.department.trim() || profileSaving) return;
+    setProfileSaving(true);
+    setProfileError("");
+    try {
+      const response = await fetch("/api/auth/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(profileDraft),
+      });
+      const payload = await response.json() as { user?: AccessUser; error?: { message?: string } };
+      if (!response.ok || !payload.user) throw new Error(payload.error?.message || "개인정보를 저장하지 못했습니다.");
+      setAccess({ state: payload.user.status, user: payload.user });
+      setProfileOpen(false);
+      setNotice("개인정보가 저장되었습니다.");
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : "개인정보를 저장하지 못했습니다.");
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
   if (access.state !== "approved") return <AccessGate access={access} onAuthenticated={(user) => setAccess({ state: user.status, user })} onSignedOut={() => setAccess({ state: "signed_out" })} />;
   const currentUser = access.user;
   const canUse = (permission: string, feature?: string) => {
@@ -1493,8 +1552,6 @@ export function AgentPortal() {
               <strong>{currentTime ? kstTimeFormatter.format(currentTime) : "--:--:--"}</strong>
               <small>KST</small>
             </time>
-            <span className={`api-status-chip api-status-${apiStatus.state}`} role="status" aria-live="polite" title={apiStatus.detail}><span className={`status-dot status-dot-${apiStatus.state}`} />{apiStatus.label}</span>
-            <button className="quiet-button" type="button" onClick={() => navigate("search")}>지식 베이스</button>
             <button className="notification-button" type="button" aria-label={`알림 ${activityDashboard.notifications.length}개`} aria-expanded={notificationOpen} onClick={() => setNotificationOpen((open) => !open)}>{activityDashboard.notifications.length}</button>
             {notificationOpen && <div className="notification-popover" role="dialog" aria-label="운영 알림">
               <div className="notification-heading"><strong>알림</strong><button type="button" className="text-button" onClick={() => setNotificationOpen(false)}>닫기</button></div>
@@ -1504,9 +1561,16 @@ export function AgentPortal() {
                   <span className="notification-mark" /><span><strong>{item.title}</strong><small>{item.description}</small></span>
                 </button>)}
             </div>}
-            <button className="profile-button" type="button" aria-label="로그아웃" title="로그아웃" onClick={signOut}>
+            <button className="profile-button" type="button" aria-label="프로필 수정" title="프로필 수정" onClick={openProfile}>
               <span className="avatar">{currentUser.displayName.slice(0, 1)}</span>
               <span className="profile-copy"><strong>{currentUser.displayName}</strong><small>{currentUser.department}</small></span>
+            </button>
+            <button className="logout-button" type="button" onClick={signOut} aria-label="로그아웃">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M9 5H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <path d="M13 8l4 4-4 4M8 12h9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span className="logout-label">로그아웃</span>
             </button>
           </div>
         </header>
@@ -1516,7 +1580,7 @@ export function AgentPortal() {
             <HomeView scope={scope} setScope={setScope} cases={visibleUseCases} user={currentUser} activity={activityDashboard} onNavigate={navigate} onOpenConversation={openConversation} onPrompt={(prompt) => { setQuery(prompt); navigate("chat"); }} />
           )}
           {view === "chat" && (
-            <ChatView messages={chatMessages} query={query} setQuery={setQuery} sensitivity={chatSensitivity} setSensitivity={changeChatSensitivity} searchScope={chatSearchScope} setSearchScope={changeChatSearchScope} answerLength={chatAnswerLength} setAnswerLength={setChatAnswerLength} answerFormat={chatAnswerFormat} setAnswerFormat={setChatAnswerFormat} providerAvailability={providerAvailability} streaming={streaming} currentUser={currentUser} conversationId={conversationId} suggestedQuestions={activityDashboard.suggestedQuestions} canUpload={canUse("documents.manage", "documents.upload")} onEnsureConversation={ensureConversationForAttachment} onNewConversation={startNewConversation} onOpenConversation={openConversation} onFeedback={submitFeedback} onSubmit={submitChat} onStop={stopChat} onKeyDown={handleComposerKey} onOpenAgent={() => navigate("tasks")} onFollowUpClick={submitChatWithText} onClarificationSubmit={submitClarification} />
+            <ChatView messages={chatMessages} query={query} setQuery={setQuery} sensitivity={chatSensitivity} setSensitivity={changeChatSensitivity} searchScope={chatSearchScope} setSearchScope={changeChatSearchScope} answerLength={chatAnswerLength} setAnswerLength={setChatAnswerLength} answerFormat={chatAnswerFormat} setAnswerFormat={setChatAnswerFormat} providerAvailability={providerAvailability} streaming={streaming} generationStage={generationStage} currentUser={currentUser} conversationId={conversationId} suggestedQuestions={activityDashboard.suggestedQuestions} canUpload={canUse("documents.manage", "documents.upload")} onEnsureConversation={ensureConversationForAttachment} onNewConversation={startNewConversation} onOpenConversation={openConversation} onFeedback={submitFeedback} onSubmit={submitChat} onStop={stopChat} onKeyDown={handleComposerKey} onOpenAgent={() => navigate("tasks")} onFollowUpClick={submitChatWithText} onClarificationSubmit={submitClarification} />
           )}
           {view === "search" && <SearchView type={searchType} setType={setSearchType} canUpload={canUse("documents.manage", "documents.upload")} onChat={(prompt, nextScope) => { changeChatSearchScope(nextScope); setQuery(prompt); navigate("chat"); }} />}
           {view === "tasks" && <AgentTasksView />}
@@ -1526,6 +1590,27 @@ export function AgentPortal() {
           {view === "admin" && currentUser.role === "admin" && canUse("admin.permissions") && <AdminView currentEmail={currentUser.email} />}
         </main>
       </div>
+
+      {profileOpen && (
+        <div className="modal-overlay profile-modal-overlay" onClick={() => setProfileOpen(false)}>
+          <section className="modal-content profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title" onClick={(event) => event.stopPropagation()}>
+            <div className="profile-modal-heading">
+              <div><span className="section-kicker">ACCOUNT</span><h2 id="profile-modal-title">개인정보 수정</h2></div>
+              <button className="text-button" type="button" onClick={() => setProfileOpen(false)} aria-label="개인정보 수정 창 닫기">닫기</button>
+            </div>
+            <form className="profile-form" onSubmit={saveProfile}>
+              <label><span>이메일</span><input value={currentUser.email} readOnly disabled /></label>
+              <label><span>이름</span><input value={profileDraft.displayName} onChange={(event) => setProfileDraft((draft) => ({ ...draft, displayName: event.target.value }))} maxLength={120} autoComplete="name" required /></label>
+              <label><span>소속 부서</span><input value={profileDraft.department} onChange={(event) => setProfileDraft((draft) => ({ ...draft, department: event.target.value }))} maxLength={120} required /></label>
+              {profileError && <p className="form-error" role="alert">{profileError}</p>}
+              <div className="modal-actions">
+                <button type="button" className="button button-secondary" onClick={() => setProfileOpen(false)}>취소</button>
+                <button type="submit" className="button button-primary" disabled={profileSaving || !profileDraft.displayName.trim() || !profileDraft.department.trim()}>{profileSaving ? "저장 중..." : "저장"}</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
 
       <div className="sr-only" aria-live="polite">{notice}</div>
     </div>
@@ -1660,7 +1745,7 @@ function ClarificationForm({
   );
 }
 
-function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, searchScope, setSearchScope, answerLength, setAnswerLength, answerFormat, setAnswerFormat, providerAvailability, streaming, currentUser, conversationId, suggestedQuestions, canUpload, onEnsureConversation, onNewConversation, onOpenConversation, onFeedback, onSubmit, onStop, onKeyDown, onOpenAgent, onFollowUpClick, onClarificationSubmit }: {
+function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, searchScope, setSearchScope, answerLength, setAnswerLength, answerFormat, setAnswerFormat, providerAvailability, streaming, generationStage, currentUser, conversationId, suggestedQuestions, canUpload, onEnsureConversation, onNewConversation, onOpenConversation, onFeedback, onSubmit, onStop, onKeyDown, onOpenAgent, onFollowUpClick, onClarificationSubmit }: {
   messages: ChatMessage[];
   query: string;
   setQuery: (value: string) => void;
@@ -1674,6 +1759,7 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
   setAnswerFormat: (value: ChatAnswerFormat) => void;
   providerAvailability: { cloudflare: boolean; local: boolean; rag: boolean; internalSearch: boolean };
   streaming: boolean;
+  generationStage: string;
   currentUser: AccessUser;
   conversationId?: string;
   suggestedQuestions: ActivityDashboard["suggestedQuestions"];
@@ -1870,11 +1956,6 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
     <div className="workspace-layout">
       <section className="chat-workspace" aria-labelledby="chat-title">
         <div className="workspace-heading"><div><h1 id="chat-title">AI Chat Agent</h1><p>현재 기준일과 접근 가능한 최신 문서 버전·웹 자료를 우선해 답변합니다.</p></div><button className="button button-secondary" type="button" onClick={onNewConversation}>새 대화</button></div>
-         <div className="conversation-context-status" aria-label="대화 컨텍스트 안내">
-          <span className="section-kicker">CONVERSATION CONTEXT</span>
-          <strong>이 대화의 이전 질문과 답변을 이어서 사용합니다.</strong>
-          <span>최대 최근 18개 메시지와 서버 자동 요약을 다음 질문의 배경으로 참고합니다. 새 대화로 시작하면 초기화됩니다.</span>
-         </div>
          <section className="chat-smart-suggestions" aria-labelledby="chat-smart-suggestions-title">
           <div className="chat-smart-suggestions-heading">
             <div>
@@ -1906,10 +1987,10 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
           {messages.map((message, index) => (
             <article className={`message ${message.role}${message.error ? " error" : ""}`} key={`${message.role}-${index}`}>
               <span className="message-avatar" aria-hidden="true">{message.role === "user" ? currentUser.displayName.slice(0, 1) : "AI"}</span>
-              <div><div className={"message-label" + (message.streamingResponse && message.streamingStage ? " streaming-stage" : "")}>{message.role === "user" ? currentUser.displayName : message.streamingResponse && message.streamingStage ? "ILJIN AI · " + message.streamingStage + (message.tokenCount ? " (" + message.tokenCount + " 토큰)" : "") : message.clarificationRequired ? "ILJIN AI · 답변 전 정보 확인" : message.provider === "cloudflare" ? "ILJIN AI · Cloud LLM" : "ILJIN AI · 로컬"}</div>{message.role === "assistant" && !message.error ? <FormattedAnswer content={message.body} citations={message.citations ? buildCitationLookup(message.citations) : undefined} /> : <p>{message.body}</p>}{message.role === "assistant" && message.clarificationRequired && message.followUpQuestions?.length && message.clarificationOriginalQuestion ? <ClarificationForm questions={message.followUpQuestions} originalQuestion={message.clarificationOriginalQuestion} disabled={streaming || messages.slice(index + 1).some((item) => item.role === "user")} onSubmit={onClarificationSubmit} /> : message.role === "assistant" && message.followUpQuestions && message.followUpQuestions.length > 0 && <div className="follow-up-questions"><span className="follow-up-label">정확한 답변을 위한 보충 질문</span>{message.followUpQuestions.map((fq, fqIndex) => <button key={fqIndex} type="button" className="follow-up-button" disabled={streaming} onClick={() => onFollowUpClick(fq.question)} title={fq.intent}>{fq.question}</button>)}</div>}{message.role === "assistant" && message.relatedQuestions && message.relatedQuestions.length > 0 && <div className="follow-up-questions related-questions"><span className="follow-up-label">연관 질문 추천</span>{message.relatedQuestions.map((rq, rqIndex) => <button key={rqIndex} type="button" className="follow-up-button related-question-button" disabled={streaming} onClick={() => onFollowUpClick(rq.question)} title={rq.intent}>{rq.question}</button>)}</div>}{message.role === "assistant" && !message.clarificationRequired && <div className="answer-actions"><button type="button" onClick={() => void copyAnswer(message, index)}>{copiedMessage === `${index}` ? "복사됨" : "답변 복사"}</button>{message.error && <button type="button" onClick={() => setQuery([...messages].slice(0, index).reverse().find((item) => item.role === "user")?.body || "")}>질문 다시 입력</button>}{message.messageId && <><button type="button" className={message.feedback === 1 ? "selected" : ""} disabled={Boolean(message.feedback)} onClick={() => onFeedback(message.messageId!, 1)}>도움됨</button><button type="button" className={message.feedback === -1 ? "selected" : ""} disabled={Boolean(message.feedback)} onClick={() => onFeedback(message.messageId!, -1)}>개선 필요</button></>}<span className="trace">{message.traceId ? `${message.model ?? "@cf/zai-org/glm-5.2"} · ${message.latencyMs ?? 0}ms · ${message.traceId}` : message.error ? "Gateway 연결 오류" : "저장된 응답"}</span></div>}</div>
+              <div><div className={"message-label" + (message.streamingResponse && message.streamingStage ? " streaming-stage" : "")}>{message.role === "user" ? currentUser.displayName : message.streamingResponse && message.streamingStage ? "ILJIN AI · " + message.streamingStage + (message.tokenCount ? " (" + message.tokenCount + " 토큰)" : "") : message.clarificationRequired ? "ILJIN AI · 답변 전 정보 확인" : message.provider === "cloudflare" ? "ILJIN AI · Cloud LLM" : "ILJIN AI · 로컬"}</div>{message.role === "assistant" && !message.error ? <>{message.streamingResponse && message.streamingSummary && <div className="answer-summary" aria-live="polite"><span>빠른 요약</span><p>{message.streamingSummary}</p></div>}<FormattedAnswer content={message.body} citations={message.citations ? buildCitationLookup(message.citations) : undefined} /></> : <p>{message.body}</p>}{message.role === "assistant" && message.clarificationRequired && message.followUpQuestions?.length && message.clarificationOriginalQuestion ? <ClarificationForm questions={message.followUpQuestions} originalQuestion={message.clarificationOriginalQuestion} disabled={streaming || messages.slice(index + 1).some((item) => item.role === "user")} onSubmit={onClarificationSubmit} /> : message.role === "assistant" && message.followUpQuestions && message.followUpQuestions.length > 0 && <div className="follow-up-questions"><span className="follow-up-label">정확한 답변을 위한 보충 질문</span>{message.followUpQuestions.map((fq, fqIndex) => <button key={fqIndex} type="button" className="follow-up-button" disabled={streaming} onClick={() => onFollowUpClick(fq.question)} title={fq.intent}>{fq.question}</button>)}</div>}{message.role === "assistant" && message.relatedQuestions && message.relatedQuestions.length > 0 && <div className="follow-up-questions related-questions"><span className="follow-up-label">연관 질문 추천</span>{message.relatedQuestions.map((rq, rqIndex) => <button key={rqIndex} type="button" className="follow-up-button related-question-button" disabled={streaming} onClick={() => onFollowUpClick(rq.question)} title={rq.intent}>{rq.question}</button>)}</div>}{message.role === "assistant" && !message.clarificationRequired && <div className="answer-actions"><button type="button" onClick={() => void copyAnswer(message, index)}>{copiedMessage === `${index}` ? "복사됨" : "답변 복사"}</button>{message.error && <button type="button" onClick={() => setQuery([...messages].slice(0, index).reverse().find((item) => item.role === "user")?.body || "")}>질문 다시 입력</button>}{message.messageId && <><button type="button" className={message.feedback === 1 ? "selected" : ""} disabled={Boolean(message.feedback)} onClick={() => onFeedback(message.messageId!, 1)}>도움됨</button><button type="button" className={message.feedback === -1 ? "selected" : ""} disabled={Boolean(message.feedback)} onClick={() => onFeedback(message.messageId!, -1)}>개선 필요</button></>}<span className="trace">{message.traceId ? `${message.model ?? "@cf/zai-org/glm-5.2"} · ${message.latencyMs ?? 0}ms · ${message.traceId}` : message.error ? "Gateway 연결 오류" : "저장된 응답"}</span></div>}</div>
             </article>
           ))}
-          {streaming && !messages.some((message) => message.streamingResponse) && <article className="message assistant streaming"><span className="message-avatar" aria-hidden="true">AI</span><div><div className="message-label">ILJIN AI · 검색 중</div><p><span className="loading-line" /><span className="loading-line short" /></p></div></article>}
+          {streaming && !messages.some((message) => message.streamingResponse) && <article className="message assistant streaming"><span className="message-avatar" aria-hidden="true">AI</span><div><div className="message-label streaming-stage">ILJIN AI · {generationStage}</div><p><span className="loading-line" /><span className="loading-line short" /></p></div></article>}
         </div>
         {activeCitations.length > 0 && <div className="evidence-strip" aria-label="실제 답변 근거">
           {activeCitations.slice(0, 6).map((citation) => <a key={citation.id} href={citation.sourceUrl} target="_blank" rel="noreferrer" aria-label={`${citation.title} 출처 새 창에서 열기`}>{citation.sourceType === "image" && citation.originalUrl && <>
