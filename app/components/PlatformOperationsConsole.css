@@ -16,7 +16,6 @@
   background: var(--admin-surface, #fff);
   color: var(--admin-ink, #18202a);
   padding: clamp(18px, 3vw, 30px);
-  box-shadow: var(--shadow);
 }
 
 .platform-console__header,

@@ -2643,11 +2643,8 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
       <section className="metric-grid">
         {[["인덱싱 Asset", String(assets.filter((asset) => asset.status === "indexed").length), "Database 실데이터"],["검색 Segment", String(segmentCount), "Dense Vector 포함"],["승인 대기", String(pendingAccess), "사용자 접근 요청"],["완료 Index Job", String(completedJobs), failedJobs ? `실패 ${failedJobs}` : "실패 0"]].map(([label, value, trend]) => <article className="metric-card" key={label}><span>{label}</span><strong>{value}</strong><small>{trend}</small></article>)}
       </section>
-      <nav className="admin-console-nav" aria-label="관리 콘솔 영역">
-        <a href="#admin-platform">플랫폼 운영</a><a href="#admin-access">접근 승인</a><a href="#admin-organization">조직·예산</a><a href="#admin-governance">권한·기능</a><a href="#admin-ingestion">수집·검색</a><a href="#admin-assets">문서 자산</a>
-      </nav>
-       <AdminIssueSummary items={issueItems} onSelect={selectSection} />
-       <AdminSectionNav activeSection={activeSection} onSelect={selectSection} />
+      <AdminIssueSummary items={issueItems} onSelect={selectSection} />
+      <AdminSectionNav activeSection={activeSection} onSelect={selectSection} />
       {activeSection === "overview" && <PlatformOperationsConsole />}
       {activeSection === "access" && <section className="panel access-review-panel" id="admin-access">
         <div className="panel-title"><div><span className="section-kicker">ACCESS CONTROL</span><h2>사용자 접근 승인</h2></div><span className={`status-pill ${pendingAccess ? "status-승인-대기" : "status-승인-완료"}`}>{pendingAccess ? `${pendingAccess}건 대기` : "대기 없음"}</span></div>
