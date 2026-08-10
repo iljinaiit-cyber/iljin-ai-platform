@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import "./InternetSearchOperations.css";
 
-type SearchProvider = "tavily" | "google" | "brave" | "webpilot" | "duckduckgo" | "jina" | "wikimedia";
+type SearchProvider = "tavily" | "exa" | "google" | "brave" | "webpilot" | "duckduckgo" | "jina" | "wikimedia";
 
 type ProviderStatus = {
   id: SearchProvider;
@@ -45,6 +45,7 @@ type SearchProbe = {
 
 const providerName = (provider: SearchProvider) => ({
   tavily: "Tavily Search",
+  exa: "Exa Search",
   google: "Google Programmable Search",
   brave: "Brave Search",
   webpilot: "WebPilot 호환 API",
@@ -165,7 +166,7 @@ export function InternetSearchOperations() {
         </button>
         <button className="text-button" type="button" disabled={loading} onClick={() => void load()}>상태 새로고침</button>
       </div>
-      <small className="internet-search-operations__security">API Key는 서버 Secret으로만 관리하며 브라우저에 전달하지 않습니다. 공급자 오류나 결과 부족 시 다음 검색 엔진으로 자동 전환합니다.</small>
+      <small className="internet-search-operations__security">API Key는 서버 Secret으로만 관리하며 브라우저에 전달하지 않습니다. 우선순위 상위 공급자를 배치로 병렬 조회해 종합하고, 결과가 부족할 때만 다음 배치로 확장합니다.</small>
     </article>
   );
 }

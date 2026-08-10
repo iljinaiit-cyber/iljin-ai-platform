@@ -1,7 +1,7 @@
 {
   "suite": "gate-manifest",
-  "generated_at": "2026-07-24T08:10:16.078Z",
-  "validation_status": "pass",
+  "generated_at": "2026-08-10T05:08:15.518Z",
+  "validation_status": "fail",
   "release_decision": "not_approved",
   "decisions": {
     "G1": "hold",
@@ -10,7 +10,9 @@
     "G4": "not_ready",
     "G5": "not_ready"
   },
-  "starter_case_count": 3,
+  "starter_case_count": 300,
   "official_g2_minimum_cases": 300,
-  "errors": []
+  "errors": [
+    "Starter dataset metadata is stale; promote it through an approved dataset process"
+  ]
 }

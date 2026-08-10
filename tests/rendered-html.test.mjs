@@ -212,7 +212,7 @@ test("connects every workspace menu to durable activity, conversation, feedback,
   assert.match(migration, /retrieval_traces_owner_created_idx/);
 });
 
-test("routes chat through Cloudflare GLM 5.2 with local fallback", async () => {
+test("routes chat through Cloudflare GLM 4.7 Flash with local fallback", async () => {
   const [app, route, gateway, readiness, providersRoute, controlTower, telemetry, migration, resourceProbes, resourceMigration, envExample, wrangler] = await Promise.all([
     readFile(new URL("app/AgentPortal.tsx", root), "utf8"),
     readFile(new URL("app/api/v1/chat/completions/route.ts", root), "utf8"),
@@ -237,7 +237,7 @@ test("routes chat through Cloudflare GLM 5.2 with local fallback", async () => {
   assert.match(gateway, /think: false/);
   assert.doesNotMatch(gateway, /\/api\/chat/);
   assert.match(gateway, /completeWithCloudflare/);
-  assert.match(gateway, /@cf\/zai-org\/glm-5\.2/);
+  assert.match(gateway, /@cf\/zai-org\/glm-4\.7-flash/);
   assert.match(gateway, /\["cloudflare", "local"\]/);
   assert.match(gateway, /sensitivity === "confidential"/);
   assert.match(gateway, /CLOUDFLARE_RESIDENCY_POLICY_BLOCKED/);
@@ -519,13 +519,13 @@ test("produces expert-depth answers with adaptive output budgets and structured 
     readFile(new URL("lib/rag.ts", root), "utf8"),
     readFile(new URL("app/globals.css", root), "utf8"),
   ]);
-  assert.match(portal, /useState<ChatAnswerLength>\("detailed"\)/);
+  assert.match(portal, /useState<ChatAnswerLength>\("standard"\)/);
   assert.match(portal, /표준/);
   assert.match(portal, /심층/);
   assert.match(portal, /function FormattedAnswer/);
   assert.match(portal, /answer-table-wrap/);
   assert.match(chatRoute, /function maxOutputTokensFor/);
-  assert.match(chatRoute, /Math\.round\(4_096/);
+  assert.match(chatRoute, /length === "brief" \? 600 : length === "detailed" \? 1_800 : 1_200/);
   assert.match(chatRoute, /핵심 결론 → 근거와 분석 → 실무적 의미 또는 실행 방안 → 리스크·한계/);
   assert.match(gateway, /MAX_OUTPUT_TOKENS = 4_096/);
   assert.match(gateway, /max_tokens: maxOutputTokens/);
@@ -752,6 +752,21 @@ test("scopes temporary chat attachments to their conversation and deletes them a
   assert.match(schema, /conversationAttachments/);
   assert.match(migration, /conversation_attachments/);
   assert.match(ingest, /지식베이스 영구 등록/);
+});
+
+test("conversation creation response wraps the id so attachment upload can read it", async () => {
+  // 회귀 대상: createConversation() 은 문자열 id 만 반환하는데 라우트가 그걸
+  // 그대로 JSON 본문으로 내보내면, 클라이언트는 payload.conversation_id 를
+  // 읽으므로 항상 undefined 가 되어 "첨부파일용 대화를 만들지 못했습니다"가
+  // 성공한 요청에서도 뜬다.
+  const [route, conversations, portal] = await Promise.all([
+    readFile(new URL("app/api/v1/conversations/route.ts", root), "utf8"),
+    readFile(new URL("lib/conversations.ts", root), "utf8"),
+    readFile(new URL("app/AgentPortal.tsx", root), "utf8"),
+  ]);
+  assert.match(conversations, /return conversationId;/);
+  assert.match(route, /ok\(\{ conversation_id: conversationId \}/);
+  assert.match(portal, /payload\.conversation_id/);
 });
 
 test("self-heals legacy conversation schema before follow-up questions load context", async () => {

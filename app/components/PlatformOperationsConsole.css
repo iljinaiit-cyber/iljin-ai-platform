@@ -1,12 +1,22 @@
+/*
+ * 관리자 콘솔의 다른 섹션(.panel, .admin-issue-card, .admin-section-nav)은 모두
+ * globals.css 의 --admin-accent/--admin-ink/--admin-line/--admin-surface 토큰과
+ * 본문 서체(Pretendard)를 쓴다. 이 파일은 예전에 그 토큰을 참조하지 않고 값을
+ * 그대로 박아 넣었다(#171717, #ff4f00, Helvetica Neue, radius 0) — 관리자 테마가
+ * 바뀌어도 여기만 안 바뀌고, 한글 본문에 Helvetica 를 지정해 실제로는 다른
+ * 폴백 서체로 렌더링되며, h2 가 페이지 h1 과 맞먹는 36px 라 바로 위 "RAG 운영
+ * Dashboard" 제목과 위계가 충돌했다. 전부 공유 토큰을 참조하도록 고친다.
+ */
 .platform-console {
   display: grid;
   gap: 18px;
-  border: 1px solid #171717;
-  border-left: 8px solid #ff4f00;
-  background: #fff;
-  color: #171717;
-  font-family: Helvetica Neue, Helvetica, Arial, sans-serif;
+  border: 1px solid var(--admin-line, #18202a);
+  border-left: 8px solid var(--admin-accent, #ff4f00);
+  border-radius: 8px;
+  background: var(--admin-surface, #fff);
+  color: var(--admin-ink, #18202a);
   padding: clamp(18px, 3vw, 30px);
+  box-shadow: var(--shadow);
 }
 
 .platform-console__header,
@@ -21,34 +31,55 @@
 }
 
 .platform-console__header > div:first-child > span,
-.platform-console__section-head > span,
+.platform-console__section-head > span {
+  color: var(--admin-accent, #ff4f00);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 .platform-console__bindings span,
 .platform-console__list small {
-  color: #545454;
+  color: var(--muted);
   font-size: 12px;
 }
+
+.platform-console__section-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.platform-console__section-actions span { color: var(--muted); font-size: 12px; }
+.platform-console__section-actions button { min-height: 28px; padding: 4px 10px; }
 
 .platform-console h2,
 .platform-console h3,
 .platform-console p { margin: 0; }
-.platform-console h2 { font-size: clamp(24px, 3vw, 36px); letter-spacing: -0.045em; }
+/* .panel-title h2 (globals.css) 와 같은 크기 — 같은 페이지의 다른 섹션 제목과 위계를 맞춘다. */
+.platform-console h2 { font-size: 21px; letter-spacing: -0.01em; }
 .platform-console h3 { font-size: 16px; }
 
 .platform-console button {
-  min-height: 34px;
-  border: 1px solid #171717;
-  border-radius: 0;
-  background: #fff;
-  color: #171717;
+  min-height: 36px;
+  border: 1px solid var(--admin-line, #18202a);
+  border-radius: 6px;
+  background: var(--admin-surface, #fff);
+  color: var(--admin-ink, #18202a);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
   font-weight: 700;
-  padding: 6px 10px;
+  padding: 6px 12px;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 
-.platform-console button:hover:not(:disabled) { background: #171717; color: #fff; }
-.platform-console button:focus-visible { outline: 3px solid #ff4f00; outline-offset: 2px; }
+.platform-console button:hover:not(:disabled) {
+  border-color: var(--admin-accent, #ff4f00);
+  background: var(--admin-accent, #ff4f00);
+  color: #fff;
+}
+.platform-console button:focus-visible { outline: 3px solid var(--admin-accent, #ff4f00); outline-offset: 2px; }
 .platform-console button:disabled { cursor: wait; opacity: .56; }
 
 .platform-console__actions strong,
@@ -61,27 +92,35 @@
 .platform-console__actions strong[data-state="ready"],
 .platform-console__bindings [data-connected="true"] strong,
 .platform-console__list [data-state="ready"],
-.platform-console__list [data-state="success"] { color: #087a45; }
+.platform-console__list [data-state="success"] { color: var(--success); }
 .platform-console__actions strong[data-state="configuration_required"],
 .platform-console__bindings [data-connected="false"] strong,
-.platform-console__list [data-state="failed"] { color: #b42318; }
+.platform-console__list [data-state="failed"] { color: var(--danger); }
 
-.platform-console__message { border-left: 3px solid #ff4f00; background: #f7f7f8; padding: 10px 12px; font-size: 13px; }
-.platform-console__message--error { border-left-color: #b42318; }
+.platform-console__message {
+  border-left: 3px solid var(--admin-accent, #ff4f00);
+  border-radius: 6px;
+  background: var(--surface-soft);
+  padding: 10px 12px;
+  font-size: 13px;
+}
+.platform-console__message--error { border-left-color: var(--danger); }
 
 .platform-console__bindings {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  border: 1px solid #171717;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
 }
 
-.platform-console__bindings > div { display: grid; gap: 5px; min-width: 0; border-right: 1px solid #171717; padding: 12px; }
+.platform-console__bindings > div { display: grid; gap: 5px; min-width: 0; border-right: 1px solid var(--line); padding: 12px; }
 .platform-console__bindings > div:last-child { border-right: 0; }
 
 .platform-console__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
-.platform-console__grid > section { border-top: 2px solid #171717; padding-top: 10px; }
+.platform-console__grid > section { border-top: 2px solid var(--admin-line, #18202a); padding-top: 10px; }
 .platform-console__list { display: grid; margin: 10px 0 0; padding: 0; list-style: none; }
-.platform-console__list li { align-items: flex-start; border-top: 1px solid #d1d1d1; padding: 12px 0; }
+.platform-console__list li { align-items: flex-start; border-top: 1px solid var(--line); padding: 12px 0; }
 .platform-console__list li > div:first-child { display: grid; gap: 4px; min-width: 0; }
 .platform-console__list li strong { text-transform: capitalize; }
 
@@ -91,6 +130,6 @@
   .platform-console__list li { align-items: flex-start; flex-direction: column; }
   .platform-console__bindings,
   .platform-console__grid { grid-template-columns: 1fr; }
-  .platform-console__bindings > div { border-right: 0; border-bottom: 1px solid #171717; }
+  .platform-console__bindings > div { border-right: 0; border-bottom: 1px solid var(--line); }
   .platform-console__bindings > div:last-child { border-bottom: 0; }
 }

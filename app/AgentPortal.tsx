@@ -39,12 +39,19 @@ function formatSearchDate(value?: string) {
 
 function internetProviderLabel(provider?: string) {
   if (provider === "tavily") return "Tavily 본문 검색";
+  if (provider === "exa") return "Exa 의미 검색";
   if (provider === "google") return "Google 웹 검색";
   if (provider === "brave") return "Brave 확장 검색";
   if (provider === "webpilot") return "WebPilot 호환 검색";
   if (provider === "duckduckgo") return "DuckDuckGo 웹 검색";
   if (provider === "jina") return "Jina AI 의미 검색";
   return "Wikimedia 본문 검색";
+}
+
+function internetProvidersSummary(providers?: string[]) {
+  if (!providers || providers.length === 0) return undefined;
+  if (providers.length === 1) return internetProviderLabel(providers[0]);
+  return `${providers.map((provider) => internetProviderLabel(provider).replace(/\s.+$/, "")).join("·")} 종합 (${providers.length}개 출처)`;
 }
 
 type CitationLookup = Map<string, { url?: string; title: string }>;
@@ -1082,6 +1089,21 @@ export function AgentPortal() {
     chatAbortRef.current = controller;
 
     try {
+      let activeConversationId = conversationId;
+      if (!activeConversationId) {
+        const createResponse = await fetch("/api/v1/conversations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: text.slice(0, 120) }),
+          signal: controller.signal,
+        });
+        const createPayload = await createResponse.json() as { conversation_id?: string; error?: { message?: string } };
+        if (!createResponse.ok || !createPayload.conversation_id) {
+          throw new Error(createPayload.error?.message || "대화를 저장할 공간을 만들지 못했습니다.");
+        }
+        activeConversationId = createPayload.conversation_id;
+        setConversationId(activeConversationId);
+      }
       const response = await fetch("/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -1099,7 +1121,7 @@ export function AgentPortal() {
           answer_format: chatAnswerFormat,
           reasoning_tier: chatAnswerLength === "brief" ? "swift" : chatAnswerLength === "detailed" ? "deep" : "expert",
           stream: true,
-          conversation_id: conversationId,
+          conversation_id: activeConversationId,
         }),
         signal: controller.signal,
       });
@@ -1713,9 +1735,9 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
     let active = true;
     fetch("/api/v1/conversations?limit=12", { cache: "no-store" })
       .then(async (response) => {
-        const payload = await response.json() as { items?: Array<{ id: string; title: string; updated_at: string }> };
+        const payload = await response.json() as { conversations?: Array<{ id: string; title: string; updated_at: string }>; error?: { message?: string } };
         if (!response.ok) throw new Error("대화 목록을 불러오지 못했습니다.");
-        return payload.items || [];
+        return payload.conversations || [];
       })
       .then((items) => { if (active) setConversations(items); })
       .catch(() => { if (active) setConversations([]); });
@@ -1848,7 +1870,12 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
     <div className="workspace-layout">
       <section className="chat-workspace" aria-labelledby="chat-title">
         <div className="workspace-heading"><div><h1 id="chat-title">AI Chat Agent</h1><p>현재 기준일과 접근 가능한 최신 문서 버전·웹 자료를 우선해 답변합니다.</p></div><button className="button button-secondary" type="button" onClick={onNewConversation}>새 대화</button></div>
-        <section className="chat-smart-suggestions" aria-labelledby="chat-smart-suggestions-title">
+         <div className="conversation-context-status" aria-label="대화 컨텍스트 안내">
+          <span className="section-kicker">CONVERSATION CONTEXT</span>
+          <strong>이 대화의 이전 질문과 답변을 이어서 사용합니다.</strong>
+          <span>최대 최근 18개 메시지와 서버 자동 요약을 다음 질문의 배경으로 참고합니다. 새 대화로 시작하면 초기화됩니다.</span>
+         </div>
+         <section className="chat-smart-suggestions" aria-labelledby="chat-smart-suggestions-title">
           <div className="chat-smart-suggestions-heading">
             <div>
               <span className="section-kicker">SMART SUGGESTIONS</span>
@@ -2047,7 +2074,8 @@ function SearchView({ type, setType, canUpload, onChat }: { type: string; setTyp
           sourceCategoryLabel?: string;
           publishedAt?: string;
         }>;
-        provider?: "tavily" | "google" | "brave" | "webpilot" | "wikimedia";
+        provider?: "tavily" | "exa" | "google" | "brave" | "webpilot" | "duckduckgo" | "jina" | "wikimedia";
+        providersUsed?: string[];
         latencyMs?: number;
         traceId?: string;
         retrieval?: { strategy?: string; fusionStrategy?: "rrf"; queryType?: string; queryModality?: "text" | "image" | "table" | "chart" | "multimodal"; queryVariants?: string[]; embeddingModel?: string; embeddingProvider?: "cloudflare"; embeddingFallbackUsed?: boolean; embeddingDimensions?: number; rerankModel?: string; rerankProvider?: "cloudflare"; rerankStatus?: "applied" | "not_configured" | "fallback"; candidateCount?: number; fusionCandidateCount?: number; rerankCandidateCount?: number; evidenceConfidence?: number; verifierStatus?: "passed" | "insufficient" };
@@ -2095,7 +2123,7 @@ function SearchView({ type, setType, canUpload, onChat }: { type: string; setTyp
       setSearchMeta({
         traceId: payload.traceId || response.headers.get("X-Trace-Id") || undefined,
         retrievalLabel: requestedScope === "internet"
-          ? `Internet · ${internetProviderLabel(payload.provider)}`
+          ? `Internet · ${internetProvidersSummary(payload.providersUsed) || internetProviderLabel(payload.provider)}`
           : payload.retrieval
           ? `${payload.retrieval.strategy === "hybrid-rrf" ? "Hybrid · RRF" : payload.retrieval.strategy || "Search"} · ${payload.retrieval.queryModality && payload.retrieval.queryModality !== "text" ? `${payload.retrieval.queryModality.toUpperCase()} Router · ` : ""}질의 변형 ${payload.retrieval.queryVariants?.length || 1}개 · Cloudflare Embedding · ${payload.retrieval.rerankStatus === "applied" ? "Cloudflare Reranker" : payload.retrieval.rerankStatus === "fallback" ? "Hybrid 점수 폴백" : "Reranker 미구성"} · 근거 검증 ${payload.retrieval.verifierStatus === "passed" ? "통과" : "부족"} ${Math.round((payload.retrieval.evidenceConfidence || 0) * 100)}%${payload.retrieval.embeddingDimensions ? ` · ${payload.retrieval.embeddingDimensions}D` : ""}`
           : response.headers.get("X-Search-Strategy") || undefined,
@@ -2215,6 +2243,59 @@ function ActivityView({ onNavigate, onOpenConversation }: { onNavigate: (view: V
   </div>;
 }
 
+type AdminIssueTone = "danger" | "warning" | "neutral";
+
+function AdminIssueSummary({ items, onSelect }: {
+  items: Array<{ label: string; value: number; detail: string; tone: AdminIssueTone; section: AdminSection }>;
+  onSelect: (section: AdminSection) => void;
+}) {
+  return (
+    <section className="admin-issue-summary" aria-labelledby="admin-issue-summary-title">
+      <div className="admin-issue-summary__heading">
+        <div><span className="section-kicker">ACTION QUEUE</span><h2 id="admin-issue-summary-title">즉시 조치 요약</h2></div>
+        <span>실시간 운영 데이터 기준</span>
+      </div>
+      <div className="admin-issue-summary__grid">
+        {items.map((item) => (
+          <button key={item.label} type="button" className={`admin-issue-card admin-issue-card--${item.tone}`} onClick={() => onSelect(item.section)}>
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+            <small>{item.detail}</small>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+type AdminSection = "overview" | "access" | "organization" | "governance" | "knowledge";
+
+function AdminSectionNav({ activeSection, onSelect }: { activeSection: AdminSection; onSelect: (section: AdminSection) => void }) {
+  const sections = [
+    ["overview", "admin-platform", "운영 개요"],
+    ["access", "admin-access", "접근 승인"],
+    ["organization", "admin-organization", "조직·예산"],
+    ["governance", "admin-governance", "권한·기능"],
+    ["knowledge", "admin-ingestion", "지식베이스"],
+  ] as const;
+
+  const goToSection = (section: AdminSection, anchor: string) => {
+    onSelect(section);
+    setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
+
+  return (
+    <nav className="admin-section-nav" aria-label="관리자 운영 영역">
+      <span className="admin-section-nav__label">관리자 영역</span>
+      {sections.map(([id, anchor, label], index) => (
+        <button key={id} type="button" className={activeSection === id ? "active" : ""} aria-pressed={activeSection === id} onClick={() => goToSection(id, anchor)}>
+          <span>{String(index + 1).padStart(2, "0")}</span>{label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 function AdminView({ currentEmail }: { currentEmail: string }) {
   type AssetRow = {
     id: string;
@@ -2243,6 +2324,7 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
   const [assetActionId, setAssetActionId] = useState("");
+  const [activeSection, setActiveSection] = useState<AdminSection>("overview");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2334,6 +2416,12 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
     ["Embedding", health.rag?.embeddingConfigured, `${health.rag?.embeddingProvider || "cloudflare"} · ${health.rag?.embeddingModel || "@cf/baai/bge-m3"}`],
     ["Reranker", health.rag?.rerankConfigured, `${health.rag?.rerankProvider || "cloudflare"} · ${health.rag?.rerankModel || "@cf/baai/bge-reranker-base"}`],
   ] as const;
+  const issueItems = [
+    { label: "접근 승인 대기", value: pendingAccess, detail: pendingAccess ? "승인 검토 필요" : "대기 없음", tone: pendingAccess ? "warning" : "neutral", section: "access" },
+    { label: "인덱싱 실패", value: failedJobs, detail: failedJobs ? "재시도 또는 원인 확인 필요" : "실패 작업 없음", tone: failedJobs ? "danger" : "neutral", section: "knowledge" },
+    { label: "서비스 미설정", value: services.filter(([, ready]) => !ready).length, detail: services.some(([, ready]) => !ready) ? "연결 상태 확인 필요" : "모든 서비스 연결됨", tone: services.some(([, ready]) => !ready) ? "danger" : "neutral", section: "overview" },
+    { label: "품질 게이트 미통과", value: qualityGates.filter((gate) => !gate.passed).length, detail: qualityGates.some((gate) => !gate.passed) ? "릴리스 승인 전 확인 필요" : "모든 게이트 통과", tone: qualityGates.some((gate) => !gate.passed) ? "warning" : "neutral", section: "knowledge" },
+  ] as Array<{ label: string; value: number; detail: string; tone: AdminIssueTone; section: AdminSection }>;
 
   return (
     <div className="view-stack admin-view">
@@ -2344,8 +2432,10 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
       <nav className="admin-console-nav" aria-label="관리 콘솔 영역">
         <a href="#admin-platform">플랫폼 운영</a><a href="#admin-access">접근 승인</a><a href="#admin-organization">조직·예산</a><a href="#admin-governance">권한·기능</a><a href="#admin-ingestion">수집·검색</a><a href="#admin-assets">문서 자산</a>
       </nav>
-      <PlatformOperationsConsole />
-      <section className="panel access-review-panel" id="admin-access">
+       <AdminIssueSummary items={issueItems} onSelect={setActiveSection} />
+       <AdminSectionNav activeSection={activeSection} onSelect={setActiveSection} />
+      {activeSection === "overview" && <PlatformOperationsConsole />}
+      {activeSection === "access" && <section className="panel access-review-panel" id="admin-access">
         <div className="panel-title"><div><span className="section-kicker">ACCESS CONTROL</span><h2>사용자 접근 승인</h2></div><span className={`status-pill ${pendingAccess ? "status-승인-대기" : "status-승인-완료"}`}>{pendingAccess ? `${pendingAccess}건 대기` : "대기 없음"}</span></div>
         <p className="panel-description">이메일 인증을 마치고 가입 신청을 제출한 사용자의 부서·사유·역할을 검토해 접근을 승인합니다.</p>
         <div className="table-wrap"><table><caption className="sr-only">사용자 접근 승인 요청</caption><thead><tr><th>사용자</th><th>부서</th><th>역할</th><th>상태</th><th>승인 작업</th></tr></thead><tbody>
@@ -2356,11 +2446,11 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
             return <tr key={user.email}><td><strong>{user.displayName}</strong><small className="table-subtext">{user.email}</small>{user.applicationNote && <small className="table-subtext application-note">신청 사유 · {user.applicationNote}</small>}</td><td><input className="table-input" value={draft.department} onChange={(event) => setReviewDrafts((items) => ({ ...items, [user.email]: { ...draft, department: event.target.value } }))} aria-label={`${user.displayName} 부서`} /></td><td><select className="table-select" value={draft.role} onChange={(event) => setReviewDrafts((items) => ({ ...items, [user.email]: { ...draft, role: event.target.value as "user" | "manager" } }))} aria-label={`${user.displayName} 역할`}><option value="user">사용자</option><option value="manager">매니저</option></select></td><td><span className={`status-pill status-access-${user.status}`}>{user.status === "pending" ? "승인 대기" : user.status === "approved" ? "승인 완료" : "반려"}</span></td><td><div className="review-actions"><button className="button button-primary" type="button" disabled={busy || !draft.department.trim()} onClick={() => reviewAccess(user, "approved")}>{busy ? "처리 중" : "가입 승인"}</button><button className="button button-secondary" type="button" disabled={busy} onClick={() => reviewAccess(user, "rejected")}>반려</button></div></td></tr>;
           })}
         </tbody></table></div>
-      </section>
-      <div id="admin-organization"><OrgConsole currentEmail={currentEmail} /></div>
-      <div id="admin-governance"><AdminGovernance currentEmail={currentEmail} /></div>
+      </section>}
+      {activeSection === "organization" && <div id="admin-organization"><OrgConsole currentEmail={currentEmail} /></div>}
+      {activeSection === "governance" && <div id="admin-governance"><AdminGovernance currentEmail={currentEmail} /></div>}
+      {activeSection === "knowledge" && <>
       <div id="admin-ingestion"><IngestionSources /><InternetSearchOperations /></div>
-      <div id="admin-control"><AiControlTower currentEmail={currentEmail} /></div>
       <RequirementsChecklist />
       <div className="admin-grid" id="admin-assets">
         <section className="panel"><div className="panel-title"><div><span className="section-kicker">SERVICE HEALTH</span><h2>RAG 구성요소</h2></div><span className={`status-pill ${services.every(([, ready]) => ready) ? "status-완료" : "status-부분-완료"}`}>{services.every(([, ready]) => ready) ? "준비" : "확인 필요"}</span></div><div className="service-list">{services.map(([name, ready, detail]) => <div key={name}><span className={`status-dot ${ready ? "" : "status-dot-warning"}`} /><strong>{name}</strong><span>{ready ? "연결" : "미설정"}</span><small>{detail}</small></div>)}</div></section>
@@ -2368,6 +2458,8 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
         <section className="panel table-wrap"><div className="panel-title"><div><span className="section-kicker">ASSETS</span><h2>최근 문서 자산</h2></div><span>{assets.length}건</span></div><table><caption className="sr-only">최근 문서 자산</caption><thead><tr><th>문서</th><th>등급</th><th>상태</th><th>벡터</th><th>원문</th><th>관리</th></tr></thead><tbody>{assets.slice(0, 6).map((asset) => <tr key={asset.id}><td><strong>{asset.title}</strong><small className="table-subtext">{asset.segment_count} segments</small></td><td>{asset.classification}</td><td>{asset.status}</td><td>{asset.embedding_dimensions ? `${asset.embedding_dimensions}D` : "—"}<small className="table-subtext">{asset.embedding_model || "미생성"}</small></td><td>{asset.original_uploaded_at ? <a className="text-button" href={`/api/v1/assets/${encodeURIComponent(asset.id)}/original`}>Storage 원문</a> : "—"}{asset.original_size ? <small className="table-subtext">{Math.max(1, Math.ceil(asset.original_size / 1024)).toLocaleString("ko-KR")}KB</small> : null}</td><td><div className="review-actions"><button type="button" className="text-button" disabled={assetActionId === asset.id} onClick={() => void manageAsset(asset, "reindex")}>{assetActionId === asset.id ? "처리 중" : "재색인"}</button><button type="button" className="text-button" disabled={assetActionId === asset.id} onClick={() => void manageAsset(asset, "delete")}>삭제</button></div></td></tr>)}</tbody></table></section>
         <section className="panel table-wrap"><div className="panel-title"><div><span className="section-kicker">INDEX JOBS</span><h2>최근 인덱싱 작업</h2></div><span>{failedJobs ? `실패 ${failedJobs}` : "정상"}</span></div><table><caption className="sr-only">최근 인덱싱 작업</caption><thead><tr><th>문서</th><th>단계</th><th>상태</th><th>시도</th></tr></thead><tbody>{jobs.slice(0, 6).map((job) => <tr key={job.id}><td><strong>{job.title || job.id}</strong></td><td>{job.stage}</td><td>{job.status}</td><td>{job.attempt_count}</td></tr>)}</tbody></table></section>
       </div>
+      </>}
+      {activeSection === "overview" && <div id="admin-control"><AiControlTower currentEmail={currentEmail} /></div>}
     </div>
   );
 }

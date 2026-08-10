@@ -1818,7 +1818,6 @@ export async function completeWithRag(input: {
     format: "paragraph" | "bullets" | "table";
   };
   reasoningTier?: ReasoningTier;
-  memoryContext?: string;
   contextFileBlock?: string;
   assetIds?: string[];
 }) {
@@ -1944,7 +1943,6 @@ export async function completeWithRag(input: {
   const prompt = `기준 일시(대한민국): ${currentKoreanReferenceTime()} KST
 아래 '근거'에 제공된 사내 문서만 답변 근거로 사용하세요. 근거 외의 사전 지식·추론·일반론은 사용하지 마세요. 각 핵심 주장 뒤에 [S1] 형식으로 근거 ID를 표시하세요. 숫자·코드·날짜·조건은 근거 원문에서 그대로 인용하고 임의로 변형하지 마세요. 사용자 질문의 전제가 근거와 다르면 그 점을 먼저 명시하세요.
 ${preference}
-${input.memoryContext || ""}
 ${input.contextFileBlock || ""}
 작성 원칙:
 1. 첫 문단에서 질문에 대한 결론을 직접 제시합니다.

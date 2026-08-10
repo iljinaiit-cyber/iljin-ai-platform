@@ -1,17 +1,17 @@
 {
   "gate": "G2",
-  "generated_at": "2026-07-24T08:10:15.611Z",
+  "generated_at": "2026-08-10T05:08:14.381Z",
   "automated_status": "pass",
   "live_starter_evaluation": "not_run",
-  "starter_case_count": 3,
+  "starter_case_count": 300,
   "official_minimum_case_count": 300,
-  "starter_only": true,
+  "starter_only": false,
   "official_decision": "hold",
   "checks": [
     {
       "id": "G2-STARTER-DATASET-PARSES",
       "status": "pass",
-      "observed": 3
+      "observed": 300
     },
     {
       "id": "G2-ACL-SERVER-FILTER",

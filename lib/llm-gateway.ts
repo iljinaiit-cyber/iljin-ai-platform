@@ -357,6 +357,134 @@ function normalizedMaxOutputTokens(value?: number, reasoningTier?: ReasoningTier
   return TIER_MAX_OUTPUT_TOKENS[reasoningTier ?? "expert"] ?? DEFAULT_MAX_OUTPUT_TOKENS;
 }
 
+/**
+ * 사고(reasoning) 토큰을 기본으로 생성하는 모델군.
+ *
+ * glm-4.7-flash 같은 하이브리드 추론 모델은 Workers AI 채팅 템플릿에서
+ * `enable_thinking` 이 기본 true 다(worker-configuration.d.ts 의 ChatTemplateKwargs).
+ * 사고 토큰도 max_tokens 예산에서 나가므로, tier 상한(swift 600 · expert 1,200)
+ * 안에서 사고가 예산을 다 써버리면 message.content 가 빈 문자열로 돌아온다.
+ *
+ * 2026-08-10 채팅 실패(EMPTY_PROVIDER_RESPONSE → LOCAL_PROVIDER_NOT_CONFIGURED)가
+ * 정확히 이 경로였다 — Provider 는 정상 응답했고 본문만 비어 있었다.
+ */
+const THINKING_MODEL_PATTERN = /glm|qwen3|qwq|deepseek-r1|gpt-oss|kimi|nemotron|magistral/i;
+
+export function isThinkingCapableModel(model: string) {
+  return THINKING_MODEL_PATTERN.test(model);
+}
+
+/**
+ * 사고를 끄는 요청 필드. Provider 마다 받는 키가 다르다.
+ *  - 로컬(Ollama): 네이티브 API 는 `think`, OpenAI 호환 엔드포인트는 `reasoning_effort`.
+ *  - Cloudflare: 통합 chat completions 의 `chat_template_kwargs.enable_thinking`.
+ *    이 스키마의 `reasoning_effort` 는 low|medium|high 만 허용하므로 "none" 을 보내면 안 된다.
+ */
+function thinkingOffBody(provider: GatewayProvider, model: string): Record<string, unknown> {
+  if (provider === "local") return { think: false, reasoning_effort: "none" };
+  return isThinkingCapableModel(model) ? { chat_template_kwargs: { enable_thinking: false } } : {};
+}
+
+/**
+ * 사고 토글이 무시됐을 때를 위한 2차 시도 여유분.
+ * 사고가 예산을 먹더라도 본문이 남도록 상한만 올려 한 번 더 시도한다.
+ */
+const REASONING_HEADROOM_TOKENS = 1_024;
+
+function withReasoningHeadroom(maxOutputTokens: number) {
+  return Math.min(maxOutputTokens + REASONING_HEADROOM_TOKENS, MAX_OUTPUT_TOKENS);
+}
+
+/** 모델이 남긴 사고 흔적(<think>…</think>)을 답변 본문에서 제거한다. */
+function stripThinkingMarkup(value: string) {
+  const withoutClosed = value.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  // 닫히지 않은 <think> 는 사고 도중 예산이 끊긴 경우다. 그 뒤는 답변이 아니다.
+  const openIndex = withoutClosed.search(/<think>/i);
+  return (openIndex >= 0 ? withoutClosed.slice(0, openIndex) : withoutClosed).trim();
+}
+
+type CompletionUsagePayload = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  completion_tokens_details?: { reasoning_tokens?: number };
+};
+
+type CompletionPayload = {
+  id?: string;
+  model?: string;
+  response?: string;
+  choices?: Array<{
+    finish_reason?: string;
+    message?: {
+      content?: string | Array<{ type?: string; text?: string }> | null;
+      reasoning_content?: string;
+    };
+  }>;
+  usage?: CompletionUsagePayload;
+};
+
+/**
+ * OpenAI 호환·Workers AI 응답에서 사용자에게 보여줄 본문만 뽑는다.
+ *
+ * allowReasoningFallback 은 재시도를 모두 소진한 마지막 지점에서만 켠다.
+ * 사고가 정상 종료(finish_reason=stop)했는데 본문이 비었다면 모델이 답을
+ * reasoning_content 에만 남긴 것이므로, 오류로 끊기보다 그 내용을 쓰는 편이 낫다.
+ */
+function completionContent(payload: CompletionPayload, options: { allowReasoningFallback?: boolean } = {}) {
+  const choice = payload.choices?.[0];
+  const messageContent = choice?.message?.content;
+  const direct = typeof messageContent === "string"
+    ? stripThinkingMarkup(messageContent)
+    : Array.isArray(messageContent)
+      ? stripThinkingMarkup(
+          messageContent
+            .filter((item) => item.type === "text" && typeof item.text === "string")
+            .map((item) => item.text!.trim())
+            .filter(Boolean)
+            .join("\n"),
+        )
+      : typeof payload.response === "string" ? stripThinkingMarkup(payload.response) : "";
+  if (direct) return direct;
+  if (options.allowReasoningFallback && choice?.finish_reason === "stop") {
+    return stripThinkingMarkup(choice.message?.reasoning_content ?? "");
+  }
+  return "";
+}
+
+/**
+ * 빈 응답 오류. 원인을 메시지에 남긴다 — "빈 응답"만 보고는 운영에서 판단할 수 없다.
+ * finish_reason=length 이거나 reasoning_tokens 가 잡히면 사고가 예산을 소진한 것이다.
+ */
+function emptyResponseError(provider: GatewayProvider, payload?: CompletionPayload) {
+  const finishReason = payload?.choices?.[0]?.finish_reason;
+  const reasoningTokens = payload?.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
+  const cause = finishReason === "length" || reasoningTokens > 0
+    ? " 사고 과정이 출력 토큰 상한을 소진했습니다."
+    : "";
+  return new GatewayError(
+    `${providerLabel(provider)}에서 빈 응답을 반환했습니다.${cause}`,
+    502,
+    "EMPTY_PROVIDER_RESPONSE",
+    false,
+    provider,
+  );
+}
+
+function emptyResponseLog(provider: GatewayProvider, model: string, attempt: number, maxTokens: number, payload?: CompletionPayload) {
+  return {
+    provider,
+    model,
+    attempt,
+    maxTokens,
+    finishReason: payload?.choices?.[0]?.finish_reason,
+    usage: payload?.usage,
+  };
+}
+
+/** 전송 실패 1회 + 빈 응답 1회를 각각 만회할 수 있는 최소 횟수. */
+const MAX_PROVIDER_ATTEMPTS = 3;
+
 type ProviderRequest = {
   provider: GatewayProvider;
   baseUrl: string;
@@ -373,7 +501,7 @@ async function requestCompletion(
   reasoningTier?: ReasoningTier,
 ): Promise<GatewayCompletion> {
   const { provider, baseUrl, model, headers, disableThinking } = request;
-  const maxOutputTokens = normalizedMaxOutputTokens(requestedMaxOutputTokens, reasoningTier);
+  const baseMaxOutputTokens = normalizedMaxOutputTokens(requestedMaxOutputTokens, reasoningTier);
   assertProviderCircuitClosed(provider);
   const runtime = getRuntimeEnv();
   const configuredTimeout = provider === "local"
@@ -384,9 +512,27 @@ async function requestCompletion(
     provider === "local" ? 120_000 : 60_000,
   );
   const startedAt = Date.now();
-  let response: Response | undefined;
+  const lastAttempt = MAX_PROVIDER_ATTEMPTS - 1;
+  let emptyResponses = 0;
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const succeed = (payload: CompletionPayload, content: string): GatewayCompletion => {
+    recordProviderSuccess(provider);
+    return {
+      id: payload.id || `chatcmpl-${traceId}`,
+      provider,
+      model: payload.model || model,
+      content,
+      finishReason: payload.choices?.[0]?.finish_reason || "stop",
+      usage: payload.usage,
+      traceId,
+      latencyMs: Date.now() - startedAt,
+    };
+  };
+
+  for (let attempt = 0; attempt < MAX_PROVIDER_ATTEMPTS; attempt += 1) {
+    // 빈 응답을 한 번 받았으면 사고가 예산을 먹었다고 보고 상한을 올려 재시도한다.
+    const maxOutputTokens = emptyResponses > 0 ? withReasoningHeadroom(baseMaxOutputTokens) : baseMaxOutputTokens;
+    let response: Response;
     try {
       response = await fetchWithTimeout(
         `${normalizeBaseUrl(baseUrl)}/chat/completions`,
@@ -402,10 +548,7 @@ async function requestCompletion(
             messages: safeMessages(messages, reasoningTier),
             max_tokens: maxOutputTokens,
             temperature: 0.2,
-            // `think` is honoured by Ollama's native API, `reasoning_effort` by its
-            // OpenAI-compatible endpoint. Without the latter, thinking models keep
-            // emitting chain-of-thought and run past the provider timeout.
-            ...(disableThinking ? { think: false, reasoning_effort: "none" } : {}),
+            ...(disableThinking ? thinkingOffBody(provider, model) : {}),
             stream: false,
           }),
         },
@@ -420,46 +563,36 @@ async function requestCompletion(
       throw new GatewayError(`${providerLabel(provider)} 네트워크 연결에 실패했습니다.`, 503, "PROVIDER_NETWORK_ERROR", true, provider);
     }
 
-    if (response.ok) break;
-    if (attempt === 0 && [429, 502, 503, 504].includes(response.status)) continue;
+    if (!response.ok) {
+      if (attempt === 0 && [429, 502, 503, 504].includes(response.status)) continue;
+      recordProviderFailure(provider);
+      throw safeUpstreamError(provider, response.status);
+    }
+
+    let payload: CompletionPayload;
+    try {
+      payload = await response.json();
+    } catch {
+      recordProviderFailure(provider);
+      throw new GatewayError(`${providerLabel(provider)} 응답 형식이 올바르지 않습니다.`, 502, "INVALID_PROVIDER_RESPONSE", false, provider);
+    }
+
+    const content = completionContent(payload);
+    if (content) return succeed(payload, content);
+
+    emptyResponses += 1;
+    console.warn("[llm-gateway] empty completion content", emptyResponseLog(provider, model, attempt, maxOutputTokens, payload));
+    // 두 번째 빈 응답이면 상한을 올려도 소용없다. 더 태우지 않고 폴백으로 넘긴다.
+    if (emptyResponses < 2 && attempt < lastAttempt) continue;
+
+    const salvaged = completionContent(payload, { allowReasoningFallback: true });
+    if (salvaged) return succeed(payload, salvaged);
     recordProviderFailure(provider);
-    throw safeUpstreamError(provider, response.status);
+    throw emptyResponseError(provider, payload);
   }
 
-  if (!response?.ok) {
-    recordProviderFailure(provider);
-    throw new GatewayError(`${providerLabel(provider)} 서비스가 응답하지 않습니다.`, 503, "PROVIDER_UNAVAILABLE", true, provider);
-  }
-
-  let payload: {
-    id?: string;
-    model?: string;
-    choices?: Array<{ finish_reason?: string; message?: { content?: string } }>;
-    usage?: GatewayCompletion["usage"];
-  };
-  try {
-    payload = await response.json();
-  } catch {
-    recordProviderFailure(provider);
-    throw new GatewayError(`${providerLabel(provider)} 응답 형식이 올바르지 않습니다.`, 502, "INVALID_PROVIDER_RESPONSE", false, provider);
-  }
-  const content = payload.choices?.[0]?.message?.content?.trim();
-  if (!content) {
-    recordProviderFailure(provider);
-    throw new GatewayError(`${providerLabel(provider)}에서 빈 응답을 반환했습니다.`, 502, "EMPTY_PROVIDER_RESPONSE", false, provider);
-  }
-
-  recordProviderSuccess(provider);
-  return {
-    id: payload.id || `chatcmpl-${traceId}`,
-    provider,
-    model: payload.model || model,
-    content,
-    finishReason: payload.choices?.[0]?.finish_reason || "stop",
-    usage: payload.usage,
-    traceId,
-    latencyMs: Date.now() - startedAt,
-  };
+  recordProviderFailure(provider);
+  throw new GatewayError(`${providerLabel(provider)} 서비스가 응답하지 않습니다.`, 503, "PROVIDER_UNAVAILABLE", true, provider);
 }
 
 export async function completeWithLocal(messages: GatewayMessage[], traceId: string, maxOutputTokens?: number, reasoningTier?: ReasoningTier, overrideModel?: string): Promise<GatewayCompletion> {
@@ -495,31 +628,7 @@ export async function completeWithLocal(messages: GatewayMessage[], traceId: str
   );
 }
 
-type CloudflareCompletionPayload = {
-  id?: string;
-  model?: string;
-  response?: string;
-  choices?: Array<{
-    finish_reason?: string;
-    message?: {
-      content?: string | Array<{ type?: string; text?: string }>;
-    };
-  }>;
-  usage?: GatewayCompletion["usage"];
-};
-
-function cloudflareContent(payload: CloudflareCompletionPayload) {
-  const messageContent = payload.choices?.[0]?.message?.content;
-  if (typeof messageContent === "string") return messageContent.trim();
-  if (Array.isArray(messageContent)) {
-    return messageContent
-      .filter((item) => item.type === "text" && typeof item.text === "string")
-      .map((item) => item.text!.trim())
-      .filter(Boolean)
-      .join("\n");
-  }
-  return typeof payload.response === "string" ? payload.response.trim() : "";
-}
+type CloudflareCompletionPayload = CompletionPayload;
 
 async function cloudflareRunWithTimeout(
   run: Promise<CloudflareCompletionPayload>,
@@ -581,6 +690,7 @@ async function completeWithCloudflareUnmetered(messages: GatewayMessage[], trace
         baseUrl: `${baseUrl}/v1`,
         model,
         headers: cloudflareAiHeaders(runtime),
+        disableThinking: true,
       },
       messages,
       traceId,
@@ -589,25 +699,30 @@ async function completeWithCloudflareUnmetered(messages: GatewayMessage[], trace
     );
   }
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  let emptyResponses = 0;
+  for (let attempt = 0; attempt < MAX_PROVIDER_ATTEMPTS; attempt += 1) {
+    // 빈 응답 뒤에는 상한을 올려 한 번만 더 시도한다. 같은 요청을 세 번 반복하면
+    // 실패는 그대로인 채 뉴런만 세 배로 나간다.
+    const attemptMaxTokens = emptyResponses > 0 ? withReasoningHeadroom(maxOutputTokens) : maxOutputTokens;
     try {
       payload = await cloudflareRunWithTimeout(
         runtime.AI!.run(model, {
           messages: safeMessages(messages, reasoningTier),
-          max_tokens: maxOutputTokens,
+          max_tokens: attemptMaxTokens,
           temperature: 0.2,
           stream: false,
+          ...thinkingOffBody("cloudflare", model),
         }) as Promise<CloudflareCompletionPayload>,
         timeoutMs,
       );
-      if (cloudflareContent(payload)) break;
-      lastError = new GatewayError(
-        "Cloud LLM에서 빈 응답을 반환했습니다.",
-        502,
-        "EMPTY_PROVIDER_RESPONSE",
-        false,
-        "cloudflare",
+      if (completionContent(payload)) break;
+      emptyResponses += 1;
+      lastError = emptyResponseError("cloudflare", payload);
+      console.warn(
+        "[llm-gateway] empty completion content",
+        emptyResponseLog("cloudflare", model, attempt, attemptMaxTokens, payload),
       );
+      if (emptyResponses >= 2) break;
     } catch (error) {
       lastError = error;
       // Log the actual error for debugging
@@ -616,10 +731,13 @@ async function completeWithCloudflareUnmetered(messages: GatewayMessage[], trace
         attempt,
         error: error instanceof Error ? error.message : String(error),
       });
+      // 재시도해도 결과가 같은 오류(인증·모델명·입력 오류)는 여기서 끊는다.
+      if (error instanceof GatewayError && !error.retryable) break;
     }
   }
 
-  const content = payload ? cloudflareContent(payload) : "";
+  // 재시도를 모두 소진한 지점이다. 사고 필드에만 답이 들어간 경우까지 구제한다.
+  const content = payload ? completionContent(payload, { allowReasoningFallback: true }) : "";
   if (!content) {
     recordProviderFailure("cloudflare");
     if (lastError instanceof GatewayError) throw lastError;
@@ -753,13 +871,34 @@ export async function completeWithGateway(
   }
 
   throw new GatewayError(
-    cloudflareFailure.code === "CLOUD_COST_CAP_REACHED"
-      ? `Cloud 비용 한도에 도달했고 로컬 모델도 사용할 수 없습니다. (${localFailure.code})`
-      : `Cloudflare 모델(${selectedCloudflareModel})과 로컬 LLM이 모두 응답하지 않습니다. (${cloudflareFailure.code} → ${localFailure.code})`,
+    allProvidersFailedMessage(selectedCloudflareModel, cloudflareFailure, localFailure),
     cloudflareFailure.code === "CLOUD_COST_CAP_REACHED" ? 429 : Math.max(localFailure.status, cloudflareFailure.status),
     cloudflareFailure.code === "CLOUD_COST_CAP_REACHED" ? "CLOUD_COST_CAP_LOCAL_UNAVAILABLE" : "ALL_PROVIDERS_UNAVAILABLE",
     cloudflareFailure.retryable || localFailure.retryable,
   );
+}
+
+/**
+ * 두 Provider 가 모두 실패했을 때 사용자에게 보여줄 문장.
+ *
+ * 종전에는 `(EMPTY_PROVIDER_RESPONSE → LOCAL_PROVIDER_NOT_CONFIGURED)` 처럼 코드만
+ * 노출했다. 사용자는 무엇을 해야 할지 알 수 없고, 로컬이 애초에 구성되지 않은
+ * 배포에서는 "로컬 LLM이 응답하지 않는다"는 말 자체가 사실과 다르다.
+ * 사람이 읽을 원인과 다음 행동을 먼저 쓰고, 진단 코드는 괄호로 뒤에 붙인다.
+ */
+function allProvidersFailedMessage(model: string, cloudflareFailure: GatewayError, localFailure: GatewayError) {
+  const codes = `${cloudflareFailure.code} → ${localFailure.code}`;
+  if (cloudflareFailure.code === "CLOUD_COST_CAP_REACHED") {
+    return `Cloud 비용 한도에 도달했고 로컬 모델도 사용할 수 없습니다. 관리자에게 한도 상향을 요청해 주세요. (${localFailure.code})`;
+  }
+  // 폴백이 "구성되지 않음"인 경우와 "구성됐지만 실패"인 경우는 조치가 다르다.
+  const fallbackNote = localFailure.code === "LOCAL_PROVIDER_NOT_CONFIGURED"
+    ? "폴백용 로컬 LLM은 이 환경에 구성되어 있지 않습니다."
+    : `폴백한 로컬 LLM도 실패했습니다(${localFailure.code}).`;
+  const cause = cloudflareFailure.code === "EMPTY_PROVIDER_RESPONSE"
+    ? `Cloud 모델(${model})이 본문 없는 응답을 반환했습니다. 답변 분량을 줄이거나 잠시 후 다시 시도해 주세요.`
+    : `Cloud 모델(${model}) 호출에 실패했습니다: ${cloudflareFailure.message}`;
+  return `${cause} ${fallbackNote} (${codes})`;
 }
 
 export function createTraceId() {

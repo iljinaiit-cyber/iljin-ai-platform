@@ -70,6 +70,7 @@ export type RuntimeEnv = {
   CLOUDFLARE_TTS_MODEL?: string;
   CLOUDFLARE_IMAGE_MODEL?: string;
   TAVILY_API_KEY?: string;
+  EXA_API_KEY?: string;
   GOOGLE_SEARCH_API_KEY?: string;
   GOOGLE_SEARCH_ENGINE_ID?: string;
   BRAVE_SEARCH_API_KEY?: string;
@@ -120,6 +121,7 @@ export function getRuntimeEnv(): RuntimeEnv {
       CLOUDFLARE_TTS_MODEL: process.env.CLOUDFLARE_TTS_MODEL,
       CLOUDFLARE_IMAGE_MODEL: process.env.CLOUDFLARE_IMAGE_MODEL,
       TAVILY_API_KEY: process.env.TAVILY_API_KEY,
+      EXA_API_KEY: process.env.EXA_API_KEY,
       GOOGLE_SEARCH_API_KEY: process.env.GOOGLE_SEARCH_API_KEY,
       GOOGLE_SEARCH_ENGINE_ID: process.env.GOOGLE_SEARCH_ENGINE_ID,
       BRAVE_SEARCH_API_KEY: process.env.BRAVE_SEARCH_API_KEY,

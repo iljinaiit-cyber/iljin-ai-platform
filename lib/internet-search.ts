@@ -3,7 +3,7 @@ import type { Principal } from "./identity";
 import { ensureRagSchema, RagError } from "./rag";
 import { getRuntimeEnv, type RuntimeEnv } from "./runtime-env";
 
-export type InternetSearchProvider = "tavily" | "google" | "brave" | "webpilot" | "duckduckgo" | "jina" | "wikimedia";
+export type InternetSearchProvider = "tavily" | "exa" | "google" | "brave" | "webpilot" | "duckduckgo" | "jina" | "wikimedia";
 export type InternetSourceCategory = "government" | "academic" | "reference" | "web";
 export type InternetSearchIntent = "current" | "comparison" | "how-to" | "fact";
 
@@ -42,6 +42,8 @@ export type InternetSearchResponse = {
   query: string;
   searchQuery: string;
   provider: InternetSearchProvider;
+  /** 결과에 실제로 기여한 모든 Provider. 여러 개면 응답이 다중 출처를 종합한 것이다. */
+  providersUsed: InternetSearchProvider[];
   results: InternetSearchResult[];
   latencyMs: number;
   traceId: string;
@@ -95,7 +97,7 @@ type ProviderAdapter = {
 };
 
 const WIKIMEDIA_USER_AGENT = "ILJIN-AI-Portal/1.0 (https://iljin-ai-works.pages.dev)";
-const DEFAULT_PROVIDER_ORDER: InternetSearchProvider[] = ["tavily", "google", "brave", "webpilot", "duckduckgo", "jina", "wikimedia"];
+const DEFAULT_PROVIDER_ORDER: InternetSearchProvider[] = ["tavily", "exa", "google", "brave", "webpilot", "duckduckgo", "jina", "wikimedia"];
 const FRESHNESS_PATTERN = /\b(today|latest|current|recent|news|update|release|price)\b|오늘|최신|현재|최근|뉴스|동향|출시|업데이트|가격|시세|이번\s*(주|달|분기|해)/i;
 const HISTORICAL_PATTERN = /\b(history|historical|formerly|past|archive)\b|역사|과거|당시|연혁|예전|아카이브/i;
 const COMPARISON_PATTERN = /\b(compare|comparison|versus|vs\.?|difference|best)\b|비교|차이|장단점|추천|순위/i;
@@ -113,6 +115,12 @@ const PROVIDER_META: Record<InternetSearchProvider, Omit<InternetSearchProviderS
     name: "Tavily Search",
     capability: "LLM용 본문 추출, 관련도 점수, 최신성 필터",
     configuration: "TAVILY_API_KEY",
+  },
+  exa: {
+    id: "exa",
+    name: "Exa Search",
+    capability: "임베딩 기반 의미론적 검색 · 본문 하이라이트 추출 (키워드 검색과 다른 후보군 확보)",
+    configuration: "EXA_API_KEY",
   },
   google: {
     id: "google",
@@ -361,6 +369,13 @@ async function fetchJson(url: string, init?: RequestInit) {
   }
 }
 
+/** makeResult() 가 id 에 새겨 둔 Provider 접두어를 되읽는다("web_tavily_3" → "tavily"). */
+function providerOfResult(result: InternetSearchResult): InternetSearchProvider | undefined {
+  const match = /^web_([a-z]+)_/.exec(result.id);
+  const candidate = match?.[1];
+  return candidate && candidate in PROVIDER_ADAPTERS ? candidate as InternetSearchProvider : undefined;
+}
+
 function makeResult(
   provider: InternetSearchProvider,
   index: number,
@@ -421,6 +436,42 @@ async function tavilySearch(query: string, limit: number, runtime: RuntimeEnv) {
       snippet: item.raw_content || item.content,
       score: item.score,
       publishedAt: item.published_date,
+    });
+    return result ? [result] : [];
+  });
+}
+
+async function exaSearch(query: string, limit: number, runtime: RuntimeEnv) {
+  const payload = await fetchJson("https://api.exa.ai/search", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "x-api-key": runtime.EXA_API_KEY?.trim() || "",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query,
+      type: "auto",
+      numResults: Math.min(Math.max(limit * 2, 8), 20),
+      contents: { text: { maxCharacters: 1_800 }, highlights: true },
+    }),
+  }) as {
+    results?: Array<{
+      title?: string;
+      url?: string;
+      publishedDate?: string;
+      text?: string;
+      highlights?: string[];
+      score?: number;
+    }>;
+  };
+  return (payload.results || []).flatMap((item, index) => {
+    const result = makeResult("exa", index, {
+      title: item.title,
+      url: item.url,
+      snippet: (item.highlights || []).join(" ") || item.text,
+      score: item.score,
+      publishedAt: item.publishedDate,
     });
     return result ? [result] : [];
   });
@@ -776,6 +827,11 @@ const PROVIDER_ADAPTERS: Record<InternetSearchProvider, ProviderAdapter> = {
     configured: (runtime) => Boolean(runtime.TAVILY_API_KEY?.trim()),
     search: tavilySearch,
   },
+  exa: {
+    id: "exa",
+    configured: (runtime) => Boolean(runtime.EXA_API_KEY?.trim()),
+    search: exaSearch,
+  },
   google: {
     id: "google",
     configured: (runtime) => Boolean(runtime.GOOGLE_SEARCH_API_KEY?.trim() && runtime.GOOGLE_SEARCH_ENGINE_ID?.trim()),
@@ -816,17 +872,70 @@ function providerOrder(runtime: RuntimeEnv) {
   return [...new Set([...configuredOrder, ...DEFAULT_PROVIDER_ORDER])];
 }
 
+/**
+ * 한 배치에서 동시에 부르는 Provider 수 상한.
+ *
+ * 예전에는 Provider 를 하나씩 순서대로 불러 결과가 충분해지면 그 자리에서
+ * 멈췄다 — 실질적으로 매 요청이 1개 소스에서만 답을 받았다는 뜻이다("정확하고
+ * 다양한 정보"와는 거리가 멀다). 그렇다고 구성된 Provider 전부를 매번 병렬로
+ * 부르면 상용 검색 API 비용과 레이트리밋이 요청마다 무한정 늘어난다.
+ * 배치 크기를 상한으로 묶어 두 극단 사이에서 다양성과 비용을 함께 잡는다.
+ */
+const MAX_PARALLEL_PROVIDERS = 3;
+
+async function runProviderBatch(
+  providerIds: InternetSearchProvider[],
+  plan: InternetSearchPlan,
+  limit: number,
+  runtime: RuntimeEnv,
+) {
+  return Promise.all(providerIds.map(async (providerId) => {
+    const adapter = PROVIDER_ADAPTERS[providerId];
+    const startedAt = Date.now();
+    try {
+      const providerResults: InternetSearchResult[] = [];
+      for (const query of plan.queries) {
+        providerResults.push(...await adapter.search(query, limit, runtime));
+        if (!plan.latestRequired && rerankResults(plan.searchQuery, providerResults, limit).length >= Math.min(4, limit)) break;
+      }
+      const deduplicated = rerankResults(plan.searchQuery, providerResults, limit);
+      return {
+        providerId,
+        results: deduplicated,
+        attempt: {
+          provider: providerId,
+          status: deduplicated.length ? "success" : "empty",
+          resultCount: deduplicated.length,
+          latencyMs: Date.now() - startedAt,
+          detail: deduplicated.length ? "검색 결과 수집 완료" : "검색 결과 없음",
+        } satisfies InternetSearchAttempt,
+      };
+    } catch (error) {
+      return {
+        providerId,
+        results: [] as InternetSearchResult[],
+        attempt: {
+          provider: providerId,
+          status: "failed",
+          resultCount: 0,
+          latencyMs: Date.now() - startedAt,
+          detail: error instanceof Error ? error.message : `${providerId}_search_failed`,
+        } satisfies InternetSearchAttempt,
+      };
+    }
+  }));
+}
+
 async function executeInternetSearch(plan: InternetSearchPlan, limit: number) {
   const runtime = getRuntimeEnv();
   const attempts: InternetSearchAttempt[] = [];
   const collected: InternetSearchResult[] = [];
-  let provider: InternetSearchProvider = "wikimedia";
-  let firstConfigured: InternetSearchProvider | undefined;
+  const successfulProviders: InternetSearchProvider[] = [];
   const minimumResults = Math.min(4, limit);
 
-  for (const providerId of providerOrder(runtime)) {
-    const adapter = PROVIDER_ADAPTERS[providerId];
-    if (!adapter.configured(runtime)) {
+  const configuredOrder = providerOrder(runtime).filter((providerId) => {
+    const configured = PROVIDER_ADAPTERS[providerId].configured(runtime);
+    if (!configured) {
       attempts.push({
         provider: providerId,
         status: "skipped",
@@ -834,47 +943,35 @@ async function executeInternetSearch(plan: InternetSearchPlan, limit: number) {
         latencyMs: 0,
         detail: `${PROVIDER_META[providerId].configuration} 미구성`,
       });
-      continue;
     }
-    firstConfigured ||= providerId;
-    const startedAt = Date.now();
-    try {
-      const providerResults: InternetSearchResult[] = [];
-      for (const query of plan.queries) {
-        providerResults.push(...await adapter.search(query, limit, runtime));
-        if (!plan.latestRequired && rerankResults(plan.searchQuery, providerResults, limit).length >= minimumResults) break;
-      }
-      const deduplicated = rerankResults(plan.searchQuery, providerResults, limit);
-      collected.push(...deduplicated);
-      attempts.push({
-        provider: providerId,
-        status: deduplicated.length ? "success" : "empty",
-        resultCount: deduplicated.length,
-        latencyMs: Date.now() - startedAt,
-        detail: deduplicated.length ? "검색 결과 수집 완료" : "검색 결과 없음",
-      });
-      if (deduplicated.length && provider === "wikimedia") provider = providerId;
-      if (rerankResults(plan.searchQuery, collected, limit).length >= minimumResults) break;
-    } catch (error) {
-      attempts.push({
-        provider: providerId,
-        status: "failed",
-        resultCount: 0,
-        latencyMs: Date.now() - startedAt,
-        detail: error instanceof Error ? error.message : `${providerId}_search_failed`,
-      });
+    return configured;
+  });
+  const firstConfigured = configuredOrder[0];
+
+  for (let cursor = 0; cursor < configuredOrder.length;) {
+    const batch = configuredOrder.slice(cursor, cursor + MAX_PARALLEL_PROVIDERS);
+    cursor += batch.length;
+    const batchResults = await runProviderBatch(batch, plan, limit, runtime);
+    for (const { providerId, results, attempt } of batchResults) {
+      attempts.push(attempt);
+      collected.push(...results);
+      if (results.length) successfulProviders.push(providerId);
     }
+    if (rerankResults(plan.searchQuery, collected, limit).length >= minimumResults) break;
   }
 
   const results = rerankResults(plan.searchQuery, collected, limit);
-  const successful = attempts.find((attempt) => attempt.status === "success");
-  if (successful) provider = successful.provider;
+  // 실제로 최종 결과에 살아남은 출처만 "사용됨"으로 센다 — 응답은 왔지만
+  // 중복·저관련으로 rerankResults 에서 전부 걸러진 Provider 는 제외한다.
+  const providersUsed = [...new Set(results.map(providerOfResult).filter((id): id is InternetSearchProvider => Boolean(id)))];
+  const provider = providersUsed[0] || successfulProviders[0] || "wikimedia";
   return {
     provider,
+    providersUsed: providersUsed.length ? providersUsed : successfulProviders,
     results,
     providerPath: attempts,
     fallbackUsed: provider === "wikimedia"
-      || Boolean(firstConfigured && successful && successful.provider !== firstConfigured)
+      || Boolean(firstConfigured && provider !== firstConfigured)
       || attempts.some((attempt) => attempt.status === "failed"),
   };
 }
@@ -930,8 +1027,8 @@ export function getInternetSearchStatus(): InternetSearchStatus {
     activeProvider,
     status: fullWebConfigured ? "ready" : "fallback",
     detail: fullWebConfigured
-      ? `${PROVIDER_META[activeProvider].name}을 우선 사용하고, 오류 또는 결과 부족 시 다음 공급자로 자동 전환합니다.`
-      : "DuckDuckGo 무료 웹 검색과 Wikimedia 백과사전을 사용합니다. 상용 검색 API(Tavily·Google·Brave) 구성 시 더 풍부한 결과와 최신성 필터를 사용할 수 있습니다.",
+      ? `${PROVIDER_META[activeProvider].name}부터 최대 ${MAX_PARALLEL_PROVIDERS}개 공급자를 배치로 병렬 조회해 결과를 종합하고, 그래도 부족하면 다음 배치로 확장합니다.`
+      : "DuckDuckGo 무료 웹 검색과 Wikimedia 백과사전을 사용합니다. 상용 검색 API(Tavily·Exa·Google·Brave) 구성 시 더 풍부하고 다양한 출처를 병렬로 조회합니다.",
     providers,
   };
 }
@@ -955,7 +1052,9 @@ export async function probeInternetSearch(): Promise<InternetSearchProbe> {
       detail: result.results.length
         ? failed.length
           ? `${failed.join(", ")} 연결 실패 후 ${PROVIDER_META[result.provider].name}(으)로 대체했습니다.`
-          : `${PROVIDER_META[result.provider].name} 검색 연결이 정상입니다.`
+          : result.providersUsed.length > 1
+            ? `${result.providersUsed.map((id) => PROVIDER_META[id].name).join(", ")} 등 ${result.providersUsed.length}개 공급자를 종합해 결과를 구성했습니다.`
+            : `${PROVIDER_META[result.provider].name} 검색 연결이 정상입니다.`
         : "검색 공급자가 결과를 반환하지 않았습니다.",
       checkedAt: new Date().toISOString(),
     };
@@ -1019,6 +1118,7 @@ export async function searchInternet(
     query: cleanQuery,
     searchQuery: plan.searchQuery,
     provider: execution.provider,
+    providersUsed: execution.providersUsed,
     results: execution.results,
     latencyMs,
     traceId: options.traceId,

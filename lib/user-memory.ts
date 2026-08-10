@@ -5,6 +5,7 @@ import { completeWithGateway } from "./llm-gateway";
 import { embedTextsWithProvider } from "./rag";
 
 export interface UserPreferences {
+  memoryEnabled?: boolean;
   answerLength?: "brief" | "standard" | "detailed";
   answerFormat?: "paragraph" | "bullets" | "table";
   searchScope?: "internal" | "internet";
@@ -18,10 +19,23 @@ export interface UserMemory {
   tenantId: string;
   content: string;
   category: string;
+  status: "candidate" | "confirmed";
   embedding: number[] | null;
   createdAt: string;
   conversationId: string | null;
 }
+
+type UserMemoryRow = {
+  id: string;
+  email: string;
+  tenant_id: string;
+  content: string;
+  category: string;
+  status: "candidate" | "confirmed";
+  embedding: string | null;
+  conversation_id: string | null;
+  created_at: string;
+};
 
 const MAX_MEMORIES = 50;
 const MEMORY_RECALL_LIMIT = 5;
@@ -33,10 +47,15 @@ export async function ensureUserMemorySchema() {
     db.prepare(`CREATE TABLE IF NOT EXISTS user_memory (
       id TEXT PRIMARY KEY, email TEXT NOT NULL, tenant_id TEXT NOT NULL,
       content TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'fact',
+      status TEXT NOT NULL DEFAULT 'confirmed',
       embedding TEXT, conversation_id TEXT, created_at TEXT NOT NULL
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS user_memory_email_idx ON user_memory(tenant_id, email, created_at)"),
   ]);
+  const columns = await db.prepare("PRAGMA table_info(user_memory)").all<{ name: string }>();
+  if (!(columns.results || []).some((column) => column.name === "status")) {
+    await db.prepare("ALTER TABLE user_memory ADD COLUMN status TEXT NOT NULL DEFAULT 'confirmed'").run();
+  }
 }
 
 function memId() {
@@ -45,6 +64,90 @@ function memId() {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function toUserMemory(row: UserMemoryRow): UserMemory {
+  return {
+    id: row.id,
+    email: row.email,
+    tenantId: row.tenant_id,
+    content: row.content,
+    category: row.category,
+    status: row.status,
+    embedding: null,
+    createdAt: row.created_at,
+    conversationId: row.conversation_id,
+  };
+}
+
+export async function listUserMemories(principal: Principal): Promise<UserMemory[]> {
+  await ensureUserMemorySchema();
+  const rows = await getD1().prepare(`SELECT id, email, tenant_id, content, category, embedding, conversation_id, created_at
+    FROM user_memory WHERE tenant_id = ? AND email = ? AND status = 'confirmed' ORDER BY created_at DESC LIMIT ${MAX_MEMORIES}`)
+    .bind(principal.tenantId, principal.email).all<UserMemoryRow>();
+  return (rows.results || []).map(toUserMemory);
+}
+
+export async function createUserMemory(principal: Principal, input: { content: string; category?: string; conversationId?: string }): Promise<UserMemory> {
+  const content = input.content.trim().slice(0, 500);
+  if (!content) throw new Error("메모리 내용이 필요합니다.");
+  await ensureUserMemorySchema();
+  const db = getD1();
+  const duplicate = await db.prepare(`SELECT id, email, tenant_id, content, category, status, embedding, conversation_id, created_at
+    FROM user_memory WHERE tenant_id = ? AND email = ? AND content = ? AND status = 'confirmed' LIMIT 1`)
+    .bind(principal.tenantId, principal.email, content).first<UserMemoryRow>();
+  if (duplicate) return toUserMemory(duplicate);
+  const countRow = await db.prepare("SELECT COUNT(*) as cnt FROM user_memory WHERE tenant_id = ? AND email = ?")
+    .bind(principal.tenantId, principal.email).first<{ cnt: number }>();
+  if ((countRow?.cnt || 0) >= MAX_MEMORIES) {
+    await db.prepare(`DELETE FROM user_memory WHERE id IN (
+      SELECT id FROM user_memory WHERE tenant_id = ? AND email = ? ORDER BY created_at ASC LIMIT 1)`)
+      .bind(principal.tenantId, principal.email).run();
+  }
+  const id = memId();
+  const createdAt = nowIso();
+  let embedding: string | null = null;
+  try {
+    const result = await embedTextsWithProvider([content]);
+    if (result.vectors[0]) embedding = JSON.stringify(result.vectors[0]);
+  } catch { /* keyword recall remains available when embeddings are unavailable */ }
+  await db.prepare(`INSERT INTO user_memory
+    (id, email, tenant_id, content, category, status, embedding, conversation_id, created_at)
+    VALUES (?, ?, ?, ?, ?, 'confirmed', ?, ?, ?)`)
+    .bind(id, principal.email, principal.tenantId, content, input.category || "fact", embedding, input.conversationId || null, createdAt).run();
+  return { id, email: principal.email, tenantId: principal.tenantId, content, category: input.category || "fact", status: "confirmed", embedding: null, createdAt, conversationId: input.conversationId || null };
+}
+
+export async function listUserMemoryCandidates(principal: Principal): Promise<UserMemory[]> {
+  await ensureUserMemorySchema();
+  const rows = await getD1().prepare(`SELECT id, email, tenant_id, content, category, status, embedding, conversation_id, created_at
+    FROM user_memory WHERE tenant_id = ? AND email = ? AND status = 'candidate' ORDER BY created_at DESC LIMIT ${MAX_MEMORIES}`)
+    .bind(principal.tenantId, principal.email).all<UserMemoryRow>();
+  return (rows.results || []).map(toUserMemory);
+}
+
+export async function approveUserMemory(principal: Principal, memoryId: string): Promise<void> {
+  await ensureUserMemorySchema();
+  await getD1().prepare("UPDATE user_memory SET status = 'confirmed' WHERE id = ? AND tenant_id = ? AND email = ? AND status = 'candidate'")
+    .bind(memoryId, principal.tenantId, principal.email).run();
+}
+
+export async function rejectUserMemory(principal: Principal, memoryId: string): Promise<void> {
+  await ensureUserMemorySchema();
+  await getD1().prepare("DELETE FROM user_memory WHERE id = ? AND tenant_id = ? AND email = ? AND status = 'candidate'")
+    .bind(memoryId, principal.tenantId, principal.email).run();
+}
+
+export async function deleteUserMemory(principal: Principal, memoryId: string): Promise<void> {
+  await ensureUserMemorySchema();
+  await getD1().prepare("DELETE FROM user_memory WHERE id = ? AND tenant_id = ? AND email = ?")
+    .bind(memoryId, principal.tenantId, principal.email).run();
+}
+
+export async function deleteAllUserMemories(principal: Principal): Promise<void> {
+  await ensureUserMemorySchema();
+  await getD1().prepare("DELETE FROM user_memory WHERE tenant_id = ? AND email = ?")
+    .bind(principal.tenantId, principal.email).run();
 }
 
 export async function loadUserPreferences(principal: Principal): Promise<UserPreferences> {
@@ -123,7 +226,7 @@ ${conversationText}
         .bind(principal.tenantId, principal.email, lines.length).run();
     }
     for (const line of lines.slice(0, 3)) {
-      await getD1().prepare(`INSERT INTO user_memory (id, email, tenant_id, content, category, conversation_id, created_at) VALUES (?, ?, ?, ?, 'fact', ?, ?)`)
+      await getD1().prepare(`INSERT INTO user_memory (id, email, tenant_id, content, category, status, conversation_id, created_at) VALUES (?, ?, ?, ?, 'fact', 'candidate', ?, ?)`)
         .bind(memId(), principal.email, principal.tenantId, line.slice(0, 500), conversationId, nowIso()).run();
     }
   } catch (error) {
@@ -133,8 +236,8 @@ ${conversationText}
 
 export async function recallRelevantMemories(principal: Principal, query: string): Promise<UserMemory[]> {
   await ensureUserMemorySchema();
-  const rows = await getD1().prepare(`SELECT id, email, tenant_id, content, category, embedding, conversation_id, created_at
-    FROM user_memory WHERE tenant_id = ? AND email = ? ORDER BY created_at DESC LIMIT ${MAX_MEMORIES}`)
+  const rows = await getD1().prepare(`SELECT id, email, tenant_id, content, category, status, embedding, conversation_id, created_at
+    FROM user_memory WHERE tenant_id = ? AND email = ? AND status = 'confirmed' ORDER BY created_at DESC LIMIT ${MAX_MEMORIES}`)
     .bind(principal.tenantId, principal.email).all<Omit<UserMemory, "embedding"> & { embedding: string | null }>();
   const memories = (rows.results || []);
   if (memories.length === 0) return [];

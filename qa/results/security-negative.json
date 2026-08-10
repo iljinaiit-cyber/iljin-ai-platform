@@ -1,13 +1,13 @@
 {
   "suite": "security-negative",
   "mode": "static",
-  "generated_at": "2026-07-24T08:10:13.528Z",
+  "generated_at": "2026-08-10T05:08:11.230Z",
   "corpus_cases": 5,
-  "status": "pass",
+  "status": "fail",
   "results": [
     {
       "id": "SEC-ACL-SPOOF-001",
-      "status": "pass",
+      "status": "fail",
       "detail": "Search scope is derived from the resolved Principal; body.department is not forwarded to retrieval.",
       "evidence": {
         "files": [
@@ -29,7 +29,7 @@
     },
     {
       "id": "SEC-APPROVAL-001",
-      "status": "pass",
+      "status": "fail",
       "detail": "Forwarded identity takes precedence over development headers and unrequested users are blocked.",
       "evidence": {
         "files": [

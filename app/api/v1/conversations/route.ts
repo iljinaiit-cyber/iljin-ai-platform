@@ -16,6 +16,7 @@ export async function POST(request: Request) {
   try {
     const principal = await resolvePrincipal(request);
     const body = await request.json().catch(() => ({})) as { title?: string };
-    return ok(await createConversation(principal, body.title?.trim() || undefined), traceId, { status: 201 });
+    const conversationId = await createConversation(principal, body.title?.trim() || undefined);
+    return ok({ conversation_id: conversationId }, traceId, { status: 201 });
   } catch (error) { return fail(error, traceId); }
 }

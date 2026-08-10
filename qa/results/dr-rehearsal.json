@@ -1,6 +1,6 @@
 {
   "suite": "dr-rehearsal",
-  "generated_at": "2026-07-24T08:10:14.228Z",
+  "generated_at": "2026-08-10T05:08:12.220Z",
   "validation_status": "pass",
   "readiness": "blocked",
   "target_rpo_minutes": 60,

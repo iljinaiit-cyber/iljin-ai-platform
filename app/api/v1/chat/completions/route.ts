@@ -1,8 +1,15 @@
 import { completeWithRag, RagError, type WebRagCitation } from "../../../../../lib/rag";
 import { completeWithGateway, type GatewaySensitivity } from "../../../../../lib/llm-gateway";
-import { getConversationAttachmentAssetIds, recordExchange } from "../../../../../lib/conversations";
+import {
+  conversationContext,
+  getConversationAttachmentAssetIds,
+  maybeSummarizeConversation,
+  recordExchange,
+} from "../../../../../lib/conversations";
+import { loadUserPreferences, updateUserPreferencesFromRequest } from "../../../../../lib/user-memory";
 import { getConversationSensitivity, recordLlmInvocation } from "../../../../../lib/llm-telemetry";
 import { searchInternet, type InternetSearchResponse } from "../../../../../lib/internet-search";
+import { extractRelatedQuestions, RELATED_QUESTION_INSTRUCTION, type FollowUpQuestion } from "../../../../../lib/question-rewriter";
 import { resolvePrincipal } from "../../../../../lib/identity";
 import { authorizeFeature } from "../../../../../lib/admin-governance";
 import {
@@ -52,7 +59,18 @@ function boundedSourceContext(result: InternetSearchResponse) {
 
 function buildInternetGroundingPrompt(query: string, webSearch: InternetSearchResponse, preference: string) {
   const today = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "long" }).format(new Date());
-  return `현재 날짜(대한민국): ${today}\n검색 결과에 있는 사실만 사용하고 각 핵심 주장 뒤에 [W1] 형식으로 인용하세요. 최신 게시·갱신일을 우선하고 날짜를 확인할 수 없으면 명시하세요.\n${preference}\n\n검색 근거:\n${boundedSourceContext(webSearch)}\n\n질문:\n${query}`;
+  return `현재 날짜(대한민국): ${today}\n검색 결과에 있는 사실만 사용하고 각 핵심 주장 뒤에 [W1] 형식으로 인용하세요. 최신 게시·갱신일을 우선하고 날짜를 확인할 수 없으면 명시하세요.\n${preference}${RELATED_QUESTION_INSTRUCTION}\n\n검색 근거:\n${boundedSourceContext(webSearch)}\n\n질문:\n${query}`;
+}
+
+function buildConversationAwareInternetPrompt(
+  query: string,
+  webSearch: InternetSearchResponse,
+  preference: string,
+  previousMessages: Array<{ role: string; content: string }>,
+) {
+  const context = previousMessages.slice(-6).map((message) => `${message.role}: ${message.content}`).join("\n");
+  const basePrompt = buildInternetGroundingPrompt(query, webSearch, preference);
+  return context ? `이전 대화 맥락:\n${context}\n\n${basePrompt}` : basePrompt;
 }
 
 function ensureInternetCitationCoverage(content: string, citations: WebRagCitation[]) {
@@ -64,6 +82,19 @@ function ensureReferenceDateHeader(content: string) {
   if (/^> 기준일:/m.test(content)) return content;
   const date = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "long" }).format(new Date());
   return `> 기준일: ${date} · 검색 및 접근 가능 문서의 최신 확인 버전 기준\n\n${content}`;
+}
+
+function buildFallbackRelatedQuestions(query: string, webSearch: InternetSearchResponse): FollowUpQuestion[] {
+  const sourceQuestions = [...new Set(webSearch.results.map((item) => item.title.trim()).filter(Boolean))]
+    .slice(0, 2)
+    .map((title) => ({
+      question: `${title}의 핵심 내용과 근거를 더 자세히 알려줘.`,
+      intent: "검색 결과 상세 확인",
+    }));
+  return [
+    ...sourceQuestions,
+    { question: `${query}와 관련된 최신 변경 사항이나 후속 영향은 무엇인가요?`, intent: "최신 동향 확인" },
+  ].slice(0, 3);
 }
 
 async function resolveSensitivity(request: Request, principal: Parameters<typeof getConversationSensitivity>[0], body: Body) {
@@ -104,27 +135,43 @@ export async function POST(request: Request) {
     // 민감도는 헤더가 아니라 본문·기본값을 정본으로 쓴다. 헤더는 클라이언트가
     // 임의로 낮출 수 있으므로 신뢰 경계 밖이다 — 미상이면 internal 로 잠근다.
     const sensitivity = await resolveSensitivity(request, principal, body);
-    const answerLength = body.answer_length ?? "standard";
-    const answerFormat = body.answer_format ?? "paragraph";
+    const storedPreferences = await loadUserPreferences(principal).catch(
+      () => ({} as Awaited<ReturnType<typeof loadUserPreferences>>),
+    );
+    const answerLength = body.answer_length ?? storedPreferences.answerLength ?? "standard";
+    const answerFormat = body.answer_format ?? storedPreferences.answerFormat ?? "paragraph";
     const preference = responsePreferenceInstruction(answerLength, answerFormat);
     const userContent = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+    const contextMessages = body.conversation_id
+      ? [
+          ...(await conversationContext(principal, body.conversation_id)),
+          { role: "user" as const, content: userContent },
+        ]
+      : messages;
     const attachmentAssetIds = body.conversation_id
       ? await getConversationAttachmentAssetIds(principal, body.conversation_id)
       : [];
     let completion;
     let citations: Awaited<ReturnType<typeof completeWithRag>>["search"]["citations"] | WebRagCitation[];
     let followUpQuestions: Awaited<ReturnType<typeof completeWithRag>>["followUpQuestions"] = [];
+    let relatedQuestions: FollowUpQuestion[] = [];
 
     let internetGrounded = false;
-    if (body.search_mode === "internet") {
+    const searchMode = body.search_mode ?? storedPreferences.searchScope;
+    if (searchMode === "internet") {
       try {
         const webSearch = await searchInternet(userContent, { principal, traceId, limit: INTERNET_GROUNDING_SOURCE_LIMIT });
         completion = await completeWithGateway(
-          [{ role: "user", content: buildInternetGroundingPrompt(userContent, webSearch, preference) }],
+          [{ role: "user", content: buildConversationAwareInternetPrompt(userContent, webSearch, preference, contextMessages.slice(0, -1)) }],
           traceId,
           { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength) },
           body.reasoning_tier as Parameters<typeof completeWithRag>[0]["reasoningTier"],
         );
+        const related = extractRelatedQuestions(completion.content);
+        relatedQuestions = related.relatedQuestions.length
+          ? related.relatedQuestions.slice(0, 3)
+          : buildFallbackRelatedQuestions(userContent, webSearch);
+        completion.content = related.content;
         citations = webSearch.results.slice(0, INTERNET_GROUNDING_SOURCE_LIMIT).map((item, index) => ({
           id: `W${index + 1}`, assetId: item.url, segmentId: item.id, title: item.title, version: 1,
           updatedAt: item.publishedAt, excerpt: item.snippet, score: item.score, lexicalScore: item.score,
@@ -133,11 +180,11 @@ export async function POST(request: Request) {
         }));
         completion.content = ensureInternetCitationCoverage(completion.content, citations);
         internetGrounded = true;
-        console.info(JSON.stringify({ event: "internet-grounded", traceId, providerPath: webSearch.providerPath }));
+        console.info(JSON.stringify({ event: "internet-grounded", traceId, providersUsed: webSearch.providersUsed, providerPath: webSearch.providerPath }));
       } catch (error) {
         if (!(error instanceof RagError) || !["INTERNET_SEARCH_UNAVAILABLE", "INTERNET_SEARCH_NO_RESULTS"].includes(error.code)) throw error;
         completion = await completeWithGateway(
-          [...messages, {
+          [...contextMessages, {
             role: "user",
             content: `${userContent}\n\n${preference}\n\n실시간 웹 검색 결과를 가져올 수 없습니다. 최신 사실이라고 단정하지 말고, 일반 지식 범위에서 답변한 뒤 필요한 경우 사용자가 재검색할 수 있도록 안내하세요.`,
           }],
@@ -150,7 +197,7 @@ export async function POST(request: Request) {
       }
     } else {
       const ragResult = await completeWithRag({
-        messages,
+        messages: contextMessages,
         principal,
         traceId,
         providerPolicy: { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength) },
@@ -181,6 +228,20 @@ export async function POST(request: Request) {
         })
       : undefined;
 
+    if (body.conversation_id && saved) {
+      await maybeSummarizeConversation(principal, body.conversation_id, traceId).catch((error) => {
+        console.error(`[${traceId}] maybeSummarizeConversation`, error);
+      });
+    }
+
+    await updateUserPreferencesFromRequest(principal, {
+      answerLength: body.answer_length,
+      answerFormat: body.answer_format,
+      searchScope: body.search_mode,
+    }).catch((error) => {
+      console.error(`[${traceId}] updateUserPreferencesFromRequest`, error);
+    });
+
     const done = {
       message_id: saved?.messageId,
       conversation_id: body.conversation_id,
@@ -190,6 +251,7 @@ export async function POST(request: Request) {
       latency_ms: completion.latencyMs,
       usage: completion.usage,
       follow_up_questions: followUpQuestions,
+      related_questions: relatedQuestions,
     };
 
     if (!body.stream) {
