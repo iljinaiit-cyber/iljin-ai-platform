@@ -447,8 +447,16 @@ export async function loginEmailAccount(emailInput: string, password: string) {
   if (!constantTimeEqual(candidate, credential.password_hash)) {
     throw new AuthError("이메일 또는 비밀번호가 올바르지 않습니다.", 401, "AUTH_INVALID_CREDENTIALS");
   }
-  const row = await findProfile(email);
+  let row = await findProfile(email);
   if (!row) throw new AuthError("사용자 프로필을 찾을 수 없습니다.", 401, "AUTH_INVALID_CREDENTIALS");
+  if (row && adminEmails().has(email) && (row.status !== "approved" || row.role !== "admin")) {
+    const now = new Date().toISOString();
+    await getD1().prepare(`UPDATE user_profiles SET status = 'approved', role = 'admin', approved_by = ?,
+      approved_at = COALESCE(approved_at, ?), rejection_reason = NULL, updated_at = ? WHERE email = ?`)
+      .bind("system:configured-admin", now, now, email).run();
+    row = await findProfile(email);
+  }
+  if (!row) throw new AuthError("AUTH_PROFILE_MISSING", 401, "AUTH_INVALID_CREDENTIALS");
   return { user: toAccessIdentity(row), token: await createSession(email) };
 }
 
