@@ -27,6 +27,45 @@
   --sidebar-collapsed: 64px;
 }
 
+.app-shell.theme-violet {
+  --brand-950: #3b1a72;
+  --brand-900: #51259c;
+  --brand-700: #6d3bc2;
+  --brand-600: #8655d6;
+  --brand-500: #a179e6;
+  --brand-300: #c5b0f1;
+  --brand-200: #ded4f7;
+  --brand-100: #f2effc;
+  --accent: #cf6cff;
+  --focus: 0 0 0 3px rgba(134, 85, 214, 0.3);
+}
+
+.app-shell.theme-emerald {
+  --brand-950: #064e3b;
+  --brand-900: #065f46;
+  --brand-700: #047857;
+  --brand-600: #059669;
+  --brand-500: #34b27b;
+  --brand-300: #9edfc3;
+  --brand-200: #c8eedb;
+  --brand-100: #e8f8ef;
+  --accent: #14b8a6;
+  --focus: 0 0 0 3px rgba(5, 150, 105, 0.3);
+}
+
+.app-shell.theme-amber {
+  --brand-950: #78350f;
+  --brand-900: #92400e;
+  --brand-700: #b45309;
+  --brand-600: #d97706;
+  --brand-500: #f59e0b;
+  --brand-300: #f5c67b;
+  --brand-200: #f8deb0;
+  --brand-100: #fff5df;
+  --accent: #ef8b22;
+  --focus: 0 0 0 3px rgba(217, 119, 6, 0.3);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -588,7 +627,7 @@ h3 {
   z-index: 30;
   top: 0;
   display: flex;
-  height: 82px;
+  height: 58px;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
@@ -808,7 +847,7 @@ h3 {
 
 .main-content {
   min-width: 0;
-  min-height: calc(100dvh - 82px);
+  min-height: calc(100dvh - 58px);
   padding: clamp(18px, 3vw, 48px);
 }
 
@@ -1506,6 +1545,11 @@ h3 {
 }
 
 @media (max-width: 760px) {
+  .admin-view .page-heading { align-items: flex-start; }
+  .admin-actions { align-items: flex-start; flex-direction: column; }
+  .admin-sync-note { text-align: left; }
+  .admin-table-tools { align-items: stretch; flex-wrap: wrap; justify-content: flex-start; margin-top: 8px; }
+  .admin-table-tools .table-input { width: 140px; }
   .admin-issue-summary__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   .admin-section-nav {
@@ -3229,6 +3273,32 @@ td {
   gap: 10px;
 }
 
+.admin-sync-note {
+  margin: -10px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+.admin-table-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.admin-table-tools .table-input,
+.admin-table-tools .table-select {
+  min-width: 0;
+  min-height: 32px;
+  width: auto;
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.admin-table-tools .table-input { width: 150px; }
+.admin-table-tools > span { color: var(--muted); font-size: 11px; white-space: nowrap; }
+
 .access-review-panel {
   display: grid;
   gap: 14px;
@@ -4144,13 +4214,13 @@ td {
   }
 
   .topbar {
-    height: 68px;
+    height: 48px;
     gap: 10px;
     padding: 0 14px;
   }
 
   .main-content {
-    min-height: calc(100dvh - 68px);
+    min-height: calc(100dvh - 48px);
     padding: 14px;
   }
 
@@ -5591,6 +5661,66 @@ td {
 .profile-form input:disabled {
   background: var(--surface-soft);
   color: var(--muted);
+}
+
+.theme-picker {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.theme-picker legend {
+  margin-bottom: 8px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.theme-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.theme-choice {
+  display: grid;
+  min-height: 72px;
+  place-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: white;
+  color: var(--ink-soft);
+  padding: 8px 5px;
+  font-size: 10px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.theme-choice:hover,
+.theme-choice.selected {
+  border-color: var(--brand-500);
+  background: var(--brand-100);
+  color: var(--brand-700);
+}
+
+.theme-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--brand-600);
+  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.72);
+}
+
+.theme-choice-violet .theme-swatch { background: #8655d6; }
+.theme-choice-emerald .theme-swatch { background: #059669; }
+.theme-choice-amber .theme-swatch { background: #d97706; }
+
+@media (max-width: 420px) {
+  .theme-choice-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .profile-form .modal-actions {

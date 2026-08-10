@@ -22,8 +22,9 @@ import { RequirementsChecklist } from "./components/RequirementsChecklist";
 import { IngestionSources } from "./components/IngestionSources";
 import { InternetSearchOperations } from "./components/InternetSearchOperations";
 import { PlatformOperationsConsole } from "./components/PlatformOperationsConsole";
+import { FeedbackBoard } from "./components/FeedbackBoard";
 
-type View = "home" | "chat" | "search" | "tasks" | "approvals" | "activity" | "schedule" | "admin";
+type View = "home" | "chat" | "search" | "tasks" | "approvals" | "activity" | "schedule" | "feedback" | "admin";
 type Scope = "personal" | "department";
 type ChatSensitivity = "public" | "internal" | "confidential";
 type SearchScope = "internal" | "internet";
@@ -292,6 +293,19 @@ type AccessState =
   | { state: "unrequested" | "pending" | "rejected"; user: AccessUser }
   | { state: "error"; message: string };
 
+type ThemeColor = "blue" | "violet" | "emerald" | "amber";
+
+const themeColorOptions: Array<{ value: ThemeColor; label: string }> = [
+  { value: "blue", label: "기본 블루" },
+  { value: "violet", label: "바이올렛" },
+  { value: "emerald", label: "에메랄드" },
+  { value: "amber", label: "앰버" },
+];
+
+function isThemeColor(value: string | null): value is ThemeColor {
+  return value === "blue" || value === "violet" || value === "emerald" || value === "amber";
+}
+
 type FollowUpQuestion = { question: string; intent: string };
 
 type ChatMessage = {
@@ -443,6 +457,14 @@ function gatewayCitationToResult(citation: NonNullable<GatewayResponse["citation
     region: citation.region,
     originalUrl: citation.originalUrl,
   };
+}
+
+function extractPreviewSummary(content: string) {
+  const line = content.replace(/\r\n?/g, "\n").split("\n").map((value) => value.trim()).find((value) =>
+    value && !/^>\s*기준일:/.test(value) && !/^#{1,3}\s+/.test(value),
+  );
+  if (!line) return "";
+  return line.length > 180 ? `${line.slice(0, 177)}…` : line;
 }
 
 type UseCase = {
@@ -887,9 +909,19 @@ export function AgentPortal() {
   const [profileDraft, setProfileDraft] = useState({ displayName: "", department: "" });
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState("");
+  const [themeColor, setThemeColor] = useState<ThemeColor>("blue");
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const navigationRef = useRef<HTMLElement>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
+  const authenticatedEmail = access.state === "approved" ? access.user.email : "";
+
+  useEffect(() => {
+    if (!authenticatedEmail) return;
+    const storedTheme = window.localStorage.getItem(`iljin-ai-theme:${authenticatedEmail}`);
+    if (!isThemeColor(storedTheme)) return;
+    const timer = window.setTimeout(() => setThemeColor(storedTheme), 0);
+    return () => window.clearTimeout(timer);
+  }, [authenticatedEmail]);
 
   useEffect(() => {
     if (!streaming) return;
@@ -1508,6 +1540,11 @@ export function AgentPortal() {
     setProfileOpen(true);
   };
 
+  const changeThemeColor = (nextTheme: ThemeColor) => {
+    setThemeColor(nextTheme);
+    if (authenticatedEmail) window.localStorage.setItem(`iljin-ai-theme:${authenticatedEmail}`, nextTheme);
+  };
+
   const saveProfile = async (event: FormEvent) => {
     event.preventDefault();
     if (!profileDraft.displayName.trim() || !profileDraft.department.trim() || profileSaving) return;
@@ -1539,10 +1576,10 @@ export function AgentPortal() {
       : currentUser.role === "admin" || !permission.startsWith("admin.");
     return permitted && (!feature || currentUser.features?.[feature] !== false);
   };
-  const visibleNavigation = navItems.slice(0, 7).filter((item) => canUse(item.permission, item.feature));
+  const visibleNavigation = [...navItems, { id: "feedback" as View, label: "사용자 의견", mark: "FB", req: "U-09", permission: "workspace.home", icon: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 4v-4h0A2.5 2.5 0 0 1 4 13.5v-8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M8 8h8M8 11h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' }].filter((item) => item.id !== "admin").filter((item) => canUse(item.permission, item.feature));
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell theme-${themeColor}`}>
       <a className="skip-link" href="#main-content">본문으로 바로가기</a>
       <aside ref={navigationRef} id="mobile-navigation" className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`} aria-label="주요 메뉴">
         <div className="brand-lockup">
@@ -1628,6 +1665,7 @@ export function AgentPortal() {
           {view === "approvals" && <ToolApprovalsView currentUser={{ email: currentUser.email, role: currentUser.role }} />}
           {view === "activity" && <ActivityView onNavigate={navigate} onOpenConversation={openConversation} />}
           {view === "schedule" && <ScheduleView />}
+          {view === "feedback" && <FeedbackBoard />}
           {view === "admin" && currentUser.role === "admin" && canUse("admin.permissions") && <AdminView currentEmail={currentUser.email} />}
         </main>
       </div>
@@ -1643,6 +1681,17 @@ export function AgentPortal() {
               <label><span>이메일</span><input value={currentUser.email} readOnly disabled /></label>
               <label><span>이름</span><input value={profileDraft.displayName} onChange={(event) => setProfileDraft((draft) => ({ ...draft, displayName: event.target.value }))} maxLength={120} autoComplete="name" required /></label>
               <label><span>소속 부서</span><input value={profileDraft.department} onChange={(event) => setProfileDraft((draft) => ({ ...draft, department: event.target.value }))} maxLength={120} required /></label>
+              <fieldset className="theme-picker">
+                <legend>플랫폼 테마 컬러</legend>
+                <div className="theme-choice-grid" role="radiogroup" aria-label="플랫폼 테마 컬러">
+                  {themeColorOptions.map((option) => (
+                    <button key={option.value} type="button" className={`theme-choice theme-choice-${option.value} ${themeColor === option.value ? "selected" : ""}`} aria-pressed={themeColor === option.value} onClick={() => changeThemeColor(option.value)}>
+                      <span className="theme-swatch" aria-hidden="true" />
+                      <span>{option.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
               {profileError && <p className="form-error" role="alert">{profileError}</p>}
               <div className="modal-actions">
                 <button type="button" className="button button-secondary" onClick={() => setProfileOpen(false)}>취소</button>
@@ -2085,14 +2134,6 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
   );
 }
 
-function extractPreviewSummary(content: string) {
-  const line = content.replace(/\r\n?/g, "\n").split("\n").map((value) => value.trim()).find((value) =>
-    value && !/^>\s*기준일:/.test(value) && !/^#{1,3}\s+/.test(value),
-  );
-  if (!line) return "";
-  return line.length > 180 ? `${line.slice(0, 177)}…` : line;
-}
-
 type KnowledgeAsset = {
   id: string;
   title: string;
@@ -2402,23 +2443,20 @@ type AdminSection = "overview" | "access" | "organization" | "governance" | "kno
 
 function AdminSectionNav({ activeSection, onSelect }: { activeSection: AdminSection; onSelect: (section: AdminSection) => void }) {
   const sections = [
-    ["overview", "admin-platform", "운영 개요"],
-    ["access", "admin-access", "접근 승인"],
-    ["organization", "admin-organization", "조직·예산"],
-    ["governance", "admin-governance", "권한·기능"],
-    ["knowledge", "admin-ingestion", "지식베이스"],
+    ["overview", "운영 개요"],
+    ["access", "접근 승인"],
+    ["organization", "조직·예산"],
+    ["governance", "권한·기능"],
+    ["knowledge", "지식베이스"],
   ] as const;
 
-  const goToSection = (section: AdminSection, anchor: string) => {
-    onSelect(section);
-    setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-  };
+  const goToSection = (section: AdminSection) => onSelect(section);
 
   return (
     <nav className="admin-section-nav" aria-label="관리자 운영 영역">
       <span className="admin-section-nav__label">관리자 영역</span>
-      {sections.map(([id, anchor, label], index) => (
-        <button key={id} type="button" className={activeSection === id ? "active" : ""} aria-pressed={activeSection === id} onClick={() => goToSection(id, anchor)}>
+      {sections.map(([id, label], index) => (
+        <button key={id} type="button" className={activeSection === id ? "active" : ""} aria-pressed={activeSection === id} onClick={() => goToSection(id)}>
           <span>{String(index + 1).padStart(2, "0")}</span>{label}
         </button>
       ))}
@@ -2441,7 +2479,7 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
     embedding_dimensions?: number;
     updated_at: string;
   };
-  type JobRow = { id: string; title?: string; status: string; stage: string; attempt_count: number; completed_at?: string };
+  type JobRow = { id: string; asset_id?: string; title?: string; status: string; stage: string; error_code?: string; attempt_count: number; completed_at?: string };
   type Health = { gateway?: { configured?: boolean; model?: string }; rag?: { d1Configured?: boolean; r2Configured?: boolean; embeddingConfigured?: boolean; rerankConfigured?: boolean; embeddingModel?: string; rerankModel?: string; embeddingProvider?: string; rerankProvider?: string } };
   type QualityGate = { id: string; label: string; passed: boolean; value: number; unit: string; evidence: string };
   const [assets, setAssets] = useState<AssetRow[]>([]);
@@ -2454,35 +2492,47 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
   const [assetActionId, setAssetActionId] = useState("");
+  const [jobActionId, setJobActionId] = useState("");
+  const [assetQuery, setAssetQuery] = useState("");
+  const [assetStatus, setAssetStatus] = useState("all");
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date>();
   const [activeSection, setActiveSection] = useState<AdminSection>("overview");
 
-  useEffect(() => {
-    const controller = new AbortController();
+  const loadAdminData = useCallback(async (signal?: AbortSignal) => {
+    setLoading(true);
     const checkedJson = async <T,>(url: string) => {
-      const response = await fetch(url, { signal: controller.signal });
+      const response = await fetch(url, { signal });
       const payload = await response.json() as T & { error?: { message?: string } };
       if (!response.ok && url !== "/api/health") throw new Error(payload.error?.message || `${url} 요청 실패`);
       return payload;
     };
-    Promise.all([
-      checkedJson<{ assets?: AssetRow[] }>("/api/admin/assets"),
-      checkedJson<{ jobs?: JobRow[] }>("/api/admin/index-jobs"),
-      checkedJson<{ items?: AccessUser[] }>("/api/admin/access-requests"),
-      checkedJson<Health>("/api/health"),
-      checkedJson<{ gates?: QualityGate[] }>("/api/admin/quality-gates"),
-    ]).then(([assetData, jobData, accessData, healthData, qualityData]) => {
+    try {
+      const [assetData, jobData, accessData, healthData, qualityData] = await Promise.all([
+        checkedJson<{ assets?: AssetRow[] }>("/api/admin/assets"),
+        checkedJson<{ jobs?: JobRow[] }>("/api/admin/index-jobs"),
+        checkedJson<{ items?: AccessUser[] }>("/api/admin/access-requests"),
+        checkedJson<Health>("/api/health"),
+        checkedJson<{ gates?: QualityGate[] }>("/api/admin/quality-gates"),
+      ]);
       setAssets(assetData.assets || []);
       setJobs(jobData.jobs || []);
       setAccessRequests(accessData.items || []);
       setHealth(healthData);
       setQualityGates(qualityData.gates || []);
-    }).catch((error: unknown) => {
+      setLoadError("");
+      setLastSyncedAt(new Date());
+    } catch (error: unknown) {
       if (!(error instanceof DOMException && error.name === "AbortError")) setLoadError(error instanceof Error ? error.message : "운영 데이터를 불러오지 못했습니다.");
-    }).finally(() => {
-      if (!controller.signal.aborted) setLoading(false);
-    });
-    return () => controller.abort();
+    } finally {
+      if (!signal?.aborted) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void Promise.resolve().then(() => loadAdminData(controller.signal));
+    return () => controller.abort();
+  }, [loadAdminData]);
 
   const manageAsset = async (asset: AssetRow, action: "reindex" | "delete") => {
     if (action === "delete" && !window.confirm(`'${asset.title}' 문서와 파생 인덱스를 삭제할까요?`)) return;
@@ -2535,10 +2585,41 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
     }
   };
 
+  const retryJob = async (job: JobRow) => {
+    setJobActionId(job.id);
+    setLoadError("");
+    try {
+      const response = await fetch(`/api/admin/index-jobs/${encodeURIComponent(job.id)}/retry`, { method: "POST" });
+      const payload = await response.json() as { error?: { message?: string } };
+      if (!response.ok) throw new Error(payload.error?.message || "인덱싱 작업을 재시도하지 못했습니다.");
+      await loadAdminData();
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "인덱싱 작업을 재시도하지 못했습니다.");
+    } finally {
+      setJobActionId("");
+    }
+  };
+
   const completedJobs = jobs.filter((job) => job.status === "completed").length;
   const failedJobs = jobs.filter((job) => job.status === "failed").length;
   const pendingAccess = accessRequests.filter((user) => user.status === "pending").length;
   const segmentCount = assets.reduce((sum, asset) => sum + Number(asset.segment_count || 0), 0);
+  const filteredAssets = assets.filter((asset) => {
+    const query = assetQuery.trim().toLocaleLowerCase("ko-KR");
+    if (query && !asset.title.toLocaleLowerCase("ko-KR").includes(query)) return false;
+    return assetStatus === "all" || asset.status === assetStatus;
+  });
+  const sectionAnchors: Record<AdminSection, string> = {
+    overview: "admin-platform",
+    access: "admin-access",
+    organization: "admin-organization",
+    governance: "admin-governance",
+    knowledge: "admin-ingestion",
+  };
+  const selectSection = (section: AdminSection) => {
+    setActiveSection(section);
+    setTimeout(() => document.getElementById(sectionAnchors[section])?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
   const services = [
     ["LLM Gateway", health.gateway?.configured, health.gateway?.model || "gemma-4-31b"],
     ["Metadata Database", health.rag?.d1Configured, `${assets.length} assets`],
@@ -2555,15 +2636,16 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
 
   return (
     <div className="view-stack admin-view">
-      <div className="page-heading"><div><h1>RAG 운영 Dashboard</h1><p>Database·Storage·AI 모델의 실제 인덱싱 상태를 표시합니다.</p></div><div className="admin-actions"><span className="live-state" role="status" aria-live="polite" title={loadError || undefined}><span className={`status-dot ${loading ? "status-dot-checking" : loadError ? "status-dot-offline" : "status-dot-ready"}`} /> {loading ? "API 확인 중" : loadError ? "API 응답 오류" : "API 응답 완료"}</span></div></div>
+      <div className="page-heading"><div><h1>RAG 운영 Dashboard</h1><p>Database·Storage·AI 모델의 실제 인덱싱 상태를 표시합니다.</p></div><div className="admin-actions"><span className="live-state" role="status" aria-live="polite" title={loadError || undefined}><span className={`status-dot ${loading ? "status-dot-checking" : loadError ? "status-dot-offline" : "status-dot-ready"}`} /> {loading ? "API 확인 중" : loadError ? "API 응답 오류" : "API 응답 완료"}</span><button className="button button-secondary" type="button" onClick={() => void loadAdminData()} disabled={loading}>{loading ? "동기화 중" : "데이터 새로고침"}</button></div></div>
+      {lastSyncedAt && <p className="admin-sync-note" role="status">마지막 동기화 · {lastSyncedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</p>}
       <section className="metric-grid">
         {[["인덱싱 Asset", String(assets.filter((asset) => asset.status === "indexed").length), "Database 실데이터"],["검색 Segment", String(segmentCount), "Dense Vector 포함"],["승인 대기", String(pendingAccess), "사용자 접근 요청"],["완료 Index Job", String(completedJobs), failedJobs ? `실패 ${failedJobs}` : "실패 0"]].map(([label, value, trend]) => <article className="metric-card" key={label}><span>{label}</span><strong>{value}</strong><small>{trend}</small></article>)}
       </section>
       <nav className="admin-console-nav" aria-label="관리 콘솔 영역">
         <a href="#admin-platform">플랫폼 운영</a><a href="#admin-access">접근 승인</a><a href="#admin-organization">조직·예산</a><a href="#admin-governance">권한·기능</a><a href="#admin-ingestion">수집·검색</a><a href="#admin-assets">문서 자산</a>
       </nav>
-       <AdminIssueSummary items={issueItems} onSelect={setActiveSection} />
-       <AdminSectionNav activeSection={activeSection} onSelect={setActiveSection} />
+       <AdminIssueSummary items={issueItems} onSelect={selectSection} />
+       <AdminSectionNav activeSection={activeSection} onSelect={selectSection} />
       {activeSection === "overview" && <PlatformOperationsConsole />}
       {activeSection === "access" && <section className="panel access-review-panel" id="admin-access">
         <div className="panel-title"><div><span className="section-kicker">ACCESS CONTROL</span><h2>사용자 접근 승인</h2></div><span className={`status-pill ${pendingAccess ? "status-승인-대기" : "status-승인-완료"}`}>{pendingAccess ? `${pendingAccess}건 대기` : "대기 없음"}</span></div>
@@ -2585,8 +2667,8 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
       <div className="admin-grid" id="admin-assets">
         <section className="panel"><div className="panel-title"><div><span className="section-kicker">SERVICE HEALTH</span><h2>RAG 구성요소</h2></div><span className={`status-pill ${services.every(([, ready]) => ready) ? "status-완료" : "status-부분-완료"}`}>{services.every(([, ready]) => ready) ? "준비" : "확인 필요"}</span></div><div className="service-list">{services.map(([name, ready, detail]) => <div key={name}><span className={`status-dot ${ready ? "" : "status-dot-warning"}`} /><strong>{name}</strong><span>{ready ? "연결" : "미설정"}</span><small>{detail}</small></div>)}</div></section>
         <section className="panel"><div className="panel-title"><div><span className="section-kicker">QUALITY GATE</span><h2>실시간 검증 상태</h2></div><span className={`status-pill ${qualityGates.length > 0 && qualityGates.every((gate) => gate.passed) ? "status-완료" : "status-부분-완료"}`}>{qualityGates.filter((gate) => gate.passed).length}/{qualityGates.length || 6} 통과</span></div><div className="quality-list">{qualityGates.map((gate) => <div key={gate.id}><div><strong>{gate.label}</strong><span>{gate.evidence}</span></div><progress value={gate.passed ? 100 : 0} max="100">{gate.passed ? "100%" : "0%"}</progress><small>{gate.value} {gate.unit}</small></div>)}</div></section>
-        <section className="panel table-wrap"><div className="panel-title"><div><span className="section-kicker">ASSETS</span><h2>최근 문서 자산</h2></div><span>{assets.length}건</span></div><table><caption className="sr-only">최근 문서 자산</caption><thead><tr><th>문서</th><th>등급</th><th>상태</th><th>벡터</th><th>원문</th><th>관리</th></tr></thead><tbody>{assets.slice(0, 6).map((asset) => <tr key={asset.id}><td><strong>{asset.title}</strong><small className="table-subtext">{asset.segment_count} segments</small></td><td>{asset.classification}</td><td>{asset.status}</td><td>{asset.embedding_dimensions ? `${asset.embedding_dimensions}D` : "—"}<small className="table-subtext">{asset.embedding_model || "미생성"}</small></td><td>{asset.original_uploaded_at ? <a className="text-button" href={`/api/v1/assets/${encodeURIComponent(asset.id)}/original`}>Storage 원문</a> : "—"}{asset.original_size ? <small className="table-subtext">{Math.max(1, Math.ceil(asset.original_size / 1024)).toLocaleString("ko-KR")}KB</small> : null}</td><td><div className="review-actions"><button type="button" className="text-button" disabled={assetActionId === asset.id} onClick={() => void manageAsset(asset, "reindex")}>{assetActionId === asset.id ? "처리 중" : "재색인"}</button><button type="button" className="text-button" disabled={assetActionId === asset.id} onClick={() => void manageAsset(asset, "delete")}>삭제</button></div></td></tr>)}</tbody></table></section>
-        <section className="panel table-wrap"><div className="panel-title"><div><span className="section-kicker">INDEX JOBS</span><h2>최근 인덱싱 작업</h2></div><span>{failedJobs ? `실패 ${failedJobs}` : "정상"}</span></div><table><caption className="sr-only">최근 인덱싱 작업</caption><thead><tr><th>문서</th><th>단계</th><th>상태</th><th>시도</th></tr></thead><tbody>{jobs.slice(0, 6).map((job) => <tr key={job.id}><td><strong>{job.title || job.id}</strong></td><td>{job.stage}</td><td>{job.status}</td><td>{job.attempt_count}</td></tr>)}</tbody></table></section>
+         <section className="panel table-wrap"><div className="panel-title"><div><span className="section-kicker">ASSETS</span><h2>최근 문서 자산</h2></div><div className="admin-table-tools"><input className="table-input" value={assetQuery} onChange={(event) => setAssetQuery(event.target.value)} placeholder="문서명 검색" aria-label="문서명 검색" /><select className="table-select" value={assetStatus} onChange={(event) => setAssetStatus(event.target.value)} aria-label="문서 상태 필터"><option value="all">전체 상태</option><option value="indexed">indexed</option><option value="queued">queued</option><option value="failed">failed</option></select><span>{filteredAssets.length}/{assets.length}건</span></div></div><table><caption className="sr-only">최근 문서 자산</caption><thead><tr><th>문서</th><th>등급</th><th>상태</th><th>벡터</th><th>원문</th><th>관리</th></tr></thead><tbody>{filteredAssets.slice(0, 6).map((asset) => <tr key={asset.id}><td><strong>{asset.title}</strong><small className="table-subtext">{asset.segment_count} segments</small></td><td>{asset.classification}</td><td>{asset.status}</td><td>{asset.embedding_dimensions ? `${asset.embedding_dimensions}D` : "—"}<small className="table-subtext">{asset.embedding_model || "미생성"}</small></td><td>{asset.original_uploaded_at ? <a className="text-button" href={`/api/v1/assets/${encodeURIComponent(asset.id)}/original`}>Storage 원문</a> : "—"}{asset.original_size ? <small className="table-subtext">{Math.max(1, Math.ceil(asset.original_size / 1024)).toLocaleString("ko-KR")}KB</small> : null}</td><td><div className="review-actions"><button type="button" className="text-button" disabled={assetActionId === asset.id} onClick={() => void manageAsset(asset, "reindex")}>{assetActionId === asset.id ? "처리 중" : "재색인"}</button><button type="button" className="text-button" disabled={assetActionId === asset.id} onClick={() => void manageAsset(asset, "delete")}>삭제</button></div></td></tr>)}{!filteredAssets.length && <tr><td colSpan={6}>조건에 맞는 문서가 없습니다.</td></tr>}</tbody></table></section>
+         <section className="panel table-wrap"><div className="panel-title"><div><span className="section-kicker">INDEX JOBS</span><h2>최근 인덱싱 작업</h2></div><span>{failedJobs ? `실패 ${failedJobs}` : "정상"}</span></div><table><caption className="sr-only">최근 인덱싱 작업</caption><thead><tr><th>문서</th><th>단계</th><th>상태</th><th>시도</th><th>작업</th></tr></thead><tbody>{jobs.slice(0, 6).map((job) => <tr key={job.id}><td><strong>{job.title || job.id}</strong>{job.error_code && <small className="table-subtext">오류 코드 · {job.error_code}</small>}</td><td>{job.stage}</td><td>{job.status}</td><td>{job.attempt_count}</td><td>{job.status === "failed" ? <button type="button" className="text-button" disabled={jobActionId === job.id} onClick={() => void retryJob(job)}>{jobActionId === job.id ? "재시도 중" : "재시도"}</button> : "—"}</td></tr>)}{!jobs.length && <tr><td colSpan={5}>인덱싱 작업이 없습니다.</td></tr>}</tbody></table></section>
       </div>
       </>}
       {activeSection === "overview" && <div id="admin-control"><AiControlTower currentEmail={currentEmail} /></div>}

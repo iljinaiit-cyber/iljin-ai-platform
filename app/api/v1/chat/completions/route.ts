@@ -37,8 +37,9 @@ type Body = {
 const sse = (event: string, data: unknown) =>
   new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
-const INTERNET_GROUNDING_MESSAGE_BUDGET = 7_600;
+const INTERNET_GROUNDING_MESSAGE_LIMIT = 7_900;
 const INTERNET_GROUNDING_SOURCE_LIMIT = 6;
+const INTERNET_CONVERSATION_CONTEXT_BUDGET = 1_200;
 
 function maxOutputTokensFor(length: Body["answer_length"]) {
   return length === "brief" ? 600 : length === "detailed" ? 1_800 : 1_200;
@@ -52,15 +53,18 @@ function responsePreferenceInstruction(length: Body["answer_length"], format: Bo
   return `${depth} 답하고 ${shape} 정리하세요.`;
 }
 
-function boundedSourceContext(result: InternetSearchResponse) {
+function boundedSourceContext(result: InternetSearchResponse, budget: number) {
   return result.results.slice(0, INTERNET_GROUNDING_SOURCE_LIMIT).map((item, index) =>
     `[W${index + 1}] ${item.title}\n출처: ${item.source} (${item.sourceCategoryLabel})\nURL: ${item.url}\n게시일: ${item.publishedAt || "미확인"}\n${item.snippet}`,
-  ).join("\n\n").slice(0, INTERNET_GROUNDING_MESSAGE_BUDGET);
+  ).join("\n\n").slice(0, Math.max(800, budget));
 }
 
-function buildInternetGroundingPrompt(query: string, webSearch: InternetSearchResponse, preference: string) {
+function buildInternetGroundingPrompt(query: string, webSearch: InternetSearchResponse, preference: string, maxLength = INTERNET_GROUNDING_MESSAGE_LIMIT) {
   const today = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "long" }).format(new Date());
-  return `현재 날짜(대한민국): ${today}\n검색 결과는 최신 사실을 확인하기 위한 참고 근거입니다. 최종 답변은 LLM이 질문의 의도와 검색 근거를 종합해 직접 작성하세요. 검색 결과의 문장·제목을 그대로 복사하거나 검색 결과 목록을 답변처럼 나열하지 마세요. 검색 근거로 확인 가능한 사실만 단정하고, 각 핵심 주장 뒤에 [W1] 형식으로 인용하세요. 최신 게시·갱신일을 우선하고 날짜를 확인할 수 없으면 명시하세요. Wikimedia/Wikipedia는 다른 출처가 없을 때만 보조 배경지식으로 사용하고, 그 한계를 밝혀야 합니다.\n${preference}${RELATED_QUESTION_INSTRUCTION}\n\n검색 근거:\n${boundedSourceContext(webSearch)}\n\n질문:\n${query}`;
+  const instruction = `현재 날짜(대한민국): ${today}\n검색 결과는 최신 사실을 확인하기 위한 참고 근거입니다. 최종 답변은 LLM이 질문의 의도와 검색 근거를 종합해 직접 작성하세요. 검색 결과의 문장·제목을 그대로 복사하거나 검색 결과 목록을 답변처럼 나열하지 마세요. 검색 근거로 확인 가능한 사실만 단정하고, 각 핵심 주장 뒤에 [W1] 형식으로 인용하세요. 최신 게시·갱신일을 우선하고 날짜를 확인할 수 없으면 명시하세요. Wikimedia/Wikipedia는 다른 출처가 없을 때만 보조 배경지식으로 사용하고, 그 한계를 밝혀야 합니다.\n${preference}${RELATED_QUESTION_INSTRUCTION}\n\n검색 근거:\n`;
+  const question = `\n\n질문:\n${query}`;
+  const sourceBudget = maxLength - instruction.length - question.length;
+  return `${instruction}${boundedSourceContext(webSearch, sourceBudget)}${question}`;
 }
 
 function buildConversationAwareInternetPrompt(
@@ -69,9 +73,10 @@ function buildConversationAwareInternetPrompt(
   preference: string,
   previousMessages: Array<{ role: string; content: string }>,
 ) {
-  const context = previousMessages.slice(-6).map((message) => `${message.role}: ${message.content}`).join("\n");
-  const basePrompt = buildInternetGroundingPrompt(query, webSearch, preference);
-  return context ? `이전 대화 맥락:\n${context}\n\n${basePrompt}` : basePrompt;
+  const context = previousMessages.slice(-6).map((message) => `${message.role}: ${message.content}`).join("\n").slice(-INTERNET_CONVERSATION_CONTEXT_BUDGET);
+  const contextPrefix = context ? `이전 대화 맥락:\n${context}\n\n` : "";
+  const basePrompt = buildInternetGroundingPrompt(query, webSearch, preference, INTERNET_GROUNDING_MESSAGE_LIMIT - contextPrefix.length);
+  return `${contextPrefix}${basePrompt}`;
 }
 
 function ensureInternetCitationCoverage(content: string, citations: WebRagCitation[]) {
