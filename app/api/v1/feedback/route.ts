@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   try {
     const principal = await resolvePrincipal(request);
     await enforceRateLimit(principal, "feedback.create", 10);
-    const body = await request.json() as { category?: unknown; title?: unknown; content?: unknown };
+    const body = await request.json() as { category?: unknown; title?: unknown; content?: unknown; isNotice?: unknown };
     return ok({ item: await createFeedbackPost(principal, body) }, traceId, { status: 201 });
   } catch (error) {
     return fail(error, traceId);

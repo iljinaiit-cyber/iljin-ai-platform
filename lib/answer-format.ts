@@ -3,12 +3,20 @@ export type AnswerFormat = "paragraph" | "bullets" | "table";
 
 export function answerLengthInstruction(length: AnswerLength | undefined) {
   if (length === "brief") {
-    return "핵심 결론을 첫 문장에 제시하고, 필수 근거와 다음 행동만 3~5개 항목 이내로 압축하세요.";
+    return "핵심 결론을 첫 문장에 제시하고, 필수 근거와 다음 행동만 3~5문장 또는 3~5개 항목 이내로 압축하세요. 배경·반복·부가 설명은 생략하세요.";
   }
   if (length === "detailed") {
-    return "결론 → 근거와 분석 → 실행 순서 또는 권고안 → 리스크와 한계 순서로 충분히 설명하세요. 복합 질문은 관련 섹션을 빠짐없이 구성하세요.";
+    return "심층 의사결정 답변으로 작성하세요. 결론 → 근거와 분석 → 대안·실행 순서 또는 권고안 → 정량 효과·리스크와 한계 → 다음 행동 순서로 필요한 섹션을 충분히 구성하세요.";
   }
-  return "핵심 결론을 먼저 제시하고, 핵심 근거·실무 적용·주의사항을 균형 있게 설명하세요.";
+  return "표준 답변으로 작성하세요. 핵심 결론을 먼저 제시하고, 핵심 근거·실무 적용·주의사항을 3~5개의 짧은 섹션으로 균형 있게 설명하세요.";
+}
+
+export function answerOutputTokenBudget(length: AnswerLength | undefined) {
+  return length === "brief" ? 600 : length === "detailed" ? 2_400 : 1_200;
+}
+
+export function answerReasoningTier(length: AnswerLength | undefined) {
+  return length === "brief" ? "swift" as const : length === "detailed" ? "deep" as const : "expert" as const;
 }
 
 export function answerFormatInstruction(format: AnswerFormat | undefined) {

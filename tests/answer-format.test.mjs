@@ -12,6 +12,8 @@ test("answer format instructions define distinct paragraph, bullet, and table co
   assert.match(source, /목록형으로 작성하세요/);
   assert.match(source, /표형으로 작성하세요/);
   assert.match(source, /answerPreferenceInstruction/);
+  assert.match(source, /answerOutputTokenBudget/);
+  assert.match(source, /answerReasoningTier/);
 });
 
 test("chat routes share the same answer format contract", async () => {
@@ -24,4 +26,12 @@ test("chat routes share the same answer format contract", async () => {
   assert.match(route, /answerPreferenceInstruction/);
   assert.match(rag, /answerPreferenceInstruction/);
   assert.match(gateway, /지정된 형식을 끝까지 일관되게 유지/);
+});
+
+test("chat route derives reasoning tier from answer length when omitted", async () => {
+  const source = await readFile(new URL("app/api/v1/chat/completions/route.ts", root), "utf8");
+
+  assert.match(source, /answerReasoningTier\(answerLength\)/);
+  assert.match(source, /answerOutputTokenBudget/);
+  assert.match(source, /reasoningTier,\n/);
 });

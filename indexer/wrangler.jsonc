@@ -132,7 +132,7 @@
         "MAX_EGRESS_SENSITIVITY": "internal"
       },
       // 매시 정각. 수집 소스 폴링과 감사 체인 검증이 여기 붙는다.
-      "triggers": { "crons": ["0 * * * *"] }
+      "triggers": { "crons": ["*/5 * * * *"] }
     }
   }
 }

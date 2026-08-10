@@ -41,8 +41,20 @@ export function ensureFeedbackSchema() {
           content TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'received',
           created_at TEXT NOT NULL, updated_at TEXT NOT NULL
         )`),
+        db.prepare(`CREATE TABLE IF NOT EXISTS feedback_comments (
+          id TEXT PRIMARY KEY, post_id TEXT NOT NULL, tenant_id TEXT NOT NULL,
+          author_email TEXT NOT NULL, author_display_name TEXT NOT NULL,
+          author_department TEXT, content TEXT NOT NULL, created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )`),
+        db.prepare(`CREATE TABLE IF NOT EXISTS feedback_likes (
+          post_id TEXT NOT NULL, tenant_id TEXT NOT NULL, user_email TEXT NOT NULL,
+          created_at TEXT NOT NULL, PRIMARY KEY (post_id, user_email)
+        )`),
         db.prepare(`CREATE INDEX IF NOT EXISTS feedback_posts_tenant_created_idx ON feedback_posts(tenant_id, created_at)`),
         db.prepare(`CREATE INDEX IF NOT EXISTS feedback_posts_tenant_category_idx ON feedback_posts(tenant_id, category, created_at)`),
+        db.prepare(`CREATE INDEX IF NOT EXISTS feedback_comments_post_created_idx ON feedback_comments(post_id, created_at)`),
+        db.prepare(`CREATE INDEX IF NOT EXISTS feedback_likes_tenant_post_idx ON feedback_likes(tenant_id, post_id)`),
       ]);
     })().catch((error) => {
       schemaPromise = undefined;
@@ -114,4 +126,63 @@ export async function createFeedbackPost(principal: Principal, input: { category
     isMine: true,
     createdAt: timestamp,
   } satisfies FeedbackPost;
+}
+
+export async function updateFeedbackStatus(principal: Principal, postId: string, status: unknown) {
+  await ensureFeedbackSchema();
+  if (status !== "received" && status !== "reviewing" && status !== "resolved") {
+    throw new AuthError("올바른 의견 상태를 선택해 주세요.", 400, "AUTH_INVALID_INPUT");
+  }
+  const db = getD1();
+  const post = await db.prepare("SELECT id FROM feedback_posts WHERE id = ? AND tenant_id = ?")
+    .bind(postId, principal.tenantId).first<{ id: string }>();
+  if (!post) throw new AuthError("의견을 찾을 수 없습니다.", 404, "AUTH_NOT_FOUND");
+  await db.prepare("UPDATE feedback_posts SET status = ?, updated_at = ? WHERE id = ? AND tenant_id = ?")
+    .bind(status, new Date().toISOString(), postId, principal.tenantId).run();
+  return { id: postId, status };
+}
+
+export async function createFeedbackComment(principal: Principal, postId: string, content: unknown) {
+  await ensureFeedbackSchema();
+  const text = String(content || "").trim().slice(0, 5000);
+  if (!text) throw new AuthError("댓글 내용을 입력해 주세요.", 400, "AUTH_INVALID_INPUT");
+  const db = getD1();
+  const post = await db.prepare("SELECT id FROM feedback_posts WHERE id = ? AND tenant_id = ?")
+    .bind(postId, principal.tenantId).first<{ id: string }>();
+  if (!post) throw new AuthError("의견을 찾을 수 없습니다.", 404, "AUTH_NOT_FOUND");
+  const id = "fbc_" + crypto.randomUUID().replaceAll("-", "");
+  const timestamp = new Date().toISOString();
+  await db.prepare(`INSERT INTO feedback_comments
+    (id, post_id, tenant_id, author_email, author_display_name, author_department, content, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+      id, postId, principal.tenantId, principal.email, principal.displayName, principal.department, text, timestamp, timestamp,
+    ).run();
+  return {
+    id,
+    postId,
+    authorName: principal.displayName,
+    authorDepartment: principal.department,
+    content: text,
+    createdAt: timestamp,
+  };
+}
+
+export async function toggleFeedbackLike(principal: Principal, postId: string) {
+  await ensureFeedbackSchema();
+  const db = getD1();
+  const post = await db.prepare("SELECT id FROM feedback_posts WHERE id = ? AND tenant_id = ?")
+    .bind(postId, principal.tenantId).first<{ id: string }>();
+  if (!post) throw new AuthError("의견을 찾을 수 없습니다.", 404, "AUTH_NOT_FOUND");
+  const existing = await db.prepare("SELECT post_id FROM feedback_likes WHERE post_id = ? AND tenant_id = ? AND user_email = ?")
+    .bind(postId, principal.tenantId, principal.email).first<{ post_id: string }>();
+  if (existing) {
+    await db.prepare("DELETE FROM feedback_likes WHERE post_id = ? AND tenant_id = ? AND user_email = ?")
+      .bind(postId, principal.tenantId, principal.email).run();
+  } else {
+    await db.prepare("INSERT INTO feedback_likes (post_id, tenant_id, user_email, created_at) VALUES (?, ?, ?, ?)")
+      .bind(postId, principal.tenantId, principal.email, new Date().toISOString()).run();
+  }
+  const count = await db.prepare("SELECT COUNT(*) AS count FROM feedback_likes WHERE post_id = ? AND tenant_id = ?")
+    .bind(postId, principal.tenantId).first<{ count: number | string }>();
+  return { liked: !existing, likeCount: Number(count?.count || 0) };
 }

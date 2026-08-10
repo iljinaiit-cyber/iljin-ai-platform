@@ -20,7 +20,8 @@ export async function GET(request: Request) {
   try {
     const principal = await resolvePrincipal(request);
     const status = new URL(request.url).searchParams.get("status") as ScheduleWorkItemStatus | "all" | null;
-    return ok({ items: await listScheduleWorkItems(principal, { status: status && (statuses.has(status) || status === "all") ? status : "all" }), notifications: await listScheduleAlerts(principal) }, traceId);
+    const requestedStatus = status && status !== "all" && statuses.has(status) ? status : "all";
+    return ok({ items: await listScheduleWorkItems(principal, { status: requestedStatus }), notifications: await listScheduleAlerts(principal) }, traceId);
   } catch (error) { return fail(error, traceId); }
 }
 

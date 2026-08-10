@@ -11,6 +11,7 @@
 import { setRuntimeEnv, type IndexJobMessage, type QueueProducer, type RuntimeEnv } from "../lib/runtime-env";
 import { analyzeMultimodalBytes } from "../lib/multimodal";
 import { failQueuedIngest, processIngestBatch, INGEST_CHUNK_WINDOW, getDueIngestionSources, runIngestionSource } from "../lib/rag";
+import { runDueTasks } from "../lib/scheduled-tasks";
 
 // Minimal shapes of the Workers Queues consumer API this handler uses. This
 // project has no @cloudflare/workers-types dependency, so bindings are typed
@@ -89,14 +90,19 @@ const worker = {
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     setRuntimeEnv(env);
     ctx.waitUntil((async () => {
-      const sources = await getDueIngestionSources("iljin");
-      for (const source of sources) {
-        try {
-          await runIngestionSource(source.id, env);
-        } catch (error) {
-          console.error("[indexer] scheduled ingestion failed", { sourceId: source.id, error });
-        }
-      }
+      await Promise.all([
+        runDueTasks().catch((error) => console.error("[indexer] scheduled tasks failed", error)),
+        (async () => {
+          const sources = await getDueIngestionSources("iljin");
+          for (const source of sources) {
+            try {
+              await runIngestionSource(source.id, env);
+            } catch (error) {
+              console.error("[indexer] scheduled ingestion failed", { sourceId: source.id, error });
+            }
+          }
+        })(),
+      ]);
     })());
   },
 };

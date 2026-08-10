@@ -2143,7 +2143,7 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
               <button type="button" className={searchScope === "internet" ? "selected" : ""} aria-pressed={searchScope === "internet"} disabled={streaming} onClick={() => setSearchScope("internet")}>인터넷</button>
             </div>
             <select id="chat-sensitivity" value={sensitivity} disabled={streaming || searchScope === "internet"} onChange={(event) => setSensitivity(event.target.value as ChatSensitivity)}>{searchScope === "internet" ? <option value="public">공개 · 인터넷</option> : <><option value="internal">내부 · Cloudflare</option><option value="confidential" disabled={!providerAvailability.local}>기밀 · 로컬</option></>}</select>
-            <label className="control-inline"><span>답변 분량</span><select id="chat-answer-length" value={answerLength} disabled={streaming} onChange={(event) => setAnswerLength(event.target.value as ChatAnswerLength)}><option value="brief">핵심</option><option value="standard">표준</option><option value="detailed">심층</option></select></label>
+            <label className="control-inline"><span>답변 분량</span><select id="chat-answer-length" value={answerLength} disabled={streaming} onChange={(event) => setAnswerLength(event.target.value as ChatAnswerLength)}><option value="brief">핵심 · 빠른 답</option><option value="standard">표준 · 균형</option><option value="detailed">심층 · 의사결정</option></select></label>
             <label className="control-inline"><span>답변 형식</span><select id="chat-answer-format" value={answerFormat} disabled={streaming} onChange={(event) => setAnswerFormat(event.target.value as ChatAnswerFormat)}><option value="paragraph">문단형 · 해설</option><option value="bullets">목록형 · 실행</option><option value="table">표형 · 비교</option></select></label>
           </div>
           <div className="composer-input-row">
@@ -2764,8 +2764,10 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
     }
   };
 
+  const completedJobs = jobs.filter((job) => job.status === "completed").length;
   const failedJobs = jobs.filter((job) => job.status === "failed").length;
   const pendingAccess = accessRequests.filter((user) => user.status === "pending").length;
+  const segmentCount = assets.reduce((sum, asset) => sum + Number(asset.segment_count || 0), 0);
   const filteredAssets = assets.filter((asset) => {
     const query = assetQuery.trim().toLocaleLowerCase("ko-KR");
     if (query && !asset.title.toLocaleLowerCase("ko-KR").includes(query)) return false;
@@ -2798,11 +2800,13 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
 
   return (
     <div className="view-stack admin-view">
+      <div className="admin-page-title"><div><span className="section-kicker">ADMINISTRATION</span><h1>관리자 페이지</h1><p>전체 플랫폼 사용 현황과 운영·권한·데이터 관리 상태를 확인합니다.</p></div></div>
       <div className="page-heading"><div><h1>RAG 운영 Dashboard</h1><p>Database·Storage·AI 모델의 실제 인덱싱 상태를 표시합니다.</p></div><div className="admin-actions"><span className="live-state" role="status" aria-live="polite" title={loadError || undefined}><span className={`status-dot ${loading ? "status-dot-checking" : loadError ? "status-dot-offline" : "status-dot-ready"}`} /> {loading ? "API 확인 중" : loadError ? "API 응답 오류" : "API 응답 완료"}</span><button className="button button-secondary" type="button" onClick={() => void loadAdminData()} disabled={loading}>{loading ? "동기화 중" : "데이터 새로고침"}</button></div></div>
       {lastSyncedAt && <p className="admin-sync-note" role="status">마지막 동기화 · {lastSyncedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</p>}
-      <section className="metric-grid">
+      <section className="metric-grid admin-legacy-metrics">
         {[["인덱싱 Asset", String(assets.filter((asset) => asset.status === "indexed").length), "Database 실데이터"],["검색 Segment", String(segmentCount), "Dense Vector 포함"],["승인 대기", String(pendingAccess), "사용자 접근 요청"],["완료 Index Job", String(completedJobs), failedJobs ? `실패 ${failedJobs}` : "실패 0"]].map(([label, value, trend]) => <article className="metric-card" key={label}><span>{label}</span><strong>{value}</strong><small>{trend}</small></article>)}
       </section>
+      <AdminOverviewDashboard overview={overview} health={health} qualityGates={qualityGates} loading={loading} onSelect={selectSection} />
       <AdminIssueSummary items={issueItems} onSelect={selectSection} />
       <AdminSectionNav activeSection={activeSection} onSelect={selectSection} />
       {activeSection === "overview" && <PlatformOperationsConsole />}
@@ -3079,6 +3083,8 @@ function ScheduleView() {
         </aside>
       </div>
 
+      <SchedulePlanningBoard />
+
       {showCreateModal && (
         <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
           <div className="modal-content schedule-modal" onClick={(e) => e.stopPropagation()}>
@@ -3110,5 +3116,123 @@ function ScheduleView() {
         </div>
       )}
     </div>
+  );
+}
+
+type PlannedWorkItem = {
+  id: string;
+  title: string;
+  description: string | null;
+  kind: "todo" | "milestone" | "reminder" | "execution";
+  status: "open" | "in_progress" | "done" | "failed" | "cancelled";
+  priority: "low" | "normal" | "high" | "urgent";
+  due_at: string | null;
+  source_type: string | null;
+  auto_generated: number;
+};
+
+const plannedKindLabels: Record<PlannedWorkItem["kind"], string> = {
+  todo: "Todo",
+  milestone: "마일스톤",
+  reminder: "알림",
+  execution: "실행",
+};
+
+function SchedulePlanningBoard() {
+  const [items, setItems] = useState<PlannedWorkItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [kind, setKind] = useState<PlannedWorkItem["kind"]>("todo");
+  const [priority, setPriority] = useState<PlannedWorkItem["priority"]>("normal");
+  const [dueAt, setDueAt] = useState("");
+  const [notify, setNotify] = useState(true);
+  const [filter, setFilter] = useState<"all" | "open" | "done">("all");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await fetch("/api/v1/schedule-items", { headers: { Accept: "application/json" } });
+      const data = await response.json() as { items?: PlannedWorkItem[]; error?: { message?: string } };
+      if (!response.ok) throw new Error(data.error?.message || "업무 플래닝을 불러오지 못했습니다.");
+      setItems(data.items || []);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "업무 플래닝을 불러오지 못했습니다.");
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const create = async () => {
+    if (!title.trim()) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/v1/schedule-items", {
+        method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ title: title.trim(), description, kind, priority, notify_enabled: notify, due_at: dueAt ? new Date(dueAt).toISOString() : null }),
+      });
+      const data = await response.json() as { error?: { message?: string } };
+      if (!response.ok) throw new Error(data.error?.message || "업무를 등록하지 못했습니다.");
+      setTitle(""); setDescription(""); setDueAt(""); setShowForm(false); await load();
+    } catch (createError) { setError(createError instanceof Error ? createError.message : "업무를 등록하지 못했습니다."); }
+    finally { setBusy(false); }
+  };
+
+  const update = async (id: string, status: PlannedWorkItem["status"]) => {
+    setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/v1/schedule-items", {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }),
+      });
+      if (!response.ok) throw new Error("업무 상태를 변경하지 못했습니다.");
+      await load();
+    } catch (updateError) { setError(updateError instanceof Error ? updateError.message : "업무 상태를 변경하지 못했습니다."); }
+    finally { setBusy(false); }
+  };
+
+  const remove = async (id: string) => {
+    if (!window.confirm("이 업무를 삭제할까요?")) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`/api/v1/schedule-items?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("업무를 삭제하지 못했습니다.");
+      await load();
+    } catch (removeError) { setError(removeError instanceof Error ? removeError.message : "업무를 삭제하지 못했습니다."); }
+    finally { setBusy(false); }
+  };
+
+  const visible = items.filter((item) => filter === "all" || (filter === "done" ? item.status === "done" : item.status !== "done" && item.status !== "cancelled"));
+  const openCount = items.filter((item) => item.status === "open" || item.status === "in_progress").length;
+  const dueCount = items.filter((item) => item.due_at && Date.parse(item.due_at) <= Date.now() && item.status !== "done" && item.status !== "cancelled").length;
+
+  return (
+    <section className="schedule-planning-panel" aria-label="업무 플래닝과 Todo">
+      <div className="schedule-planning-heading">
+        <div><span className="section-kicker">WORK PLANNING · TODO</span><h2>업무 플래닝</h2><p>대화, Agent 실행, 승인에서 생성된 업무와 직접 등록한 Todo를 한 흐름으로 관리합니다.</p></div>
+        <button type="button" className="schedule-create-btn" onClick={() => setShowForm((open) => !open)}>+ 할 일</button>
+      </div>
+      <div className="schedule-planning-metrics"><span><strong>{openCount}</strong> 진행 중</span><span><strong>{dueCount}</strong> 기한 확인</span><span><strong>{items.filter((item) => item.auto_generated === 1).length}</strong> 자동 등록</span></div>
+      {error && <div className="schedule-alert" role="alert">{error}</div>}
+      {showForm && <div className="schedule-plan-form">
+        <label className="form-label">업무 제목<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="예: 내일 설비 점검 결과 제출" maxLength={240} /></label>
+        <label className="form-label">설명<textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="완료 기준이나 참고 내용을 적어 주세요." rows={2} /></label>
+        <div className="form-row">
+          <label className="form-label">종류<select value={kind} onChange={(event) => setKind(event.target.value as PlannedWorkItem["kind"])}>{Object.entries(plannedKindLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label className="form-label">우선순위<select value={priority} onChange={(event) => setPriority(event.target.value as PlannedWorkItem["priority"])}><option value="low">낮음</option><option value="normal">보통</option><option value="high">높음</option><option value="urgent">긴급</option></select></label>
+          <label className="form-label">마감 시각<input type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} /></label>
+        </div>
+        <label className="schedule-checkbox"><input type="checkbox" checked={notify} onChange={(event) => setNotify(event.target.checked)} /> 마감 15분 전 알림</label>
+        <div className="modal-actions"><button type="button" className="quiet-button" onClick={() => setShowForm(false)}>취소</button><button type="button" className="schedule-create-btn" disabled={!title.trim() || busy} onClick={() => void create()}>{busy ? "처리 중..." : "업무 등록"}</button></div>
+      </div>}
+      <div className="schedule-planning-toolbar"><div className="schedule-filters" role="group" aria-label="업무 상태 필터">{(["all", "open", "done"] as const).map((value) => <button key={value} type="button" className={filter === value ? "active" : ""} onClick={() => setFilter(value)}>{value === "all" ? "전체" : value === "open" ? "진행 중" : "완료"}</button>)}</div><span>{loading ? "불러오는 중..." : `${visible.length}개 업무`}</span></div>
+      <div className="schedule-plan-list">{visible.length === 0 ? <p className="empty-state">등록된 업무가 없습니다. 대화에서 업무를 요청하거나 직접 할 일을 추가해 보세요.</p> : visible.map((item) => <article key={item.id} className={`schedule-plan-item schedule-plan-${item.status}`}>
+        <div className="schedule-plan-check"><button type="button" disabled={busy} aria-label={item.status === "done" ? "업무 다시 열기" : "업무 완료"} onClick={() => void update(item.id, item.status === "done" ? "open" : "done")}>{item.status === "done" ? "✓" : "○"}</button></div>
+        <div className="schedule-plan-content"><div className="schedule-plan-topline"><span className={`schedule-plan-priority priority-${item.priority}`}>{item.priority}</span><span>{plannedKindLabels[item.kind]}</span>{item.auto_generated === 1 && <span className="schedule-plan-auto">자동</span>}</div><strong>{item.title}</strong>{item.description && <p>{item.description}</p>}{item.due_at && <small className={Date.parse(item.due_at) <= Date.now() && item.status !== "done" ? "schedule-plan-overdue" : ""}>마감 {new Date(item.due_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</small>}</div>
+        <div className="schedule-plan-actions"><button type="button" disabled={busy || item.status === "done"} onClick={() => void update(item.id, "in_progress")}>{item.status === "in_progress" ? "진행 중" : "착수"}</button><button type="button" disabled={busy} onClick={() => void remove(item.id)}>삭제</button></div>
+      </article>)}</div>
+    </section>
   );
 }

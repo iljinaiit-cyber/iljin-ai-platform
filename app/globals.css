@@ -40,6 +40,15 @@
   --sidebar-start: var(--brand-900);
   --sidebar-end: var(--brand-950);
   --sidebar-glow: color-mix(in srgb, var(--accent) 14%, transparent);
+  --sidebar-border: color-mix(in srgb, white 12%, transparent);
+  --sidebar-text: color-mix(in srgb, white 76%, transparent);
+  --sidebar-muted: color-mix(in srgb, white 50%, transparent);
+  --sidebar-hover: color-mix(in srgb, white 8%, transparent);
+  --sidebar-active-start: var(--brand-600);
+  --sidebar-active-end: color-mix(in srgb, var(--accent) 22%, transparent);
+  --sidebar-active-border: color-mix(in srgb, white 16%, transparent);
+  --sidebar-count-bg: color-mix(in srgb, var(--accent) 68%, white);
+  --sidebar-count-ink: var(--brand-950);
   --sidebar: 248px;
   --sidebar-collapsed: 64px;
 }
@@ -616,7 +625,7 @@ h3 {
   overflow-y: auto;
   overflow-x: hidden;
   transition: width 220ms ease;
-  border-right: 1px solid rgba(255, 255, 255, 0.09);
+  border-right: 1px solid var(--sidebar-border);
   background:
     radial-gradient(circle at 0 0, var(--sidebar-glow), transparent 32%),
     linear-gradient(180deg, var(--sidebar-start) 0%, var(--sidebar-end) 100%);
@@ -629,19 +638,18 @@ h3 {
   align-items: center;
   gap: 12px;
   padding: 0 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid var(--sidebar-border);
 }
 
 .brand-lockup img {
   width: 88px;
   height: auto;
-  filter: brightness(0) invert(1);
 }
 
 .brand-lockup span {
   padding-left: 11px;
-  border-left: 1px solid rgba(255, 255, 255, 0.35);
-  color: rgba(255, 255, 255, 0.72);
+  border-left: 1px solid color-mix(in srgb, white 35%, transparent);
+  color: var(--sidebar-text);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -653,7 +661,7 @@ h3 {
 
 .nav-eyebrow {
   margin: 0 12px 9px;
-  color: rgba(255, 255, 255, 0.48);
+  color: var(--sidebar-muted);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.16em;
@@ -674,7 +682,7 @@ h3 {
   border: 1px solid transparent;
   border-radius: 7px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--sidebar-text);
   cursor: pointer;
   padding: 7px 10px;
   text-align: left;
@@ -682,13 +690,13 @@ h3 {
 }
 
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--sidebar-hover);
   color: white;
 }
 
 .nav-item.active {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: linear-gradient(90deg, rgba(8, 120, 209, 0.9), rgba(6, 203, 220, 0.14));
+  border-color: var(--sidebar-active-border);
+  background: linear-gradient(90deg, var(--sidebar-active-start), var(--sidebar-active-end));
   color: white;
   font-weight: 750;
 }
@@ -700,15 +708,15 @@ h3 {
   place-items: center;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, white 6%, transparent);
   font-size: 9px;
   font-weight: 850;
   letter-spacing: 0.04em;
 }
 
 .nav-item.active .nav-mark {
-  border-color: rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.14);
+  border-color: color-mix(in srgb, white 30%, transparent);
+  background: color-mix(in srgb, white 14%, transparent);
 }
 
 .nav-count {
@@ -1710,6 +1718,190 @@ h3 {
   --admin-ink: var(--ink);
   --admin-line: var(--line);
   --admin-surface: var(--surface);
+}
+
+.admin-page-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.admin-page-title h1 {
+  margin: 7px 0 4px;
+  font-size: clamp(28px, 3vw, 38px);
+  letter-spacing: -0.035em;
+}
+
+.admin-page-title p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.admin-view > .page-heading > div:first-child,
+.admin-legacy-metrics {
+  display: none;
+}
+
+.admin-overview-dashboard {
+  display: grid;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 7px 26px rgba(5, 67, 132, 0.05);
+  padding: 22px;
+}
+
+.admin-overview-dashboard__header,
+.admin-overview-dashboard__header > div,
+.admin-overview-dashboard__columns,
+.admin-overview-dashboard__metrics,
+.admin-overview-dashboard__rows {
+  display: grid;
+}
+
+.admin-overview-dashboard__header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+}
+
+.admin-overview-dashboard__header h2 {
+  margin: 5px 0 4px;
+  font-size: 21px;
+  letter-spacing: -0.025em;
+}
+
+.admin-overview-dashboard__header p,
+.admin-overview-dashboard__period,
+.admin-overview-dashboard__stamp {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.admin-overview-dashboard__stamp {
+  white-space: nowrap;
+}
+
+.admin-overview-dashboard__metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-overview-dashboard__metric {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 14px;
+}
+
+.admin-overview-dashboard__metric span,
+.admin-overview-dashboard__metric small {
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.admin-overview-dashboard__metric strong {
+  font-size: clamp(24px, 2.4vw, 32px);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+}
+
+.admin-overview-dashboard__columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.admin-overview-dashboard__panel {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.admin-overview-dashboard__panel h3 {
+  margin: 4px 0 0;
+  font-size: 16px;
+}
+
+.admin-overview-dashboard__rows {
+  margin-top: 8px;
+}
+
+.admin-overview-dashboard__rows > div,
+.admin-overview-dashboard__rows > button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  padding: 11px 0;
+  text-align: left;
+}
+
+.admin-overview-dashboard__rows > button {
+  width: 100%;
+  cursor: pointer;
+  font: inherit;
+}
+
+.admin-overview-dashboard__rows > button:hover,
+.admin-overview-dashboard__rows > button:focus-visible {
+  color: var(--brand-700);
+}
+
+.admin-overview-dashboard__rows span {
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.admin-overview-dashboard__rows strong {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-overview-dashboard__rows small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.admin-overview-dashboard__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.admin-overview-dashboard__footer span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  padding: 6px 9px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+@media (max-width: 760px) {
+  .admin-overview-dashboard__header,
+  .admin-overview-dashboard__columns {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-overview-dashboard__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-overview-dashboard__stamp {
+    justify-self: start;
+  }
 }
 .admin-view .page-heading {
   align-items: flex-start;
@@ -2837,11 +3029,11 @@ a.answer-citation:hover {
 }
 
 .knowledge-operational-strip span {
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid color-mix(in srgb, white 16%, transparent);
   border-radius: 999px;
   background: rgba(0, 29, 68, 0.28);
   padding: 7px 10px;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--sidebar-text);
   font-size: 10px;
 }
 
@@ -2879,7 +3071,7 @@ a.answer-citation:hover {
   min-height: 32px;
   border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--sidebar-hover);
   color: rgba(255, 255, 255, 0.84);
   padding: 5px 10px;
   cursor: pointer;
@@ -6639,4 +6831,68 @@ td {
   .schedule-side-panel {
     max-height: none;
   }
+}
+
+.schedule-planning-panel {
+  margin-top: 24px;
+  border: 1px solid var(--border);
+  background: #fff;
+}
+
+.schedule-planning-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.schedule-planning-heading h2 { margin: 4px 0 5px; font-size: 19px; }
+.schedule-planning-heading p { margin: 0; color: var(--muted); font-size: 12px; }
+
+.schedule-planning-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 11px 22px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.schedule-planning-metrics strong { margin-right: 4px; color: var(--text); font-size: 16px; font-variant-numeric: tabular-nums; }
+.schedule-plan-form { display: grid; gap: 10px; padding: 18px 22px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.schedule-plan-form .form-row { display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 10px; }
+.schedule-plan-form input, .schedule-plan-form textarea, .schedule-plan-form select { width: 100%; }
+.schedule-checkbox { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.schedule-checkbox input { accent-color: var(--brand-600); }
+.schedule-planning-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 22px 8px; color: var(--muted); font-size: 11px; }
+.schedule-planning-toolbar .schedule-filters { max-width: 300px; margin: 0; }
+.schedule-plan-list { padding: 0 22px 10px; }
+.schedule-plan-item { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.schedule-plan-check button { width: 27px; height: 27px; border: 1px solid var(--brand-300); border-radius: 50%; background: #fff; color: var(--brand-600); cursor: pointer; font-size: 16px; line-height: 1; }
+.schedule-plan-check button:hover { background: var(--brand-100); }
+.schedule-plan-content { min-width: 0; }
+.schedule-plan-topline { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin-bottom: 5px; color: var(--muted); font-size: 10px; text-transform: uppercase; }
+.schedule-plan-priority { padding: 2px 5px; border-radius: 3px; background: var(--surface-2); font-weight: 800; }
+.priority-urgent, .priority-high { color: #a52e3b; background: #fff1f1; }
+.schedule-plan-auto { color: var(--brand-700); }
+.schedule-plan-content > strong { display: block; font-size: 13px; }
+.schedule-plan-content p { margin: 4px 0; color: var(--muted); font-size: 11px; }
+.schedule-plan-content small { display: block; margin-top: 6px; color: var(--muted); font-size: 10px; }
+.schedule-plan-overdue { color: #a52e3b !important; font-weight: 800; }
+.schedule-plan-actions { display: flex; gap: 6px; }
+.schedule-plan-actions button { border: 1px solid var(--border); background: white; color: var(--muted); cursor: pointer; padding: 5px 7px; font-size: 10px; }
+.schedule-plan-actions button:hover { border-color: var(--brand-300); color: var(--brand-700); }
+.schedule-plan-done { opacity: 0.58; }
+.schedule-plan-done .schedule-plan-content > strong { text-decoration: line-through; }
+
+@media (max-width: 700px) {
+  .schedule-planning-heading { flex-direction: column; }
+  .schedule-plan-form .form-row { grid-template-columns: 1fr; }
+  .schedule-planning-toolbar { align-items: stretch; flex-direction: column; }
+  .schedule-planning-toolbar .schedule-filters { max-width: none; }
+  .schedule-plan-item { grid-template-columns: 30px minmax(0, 1fr); }
+  .schedule-plan-actions { grid-column: 2; }
 }

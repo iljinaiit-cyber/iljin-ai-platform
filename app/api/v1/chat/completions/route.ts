@@ -9,7 +9,7 @@ import {
 import { loadUserPreferences, updateUserPreferencesFromRequest } from "../../../../../lib/user-memory";
 import { getConversationSensitivity, recordLlmInvocation } from "../../../../../lib/llm-telemetry";
 import { searchInternet, type InternetSearchResponse } from "../../../../../lib/internet-search";
-import { answerPreferenceInstruction } from "../../../../../lib/answer-format";
+import { answerOutputTokenBudget, answerPreferenceInstruction, answerReasoningTier } from "../../../../../lib/answer-format";
 import { extractRelatedQuestions, RELATED_QUESTION_INSTRUCTION, type FollowUpQuestion } from "../../../../../lib/question-rewriter";
 import { resolvePrincipal } from "../../../../../lib/identity";
 import { authorizeFeature } from "../../../../../lib/admin-governance";
@@ -45,7 +45,7 @@ const INTERNET_GROUNDING_SOURCE_LIMIT = 6;
 const INTERNET_CONVERSATION_CONTEXT_BUDGET = 1_200;
 
 function maxOutputTokensFor(length: Body["answer_length"]) {
-  return length === "brief" ? 600 : length === "detailed" ? 1_800 : 1_200;
+  return answerOutputTokenBudget(length);
 }
 
 function responsePreferenceInstruction(length: Body["answer_length"], format: Body["answer_format"]) {
@@ -158,6 +158,9 @@ export async function POST(request: Request) {
     );
     const answerLength = body.summary_only ? "brief" : body.answer_length ?? storedPreferences.answerLength ?? "standard";
     const answerFormat = body.answer_format ?? storedPreferences.answerFormat ?? "paragraph";
+    const reasoningTier = body.reasoning_tier === "swift" || body.reasoning_tier === "expert" || body.reasoning_tier === "deep"
+      ? body.reasoning_tier
+      : answerReasoningTier(answerLength);
     const preference = `${responsePreferenceInstruction(answerLength, answerFormat)}${body.summary_only ? "\n첫 줄에 질문에 대한 한 문장 요약만 작성하고, 추가 설명은 작성하지 마세요." : ""}`;
     const userContent = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
     const contextMessages = body.conversation_id
@@ -183,7 +186,7 @@ export async function POST(request: Request) {
           [{ role: "user", content: buildConversationAwareInternetPrompt(userContent, webSearch, preference, contextMessages.slice(0, -1)) }],
           traceId,
           { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength) },
-          body.reasoning_tier as Parameters<typeof completeWithRag>[0]["reasoningTier"],
+          reasoningTier,
         );
         const related = extractRelatedQuestions(completion.content);
         relatedQuestions = related.relatedQuestions.length
@@ -208,7 +211,7 @@ export async function POST(request: Request) {
           }],
           traceId,
           { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength) },
-          body.reasoning_tier as Parameters<typeof completeWithRag>[0]["reasoningTier"],
+          reasoningTier,
         );
         citations = [];
         console.warn(JSON.stringify({ event: "internet-search-fallback", traceId, code: error.code }));
@@ -220,7 +223,7 @@ export async function POST(request: Request) {
         traceId,
         providerPolicy: { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength) },
         responsePreferences: { length: answerLength, format: answerFormat },
-        reasoningTier: body.reasoning_tier as Parameters<typeof completeWithRag>[0]["reasoningTier"],
+          reasoningTier,
         assetIds: attachmentAssetIds.length ? attachmentAssetIds : undefined,
       });
       completion = ragResult.completion;
