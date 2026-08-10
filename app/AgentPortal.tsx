@@ -384,6 +384,7 @@ const defaultChatSuggestions: ActivityDashboard["suggestedQuestions"] = [
 ];
 
 type GatewayResponse = {
+  content?: string;
   choices?: Array<{ message?: { content?: string } }>;
   provider?: string;
   model?: string;
@@ -1125,6 +1126,46 @@ export function AgentPortal() {
         activeConversationId = createPayload.conversation_id;
         setConversationId(activeConversationId);
       }
+      const requestMessages = nextMessages
+        .filter((message) => !message.error)
+        .map((message) => ({ role: message.role, content: message.requestBody || message.body }));
+      try {
+        const summaryResponse = await fetch("/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Sensitivity": effectiveSensitivity,
+          },
+          body: JSON.stringify({
+            messages: requestMessages,
+            sensitivity: effectiveSensitivity,
+            rag: chatSearchScope === "internal",
+            search_mode: chatSearchScope,
+            reasoning_tier: "swift",
+            summary_only: true,
+            stream: false,
+          }),
+          signal: controller.signal,
+        });
+        if (summaryResponse.ok) {
+          const summaryPayload = await summaryResponse.json() as GatewayResponse;
+          const previewSummary = extractPreviewSummary(summaryPayload.content || summaryPayload.choices?.[0]?.message?.content || "");
+          if (previewSummary) {
+            setChatMessages((messages) => [...messages, {
+              role: "assistant",
+              body: "",
+              provider: summaryPayload.provider,
+              streamingResponse: true,
+              streamingStage: "상세 답변 준비 중",
+              streamingSummary: previewSummary,
+            }]);
+            setNotice("빠른 요약을 먼저 표시했습니다. 상세 답변을 정리하고 있습니다.");
+          }
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") throw error;
+        console.warn("[chat] summary preflight failed", error);
+      }
       const response = await fetch("/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -1132,9 +1173,7 @@ export function AgentPortal() {
           "X-Sensitivity": effectiveSensitivity,
         },
         body: JSON.stringify({
-          messages: nextMessages
-            .filter((message) => !message.error)
-            .map((message) => ({ role: message.role, content: message.requestBody || message.body })),
+          messages: requestMessages,
           sensitivity: effectiveSensitivity,
           rag: chatSearchScope === "internal",
           search_mode: chatSearchScope,
@@ -1168,13 +1207,15 @@ export function AgentPortal() {
           related_questions?: FollowUpQuestion[];
           clarification_required?: boolean;
         } = {};
-          setChatMessages((messages) => [...messages, {
-            role: "assistant",
-            body: "",
-            provider,
-            streamingResponse: true,
-            streamingStage: generationStage,
-          }]);
+          setChatMessages((messages) => messages.some((message) => message.streamingResponse)
+            ? messages
+            : [...messages, {
+                role: "assistant",
+                body: "",
+                provider,
+                streamingResponse: true,
+                streamingStage: generationStage,
+              }]);
 
         const applyEvent = (eventBlock: string) => {
           const lines = eventBlock.split(/\r?\n/);
@@ -1955,7 +1996,7 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
   return (
     <div className="workspace-layout">
       <section className="chat-workspace" aria-labelledby="chat-title">
-        <div className="workspace-heading"><div><h1 id="chat-title">AI Chat Agent</h1><p>현재 기준일과 접근 가능한 최신 문서 버전·웹 자료를 우선해 답변합니다.</p></div><button className="button button-secondary" type="button" onClick={onNewConversation}>새 대화</button></div>
+        <div className="workspace-heading"><div><h1 id="chat-title">AI Chat Agent</h1><p>현재 기준일과 접근 가능한 최신 문서 버전·웹 자료를 우선해 답변합니다.</p></div><button className="button button-secondary workspace-new-button" type="button" onClick={onNewConversation}>새 대화</button></div>
          <section className="chat-smart-suggestions" aria-labelledby="chat-smart-suggestions-title">
           <div className="chat-smart-suggestions-heading">
             <div>
@@ -2042,6 +2083,14 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
       </aside>
     </div>
   );
+}
+
+function extractPreviewSummary(content: string) {
+  const line = content.replace(/\r\n?/g, "\n").split("\n").map((value) => value.trim()).find((value) =>
+    value && !/^>\s*기준일:/.test(value) && !/^#{1,3}\s+/.test(value),
+  );
+  if (!line) return "";
+  return line.length > 180 ? `${line.slice(0, 177)}…` : line;
 }
 
 type KnowledgeAsset = {

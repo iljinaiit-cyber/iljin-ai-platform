@@ -1011,6 +1011,12 @@ h3 {
   flex-shrink: 0;
 }
 
+.workspace-new-button {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
 .section-heading h2,
 .panel-title h2,
 .result-heading h2 {
@@ -1310,7 +1316,7 @@ h3 {
 .chat-workspace {
   display: flex;
   flex-direction: column;
-  padding: 11px;
+  padding: 8px;
   height: calc(100vh - 140px);
   max-height: calc(100vh - 140px);
 }
@@ -1520,9 +1526,9 @@ h3 {
 
 .chat-smart-suggestions {
   display: grid;
-  gap: 4px;
-  margin-top: 9px;
-  padding: 5px 10px;
+  gap: 3px;
+  margin-top: 6px;
+  padding: 4px 8px;
   border: 1px solid color-mix(in srgb, var(--brand-200) 72%, var(--line));
   border-radius: 9px;
   background:
@@ -1533,18 +1539,18 @@ h3 {
   display: flex;
   align-items: end;
   justify-content: space-between;
-  gap: 16px;
+  gap: 10px;
 }
 
 .chat-smart-suggestions-heading > div {
   display: flex;
   align-items: baseline;
-  gap: 9px;
+  gap: 7px;
 }
 
 .chat-smart-suggestions-heading h2 {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .chat-smart-suggestions-heading > span {
@@ -1556,7 +1562,7 @@ h3 {
 
 .chat-smart-suggestion-list {
   display: flex;
-  gap: 7px;
+  gap: 6px;
   overflow-x: auto;
   padding-bottom: 2px;
   scrollbar-width: thin;
@@ -1565,14 +1571,14 @@ h3 {
 .chat-smart-suggestion-list > button {
   display: flex;
   align-items: center;
-  min-width: 184px;
-  max-width: 230px;
-  min-height: 34px;
-  gap: 6px;
+  min-width: 176px;
+  max-width: 220px;
+  min-height: 30px;
+  gap: 5px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.92);
-  padding: 4px 8px;
+  padding: 3px 7px;
   color: var(--ink);
   text-align: left;
   cursor: pointer;
@@ -1592,8 +1598,8 @@ h3 {
 
 .chat-smart-suggestion-list strong {
   overflow: hidden;
-  font-size: 12px;
-  line-height: 1.35;
+  font-size: 11px;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1603,12 +1609,14 @@ h3 {
 }
 
 .suggestion-kind {
+  flex: 0 0 auto;
   width: max-content;
+  white-space: nowrap;
   border-radius: 999px;
-  padding: 2px 6px;
+  padding: 1px 5px;
   color: var(--brand-700);
   background: var(--brand-100);
-  font-size: 8px;
+  font-size: 7px;
   font-weight: 850;
   letter-spacing: 0.04em;
 }
@@ -4394,6 +4402,10 @@ td {
     padding: 0;
   }
 
+  .chat-workspace {
+    padding: 8px;
+  }
+
   .result-card {
     grid-template-columns: 1fr;
   }
@@ -5152,7 +5164,7 @@ td {
 }
 
 .conversation-history {
-  max-height: 360px;
+  max-height: min(480px, calc(100dvh - 360px));
   overflow-y: auto;
 }
 

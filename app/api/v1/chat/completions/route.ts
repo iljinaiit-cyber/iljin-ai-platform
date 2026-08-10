@@ -30,6 +30,7 @@ type Body = {
   answer_format?: "paragraph" | "bullets" | "table";
   reasoning_tier?: string;
   stream?: boolean;
+  summary_only?: boolean;
   conversation_id?: string;
 };
 
@@ -151,9 +152,9 @@ export async function POST(request: Request) {
     const storedPreferences = await loadUserPreferences(principal).catch(
       () => ({} as Awaited<ReturnType<typeof loadUserPreferences>>),
     );
-    const answerLength = body.answer_length ?? storedPreferences.answerLength ?? "standard";
+    const answerLength = body.summary_only ? "brief" : body.answer_length ?? storedPreferences.answerLength ?? "standard";
     const answerFormat = body.answer_format ?? storedPreferences.answerFormat ?? "paragraph";
-    const preference = responsePreferenceInstruction(answerLength, answerFormat);
+    const preference = `${responsePreferenceInstruction(answerLength, answerFormat)}${body.summary_only ? "\n첫 줄에 질문에 대한 한 문장 요약만 작성하고, 추가 설명은 작성하지 마세요." : ""}`;
     const userContent = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
     const contextMessages = body.conversation_id
       ? [
