@@ -2671,6 +2671,8 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
     original_uploaded_at?: string;
     embedding_model?: string;
     embedding_dimensions?: number;
+    mime_type?: string;
+    department_scope?: string;
     updated_at: string;
   };
   type AssetSort = "updated" | "title" | "segments";
