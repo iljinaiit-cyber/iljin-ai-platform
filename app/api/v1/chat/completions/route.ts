@@ -1,5 +1,5 @@
 import { completeWithRag, RagError, type WebRagCitation } from "../../../../../lib/rag";
-import { completeWithGateway, type GatewaySensitivity } from "../../../../../lib/llm-gateway";
+import { completeWithGateway, type GatewayCompletion, type GatewaySensitivity } from "../../../../../lib/llm-gateway";
 import {
   conversationContext,
   getConversationAttachmentAssetIds,
@@ -43,6 +43,7 @@ const sse = (event: string, data: unknown) =>
 const INTERNET_GROUNDING_MESSAGE_LIMIT = 7_900;
 const INTERNET_GROUNDING_SOURCE_LIMIT = 6;
 const INTERNET_CONVERSATION_CONTEXT_BUDGET = 1_200;
+const MIN_DETAILED_INTERNET_BODY_CHARACTERS = 1_000;
 
 function maxOutputTokensFor(length: Body["answer_length"]) {
   return answerOutputTokenBudget(length);
@@ -86,6 +87,55 @@ function ensureInternetCitationCoverage(content: string, citations: WebRagCitati
 function ensureDeepInternetSourceSection(content: string, citations: WebRagCitation[], length: Body["answer_length"]) {
   if (length !== "detailed" || !citations.length || /## 참고한 정보 출처|## 참고 출처/.test(content)) return content;
   return `${content}\n\n## 참고한 정보 출처 및 링크\n${citations.map((citation) => `- [${citation.id}] [${citation.title}](${citation.url}) · ${citation.source}${citation.publishedAt ? ` · ${citation.publishedAt}` : ""}`).join("\n")}`;
+}
+
+function needsDetailedInternetExpansion(content: string) {
+  const answerOnly = content.replace(/##\s*연관\s*질문[\s\S]*$/i, "").trim();
+  const sectionCount = (answerOnly.match(/^##\s+/gm) || []).length;
+  return answerOnly.length < MIN_DETAILED_INTERNET_BODY_CHARACTERS || sectionCount < 3;
+}
+
+function mergeCompletionUsage(first: GatewayCompletion, second: GatewayCompletion): GatewayCompletion["usage"] {
+  if (!first.usage && !second.usage) return undefined;
+  return {
+    prompt_tokens: Number(first.usage?.prompt_tokens || 0) + Number(second.usage?.prompt_tokens || 0),
+    completion_tokens: Number(first.usage?.completion_tokens || 0) + Number(second.usage?.completion_tokens || 0),
+    total_tokens: Number(first.usage?.total_tokens || 0) + Number(second.usage?.total_tokens || 0),
+  };
+}
+
+async function expandShallowDetailedInternetAnswer(
+  completion: GatewayCompletion,
+  prompt: string,
+  traceId: string,
+  sensitivity: GatewaySensitivity,
+  reasoningTier: "swift" | "expert" | "deep",
+) {
+  if (!needsDetailedInternetExpansion(completion.content)) return completion;
+
+  try {
+    const expanded = await completeWithGateway(
+      [
+        { role: "user", content: prompt },
+        { role: "assistant", content: completion.content },
+        { role: "user", content: "방금 답변은 심층 요청에 비해 너무 짧거나 구조가 부족합니다. 이전 답변을 요약·반복하지 말고, 제공된 검색 근거만 사용해 전체 답변을 다시 작성하세요. '## 개요 및 핵심 요약', '## 상세 분석 내용', '## 주요 데이터 및 인사이트', '## 참고한 정보 출처 및 링크'를 포함하고, 핵심 주장에는 [W1] 형식의 인용을 붙이세요. 근거가 부족한 항목은 [확인 필요]로 표시하세요." },
+      ],
+      `${traceId}-depth-repair`,
+      { sensitivity, maxOutputTokens: maxOutputTokensFor("detailed") },
+      reasoningTier,
+    );
+    if (expanded.content.trim().length <= completion.content.trim().length) return completion;
+    console.info(JSON.stringify({ event: "internet-detailed-answer-repaired", traceId, beforeChars: completion.content.length, afterChars: expanded.content.length }));
+    return {
+      ...expanded,
+      traceId: completion.traceId,
+      latencyMs: completion.latencyMs + expanded.latencyMs,
+      usage: mergeCompletionUsage(completion, expanded),
+    };
+  } catch (error) {
+    console.warn("[chat] detailed internet answer repair failed", { traceId, error: error instanceof Error ? error.message : String(error) });
+    return completion;
+  }
 }
 
 function ensureReferenceDateHeader(content: string) {
@@ -189,12 +239,16 @@ export async function POST(request: Request) {
     if (searchMode === "internet") {
       try {
         const webSearch = await searchInternet(userContent, { principal, traceId, limit: INTERNET_GROUNDING_SOURCE_LIMIT });
+        const internetPrompt = buildConversationAwareInternetPrompt(userContent, webSearch, preferenceWithLearning, contextMessages.slice(0, -1));
         completion = await completeWithGateway(
-          [{ role: "user", content: buildConversationAwareInternetPrompt(userContent, webSearch, preferenceWithLearning, contextMessages.slice(0, -1)) }],
+          [{ role: "user", content: internetPrompt }],
           traceId,
           { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength) },
           reasoningTier,
         );
+        if (answerLength === "detailed") {
+          completion = await expandShallowDetailedInternetAnswer(completion, internetPrompt, traceId, sensitivity, reasoningTier);
+        }
         const related = extractRelatedQuestions(completion.content);
         relatedQuestions = related.relatedQuestions.length
           ? related.relatedQuestions.slice(0, 3)

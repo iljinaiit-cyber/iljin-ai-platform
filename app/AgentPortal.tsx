@@ -899,6 +899,7 @@ export function AgentPortal() {
   const [chatSearchScope, setChatSearchScope] = useState<SearchScope>("internet");
   const [chatAnswerLength, setChatAnswerLength] = useState<ChatAnswerLength>("standard");
   const [streaming, setStreaming] = useState(false);
+  const [generationElapsedMs, setGenerationElapsedMs] = useState(0);
   const [generationStage, setGenerationStage] = useState("질문 분석 중");
   const [providerAvailability, setProviderAvailability] = useState({
     cloudflare: false,
@@ -1130,6 +1131,15 @@ export function AgentPortal() {
     requestAnimationFrame(() => document.getElementById("main-content")?.focus({ preventScroll: true }));
   };
 
+  useEffect(() => {
+    if (!streaming) return;
+    const startedAt = Date.now();
+    const updateElapsed = () => setGenerationElapsedMs(Date.now() - startedAt);
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 250);
+    return () => window.clearInterval(timer);
+  }, [streaming]);
+
   const submitChat = async (event: FormEvent) => {
     event.preventDefault();
     const text = query.trim();
@@ -1174,6 +1184,7 @@ export function AgentPortal() {
     }];
     setChatMessages(nextMessages);
     setQuery("");
+    setGenerationElapsedMs(0);
     setGenerationStage("질문 분석 중");
     setStreaming(true);
     setNotice("LLM Gateway가 보안 정책에 맞는 Provider를 선택하고 있습니다.");
@@ -1773,7 +1784,7 @@ export function AgentPortal() {
             <HomeView scope={scope} setScope={setScope} cases={visibleUseCases} user={currentUser} activity={activityDashboard} onNavigate={navigate} onOpenConversation={openConversation} onPrompt={(prompt) => { setQuery(prompt); navigate("chat"); }} />
           )}
           {view === "chat" && (
-            <ChatView messages={chatMessages} query={query} setQuery={setQuery} sensitivity={chatSensitivity} setSensitivity={changeChatSensitivity} searchScope={chatSearchScope} setSearchScope={changeChatSearchScope} answerLength={chatAnswerLength} setAnswerLength={setChatAnswerLength} providerAvailability={providerAvailability} streaming={streaming} generationStage={generationStage} currentUser={currentUser} conversationId={conversationId} suggestedQuestions={activityDashboard.suggestedQuestions} canUpload={canUse("documents.manage", "documents.upload")} onEnsureConversation={ensureConversationForAttachment} onNewConversation={startNewConversation} onOpenConversation={openConversation} onFeedback={submitFeedback} onSubmit={submitChat} onStop={stopChat} onKeyDown={handleComposerKey} onOpenAgent={() => navigate("tasks")} onFollowUpClick={submitChatWithText} onClarificationSubmit={submitClarification} />
+            <ChatView messages={chatMessages} query={query} setQuery={setQuery} sensitivity={chatSensitivity} setSensitivity={changeChatSensitivity} searchScope={chatSearchScope} setSearchScope={changeChatSearchScope} answerLength={chatAnswerLength} setAnswerLength={setChatAnswerLength} providerAvailability={providerAvailability} streaming={streaming} generationStage={generationStage} generationElapsedMs={generationElapsedMs} currentUser={currentUser} conversationId={conversationId} suggestedQuestions={activityDashboard.suggestedQuestions} canUpload={canUse("documents.manage", "documents.upload")} onEnsureConversation={ensureConversationForAttachment} onNewConversation={startNewConversation} onOpenConversation={openConversation} onFeedback={submitFeedback} onSubmit={submitChat} onStop={stopChat} onKeyDown={handleComposerKey} onOpenAgent={() => navigate("tasks")} onFollowUpClick={submitChatWithText} onClarificationSubmit={submitClarification} />
           )}
           {view === "search" && <SearchView type={searchType} setType={setSearchType} canUpload={canUse("documents.manage", "documents.upload")} onChat={(prompt, nextScope) => { changeChatSearchScope(nextScope); setQuery(prompt); navigate("chat"); }} />}
           {view === "tasks" && <AgentTasksView />}
@@ -1950,7 +1961,7 @@ function ClarificationForm({
   );
 }
 
-function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, searchScope, setSearchScope, answerLength, setAnswerLength, providerAvailability, streaming, generationStage, currentUser, conversationId, suggestedQuestions, canUpload, onEnsureConversation, onNewConversation, onOpenConversation, onFeedback, onSubmit, onStop, onKeyDown, onOpenAgent, onFollowUpClick, onClarificationSubmit }: {
+function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, searchScope, setSearchScope, answerLength, setAnswerLength, providerAvailability, streaming, generationStage, generationElapsedMs, currentUser, conversationId, suggestedQuestions, canUpload, onEnsureConversation, onNewConversation, onOpenConversation, onFeedback, onSubmit, onStop, onKeyDown, onOpenAgent, onFollowUpClick, onClarificationSubmit }: {
   messages: ChatMessage[];
   query: string;
   setQuery: (value: string) => void;
@@ -1963,6 +1974,7 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
   providerAvailability: { cloudflare: boolean; local: boolean; rag: boolean; internalSearch: boolean };
   streaming: boolean;
   generationStage: string;
+  generationElapsedMs: number;
   currentUser: AccessUser;
   conversationId?: string;
   suggestedQuestions: ActivityDashboard["suggestedQuestions"];
@@ -2191,7 +2203,7 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
             <article className={`message ${message.role}${message.error ? " error" : ""}`} key={`${message.role}-${index}`}>
               <span className="message-avatar" aria-hidden="true">{message.role === "user" ? currentUser.displayName.slice(0, 1) : "AI"}</span>
               <div><div className={"message-label" + (message.streamingResponse && message.streamingStage ? " streaming-stage" : "")}>{message.role === "user" ? currentUser.displayName : message.streamingResponse && message.streamingStage ? "ILJIN AI · " + message.streamingStage + (message.tokenCount ? " (" + message.tokenCount + " 토큰)" : "") : message.clarificationRequired ? "ILJIN AI · 답변 전 정보 확인" : message.provider === "cloudflare" ? "ILJIN AI · Cloud LLM" : "ILJIN AI · 로컬"}</div>{message.role === "assistant" && !message.error ? <>{message.streamingResponse && message.streamingSummary && <div className="answer-summary" aria-live="polite"><span>빠른 요약</span><p>{message.streamingSummary}</p></div>}<FormattedAnswer content={message.body} citations={message.citations ? buildCitationLookup(message.citations) : undefined} /></> : <p>{message.body}</p>}{message.role === "assistant" && message.clarificationRequired && message.followUpQuestions?.length && message.clarificationOriginalQuestion ? <ClarificationForm questions={message.followUpQuestions} originalQuestion={message.clarificationOriginalQuestion} disabled={streaming || messages.slice(index + 1).some((item) => item.role === "user")} onSubmit={onClarificationSubmit} /> : message.role === "assistant" && message.followUpQuestions && message.followUpQuestions.length > 0 && <div className="follow-up-questions"><span className="follow-up-label">정확한 답변을 위한 보충 질문</span>{message.followUpQuestions.map((fq, fqIndex) => <button key={fqIndex} type="button" className="follow-up-button" disabled={streaming} onClick={() => onFollowUpClick(fq.question)} title={fq.intent}>{fq.question}</button>)}</div>}{message.role === "assistant" && message.relatedQuestions && message.relatedQuestions.length > 0 && <div className="follow-up-questions related-questions"><span className="follow-up-label">연관 질문 추천</span>{message.relatedQuestions.map((rq, rqIndex) => <button key={rqIndex} type="button" className="follow-up-button related-question-button" disabled={streaming} onClick={() => onFollowUpClick(rq.question)} title={rq.intent}>{rq.question}</button>)}</div>}{message.role === "assistant" && !message.clarificationRequired && <div className="answer-actions"><button type="button" onClick={() => void copyAnswer(message, index)}>{copiedMessage === `${index}` ? "복사됨" : "답변 복사"}</button>{message.error && <button type="button" onClick={() => setQuery([...messages].slice(0, index).reverse().find((item) => item.role === "user")?.body || "")}>질문 다시 입력</button>}{message.messageId && <><button type="button" className={`answer-feedback-button ${message.feedback === 1 ? "selected positive" : ""}`} aria-label="답변 좋아요" title="좋아요" disabled={Boolean(message.feedback)} onClick={() => onFeedback(message.messageId!, 1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v10H4a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1h3Zm0 10h9.6a2 2 0 0 0 1.95-1.58l1.2-6A2 2 0 0 0 17.8 10H14l.7-3.5A2 2 0 0 0 12.75 4L8 10v10Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round" /></svg><span>좋아요</span></button><button type="button" className={`answer-feedback-button ${message.feedback === -1 ? "selected negative" : ""}`} aria-label="답변 싫어요" title="싫어요" disabled={Boolean(message.feedback)} onClick={() => onFeedback(message.messageId!, -1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14V4H4a1 1 0 0 1-1 1v8a1 1 0 0 1 1 1h3Zm0-10h9.6a2 2 0 0 1 1.95 1.58l1.2 6A2 2 0 0 1 17.8 14H14l.7 3.5A2 2 0 0 1 12.75 20L8 14V4Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round" /></svg><span>싫어요</span></button></>}<span className="trace">{message.traceId ? `${message.model ?? "@cf/zai-org/glm-5.2"} · ${message.latencyMs ?? 0}ms · ${message.traceId}` : message.error ? "Gateway 연결 오류" : "저장된 응답"}</span></div>}</div>
-              {message.role === "assistant" && !message.streamingResponse && message.traceId && <div className="answer-usage">사용 토큰 {message.tokenCount?.toLocaleString() ?? 0} · 경과 시간 {message.latencyMs && message.latencyMs >= 1_000 ? `${(message.latencyMs / 1_000).toFixed(1)}초` : `${message.latencyMs ?? 0}ms`}</div>}
+              {message.role === "assistant" && (message.streamingResponse || message.traceId) && <div className="answer-usage">{message.tokenCount?.toLocaleString() ?? "토큰 계산 중"} · {(message.streamingResponse ? generationElapsedMs : message.latencyMs ?? 0) >= 1_000 ? `${((message.streamingResponse ? generationElapsedMs : message.latencyMs ?? 0) / 1_000).toFixed(1)}초` : `${message.streamingResponse ? generationElapsedMs : message.latencyMs ?? 0}ms`}</div>}
             </article>
           ))}
           {streaming && !messages.some((message) => message.streamingResponse) && <article className="message assistant streaming"><span className="message-avatar" aria-hidden="true">AI</span><div><div className="message-label streaming-stage">ILJIN AI · {generationStage}</div><p><span className="loading-line" /><span className="loading-line short" /></p></div></article>}
