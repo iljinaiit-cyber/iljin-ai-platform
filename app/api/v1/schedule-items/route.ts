@@ -38,8 +38,8 @@ export async function POST(request: Request) {
       title?: string; description?: string; kind?: ScheduleWorkItemKind; priority?: ScheduleWorkItemPriority;
       due_at?: string | null; notify_enabled?: boolean;
     };
-    if (typeof body.title !== "string" || !body.title.trim() || body.title.trim().length > 240) {
-      return invalid(traceId, "업무 제목은 1~240자로 입력해 주세요.");
+    if (typeof body.title !== "string" || body.title.trim().length < 2 || body.title.trim().length > 240) {
+      return invalid(traceId, "업무 제목은 2~240자로 입력해 주세요.");
     }
     if (body.description !== undefined && typeof body.description !== "string") {
       return invalid(traceId, "업무 설명 형식이 올바르지 않습니다.");
@@ -80,8 +80,8 @@ export async function PATCH(request: Request) {
     if (typeof body.id !== "string" || !body.id.trim()) {
       return invalid(traceId, "업무 항목 ID가 필요합니다.");
     }
-    if (body.title !== undefined && (typeof body.title !== "string" || !body.title.trim() || body.title.trim().length > 240)) {
-      return invalid(traceId, "업무 제목은 1~240자로 입력해 주세요.");
+    if (body.title !== undefined && (typeof body.title !== "string" || body.title.trim().length < 2 || body.title.trim().length > 240)) {
+      return invalid(traceId, "업무 제목은 2~240자로 입력해 주세요.");
     }
     if (body.description !== undefined && typeof body.description !== "string") {
       return invalid(traceId, "업무 설명 형식이 올바르지 않습니다.");

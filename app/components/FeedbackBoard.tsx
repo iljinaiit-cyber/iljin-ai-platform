@@ -183,4 +183,3 @@ export function FeedbackBoard() {
     </div>
   </div>;
 }
-

@@ -227,6 +227,23 @@ test("connects every workspace menu to durable activity, conversation, feedback,
   assert.match(migration, /retrieval_traces_owner_created_idx/);
 });
 
+test("keeps feedback board discovery controls wired to tenant-scoped queries", async () => {
+  const [component, route, feedback] = await Promise.all([
+    readFile(new URL("app/components/FeedbackBoard.tsx", root), "utf8"),
+    readFile(new URL("app/api/v1/feedback/route.ts", root), "utf8"),
+    readFile(new URL("lib/feedback-board.ts", root), "utf8"),
+  ]);
+  assert.match(component, /feedback-summary/);
+  assert.match(component, /activeFilters\.status/);
+  assert.match(component, /activeFilters\.mine/);
+  assert.match(component, /공감순/);
+  assert.match(route, /searchParams\.get\("query"\)/);
+  assert.match(route, /searchParams\.get\("mine"\) === "true"/);
+  assert.match(feedback, /f\.tenant_id = \?/);
+  assert.match(feedback, /escapeLike\(query\)/);
+  assert.match(feedback, /like_count DESC, comment_count DESC/);
+});
+
 test("routes chat through Cloudflare GLM 4.7 Flash with local fallback", async () => {
   const [app, route, gateway, readiness, providersRoute, controlTower, telemetry, migration, resourceProbes, resourceMigration, envExample, wrangler] = await Promise.all([
     readFile(new URL("app/AgentPortal.tsx", root), "utf8"),

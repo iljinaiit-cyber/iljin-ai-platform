@@ -374,7 +374,7 @@ function normalizedMaxOutputTokens(value?: number, reasoningTier?: ReasoningTier
  * 2026-08-10 채팅 실패(EMPTY_PROVIDER_RESPONSE → LOCAL_PROVIDER_NOT_CONFIGURED)가
  * 정확히 이 경로였다 — Provider 는 정상 응답했고 본문만 비어 있었다.
  */
-const THINKING_MODEL_PATTERN = /glm|qwen3|qwq|deepseek-r1|gpt-oss|kimi|nemotron|magistral/i;
+const THINKING_MODEL_PATTERN = /gemma-4|glm|qwen3|qwq|deepseek-r1|gpt-oss|kimi|nemotron|magistral/i;
 
 export function isThinkingCapableModel(model: string) {
   return THINKING_MODEL_PATTERN.test(model);

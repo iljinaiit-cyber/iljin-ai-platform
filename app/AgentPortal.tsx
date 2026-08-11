@@ -486,7 +486,18 @@ type UseCase = {
   risk: "R0" | "R1" | "R2" | "R3";
 };
 
-const navItems: Array<{ id: View; label: string; mark: string; req: string; permission: string; feature?: string; icon: string }> = [
+type NavigationItem = { id: View; label: string; mark: string; req: string; permission: string; feature?: string; icon: string };
+
+const adminNavigationItem: NavigationItem = {
+  id: "admin",
+  label: "관리자 콘솔",
+  mark: "AD",
+  req: "A-01",
+  permission: "admin.permissions",
+  icon: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.09a2 2 0 0 1 1 1.74v.5a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.7" fill="none"/>',
+};
+
+const navItems: NavigationItem[] = [
   { id: "home", label: "홈", mark: "HM", req: "U-01", permission: "workspace.home", feature: "workspace.home", icon: '<path d="M3 12L12 3l9 9v9a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1v-9z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>' },
   { id: "chat", label: "AI Chat Agent", mark: "AI", req: "U-02", permission: "ai.chat", feature: "ai.chat", icon: '<path d="M21 11.5a8.38 8.38 0 0 1-9 8.5 8.5 8.5 0 0 1-3.6-.8L3 21l1.9-4.4A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3a8.38 8.38 0 0 1 8.5 8.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><circle cx="9" cy="11.5" r="1" fill="currentColor"/><circle cx="12.5" cy="11.5" r="1" fill="currentColor"/><circle cx="16" cy="11.5" r="1" fill="currentColor"/>' },
   { id: "search", label: "ILJIN Knowledge Data Base", mark: "KDB", req: "U-03", permission: "rag.search", feature: "rag.search", icon: '<circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="m21 21-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' },
@@ -494,7 +505,7 @@ const navItems: Array<{ id: View; label: string; mark: string; req: string; perm
   { id: "approvals", label: "승인", mark: "AP", req: "U-06", permission: "tools.review", feature: "tool.approvals", icon: '<path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" fill="none"/>' },
   { id: "activity", label: "내 활동", mark: "MY", req: "U-07", permission: "activity.read", feature: "activity", icon: '<path d="M3 3v18h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M7 14l3-4 3 2 5-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' },
   { id: "schedule", label: "스케줄", mark: "SC", req: "U-08", permission: "ai.chat", feature: "ai.chat", icon: '<rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M3 9h18M8 2v4M16 2v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M8 14h2v2H8zM14 14h2v2h-2z" stroke="currentColor" stroke-width="1.5" fill="none"/>' },
-  { id: "admin", label: "관리자", mark: "AD", req: "A-01", permission: "admin.permissions", icon: '<path d="M12 2L3 7v6c0 5 3.5 8.5 9 9 5.5-.5 9-4 9-9V7l-9-5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' },
+  adminNavigationItem,
 ];
 
 const useCases: UseCase[] = [
@@ -1717,17 +1728,17 @@ export function AgentPortal() {
         <nav className="primary-nav">
           {!sidebarCollapsed && <p className="nav-eyebrow">WORKSPACE</p>}
           {visibleNavigation.map((item) => (
-            <button key={item.id} type="button" className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => navigate(item.id)} aria-current={view === item.id ? "page" : undefined} title={sidebarCollapsed ? item.label : undefined}>
+            <button key={item.id} type="button" className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => navigate(item.id)} aria-current={view === item.id ? "page" : undefined} aria-label={sidebarCollapsed ? item.label : undefined} title={sidebarCollapsed ? item.label : undefined}>
               <span className="nav-mark" aria-hidden="true" dangerouslySetInnerHTML={{ __html: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">${item.icon}</svg>` }} />
-              {!sidebarCollapsed && <span>{item.label}</span>}
-              {item.id === "approvals" && activityDashboard.summary.pendingApprovals > 0 && <span className="nav-count">{activityDashboard.summary.pendingApprovals}</span>}
+              {!sidebarCollapsed && <span className="nav-label">{item.label}</span>}
+              {item.id === "approvals" && activityDashboard.summary.pendingApprovals > 0 && <span className="nav-count" aria-label={`대기 ${activityDashboard.summary.pendingApprovals}건`}>{activityDashboard.summary.pendingApprovals}</span>}
             </button>
           ))}
           {currentUser.role === "admin" && canUse("admin.permissions") && <>
             {!sidebarCollapsed && <p className="nav-eyebrow nav-section">MANAGEMENT</p>}
-            <button type="button" className={view === "admin" ? "nav-item active" : "nav-item"} onClick={() => navigate("admin")} aria-current={view === "admin" ? "page" : undefined} title={sidebarCollapsed ? "관리자 Console" : undefined}>
-              <span className="nav-mark" aria-hidden="true" dangerouslySetInnerHTML={{ __html: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">${navItems[6].icon}</svg>` }} />
-              {!sidebarCollapsed && <span>관리자 Console</span>}
+            <button type="button" className={view === "admin" ? "nav-item active" : "nav-item"} onClick={() => navigate("admin")} aria-current={view === "admin" ? "page" : undefined} aria-label={sidebarCollapsed ? adminNavigationItem.label : undefined} title={sidebarCollapsed ? adminNavigationItem.label : undefined}>
+              <span className="nav-mark" aria-hidden="true" dangerouslySetInnerHTML={{ __html: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">${adminNavigationItem.icon}</svg>` }} />
+              {!sidebarCollapsed && <span className="nav-label">{adminNavigationItem.label}</span>}
             </button>
           </>}
         </nav>
@@ -2906,7 +2917,7 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
 
   return (
     <div className="view-stack admin-view">
-      <div className="admin-page-title"><div className="admin-console-brand"><Image src="/iljin-logo.png" alt="ILJIN" width={112} height={26} priority unoptimized /><div className="admin-console-copy"><span className="section-kicker">ADMINISTRATION</span><strong>관리자 콘솔</strong><h1 className="sr-only">관리자 페이지</h1><p>전체 플랫폼 사용 현황과 운영·권한·데이터 관리 상태를 확인합니다.</p></div></div></div>
+      <div className="page-heading admin-page-heading"><div><span className="section-kicker">ADMINISTRATION</span><h1 className="sr-only">관리자 콘솔</h1><p>전체 플랫폼 사용 현황과 운영·권한·데이터 관리 상태를 확인합니다.</p></div></div>
       <AdminSectionNav activeSection={activeSection} onSelect={selectSection} />
       <div className="admin-tab-screen" id="admin-tab-screen" tabIndex={-1}>
       {activeSection === "overview" && <>
@@ -2934,7 +2945,6 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
       {activeSection === "management" && <div className="admin-management-tab" id="admin-management"><div id="admin-organization"><OrgConsole currentEmail={currentEmail} /></div><div id="admin-governance"><AdminGovernance currentEmail={currentEmail} /></div></div>}
       {activeSection === "knowledge" && <>
       <div id="admin-ingestion"><IngestionSources /><InternetSearchOperations /></div>
-      <RequirementsChecklist />
       <div className="vector-db-search"><label htmlFor="vector-db-search-input">Vector DB 파일 검색</label><input id="vector-db-search-input" className="table-input" value={vectorQuery} onChange={(event) => setVectorQuery(event.target.value)} placeholder="파일명·출처·모델 검색" /></div>
       <div className="admin-grid" id="admin-assets">
         <section className="panel"><div className="panel-title"><div><span className="section-kicker">SERVICE HEALTH</span><h2>RAG 구성요소</h2></div><span className={`status-pill ${services.every(([, ready]) => ready) ? "status-완료" : "status-부분-완료"}`}>{services.every(([, ready]) => ready) ? "준비" : "확인 필요"}</span></div><div className="service-list">{services.map(([name, ready, detail]) => <div key={name}><span className={`status-dot ${ready ? "" : "status-dot-warning"}`} /><strong>{name}</strong><span>{ready ? "연결" : "미설정"}</span><small>{detail}</small></div>)}</div></section>
@@ -2947,9 +2957,10 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
            <p className="knowledge-assets-panel__count">목록은 10개 높이까지 표시되며, 추가 항목은 내부에서 스크롤됩니다.</p>
          </section>
          <section className="panel table-wrap"><div className="panel-title"><div><span className="section-kicker">INDEX JOBS</span><h2>최근 인덱싱 작업</h2></div><span>{failedJobs ? `실패 ${failedJobs}` : "정상"}</span></div><table><caption className="sr-only">최근 인덱싱 작업</caption><thead><tr><th>문서</th><th>단계</th><th>상태</th><th>시도</th><th>작업</th></tr></thead><tbody>{jobs.slice(0, 6).map((job) => <tr key={job.id}><td><strong>{job.title || job.id}</strong>{job.error_code && <small className="table-subtext">오류 코드 · {job.error_code}</small>}</td><td>{job.stage}</td><td>{job.status}</td><td>{job.attempt_count}</td><td>{job.status === "failed" ? <button type="button" className="text-button" disabled={jobActionId === job.id} onClick={() => void retryJob(job)}>{jobActionId === job.id ? "재시도 중" : "재시도"}</button> : "—"}</td></tr>)}{!jobs.length && <tr><td colSpan={5}>인덱싱 작업이 없습니다.</td></tr>}</tbody></table></section>
-      </div>
-      </>}
-      {activeSection === "overview" && <div id="admin-control"><AiControlTower currentEmail={currentEmail} /></div>}
+       </div>
+       <RequirementsChecklist />
+       </>}
+       {activeSection === "overview" && <div id="admin-control"><AiControlTower currentEmail={currentEmail} /></div>}
       </div>
     </div>
   );
@@ -3260,6 +3271,23 @@ const plannedKindLabels: Record<PlannedWorkItem["kind"], string> = {
 const scheduleHourOptions = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0"));
 const scheduleMinuteOptions = ["00", "30"];
 
+type ScheduleItemsPayload = {
+  id?: string;
+  items?: PlannedWorkItem[];
+  notifications?: ScheduleAlertItem[];
+  error?: { message?: string; trace_id?: string };
+};
+
+async function readScheduleItemsResponse(response: Response, fallbackMessage: string) {
+  const payload = await response.json().catch(() => ({})) as ScheduleItemsPayload;
+  if (!response.ok) {
+    const traceId = payload.error?.trace_id || response.headers.get("X-Trace-Id");
+    const message = payload.error?.message || fallbackMessage;
+    throw new Error(traceId ? `${message} (문의 코드: ${traceId})` : message);
+  }
+  return payload;
+}
+
 function SchedulePlanningBoard() {
   const [items, setItems] = useState<PlannedWorkItem[]>([]);
   const [alerts, setAlerts] = useState<ScheduleAlertItem[]>([]);
@@ -3278,13 +3306,13 @@ function SchedulePlanningBoard() {
   const [filter, setFilter] = useState<"all" | "open" | "done" | "attention">("all");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetch("/api/v1/schedule-items", { headers: { Accept: "application/json" } });
-      const data = await response.json() as { items?: PlannedWorkItem[]; notifications?: ScheduleAlertItem[]; error?: { message?: string } };
-      if (!response.ok) throw new Error(data.error?.message || "업무 플래닝을 불러오지 못했습니다.");
+      const data = await readScheduleItemsResponse(response, "업무 플래닝을 불러오지 못했습니다.");
       setItems(data.items || []);
       setAlerts(data.notifications || []);
       setError("");
@@ -3325,6 +3353,8 @@ function SchedulePlanningBoard() {
   };
 
   const editItem = (item: PlannedWorkItem) => {
+    setError("");
+    setNotice("");
     setEditingId(item.id);
     setTitle(item.title);
     setDescription(item.description || "");
@@ -3339,8 +3369,9 @@ function SchedulePlanningBoard() {
   };
 
   const save = async () => {
-    if (!title.trim()) return;
-    setBusy(true); setError("");
+    if (title.trim().length < 2) { setError("업무 제목은 2자 이상 입력해 주세요."); return; }
+    const isEditing = Boolean(editingId);
+    setBusy(true); setError(""); setNotice("");
     try {
       const dueAt = dueDate ? new Date(`${dueDate}T${dueHour}:${dueMinute}:00`).toISOString() : null;
       const response = await fetch("/api/v1/schedule-items", {
@@ -3349,21 +3380,21 @@ function SchedulePlanningBoard() {
           ? { id: editingId, title: title.trim(), description, kind, priority, notify_enabled: notify, due_at: dueAt }
           : { title: title.trim(), description, kind, priority, notify_enabled: notify, due_at: dueAt }),
       });
-      const data = await response.json() as { error?: { message?: string } };
-      if (!response.ok) throw new Error(data.error?.message || (editingId ? "업무를 수정하지 못했습니다." : "업무를 등록하지 못했습니다."));
+      await readScheduleItemsResponse(response, editingId ? "업무를 수정하지 못했습니다." : "업무를 등록하지 못했습니다.");
       resetForm();
       await load();
+      setNotice(isEditing ? "업무 변경 내용을 저장했습니다." : "업무를 등록했습니다.");
     } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "업무를 저장하지 못했습니다."); }
     finally { setBusy(false); }
   };
 
   const update = async (id: string, status: PlannedWorkItem["status"]) => {
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setNotice("");
     try {
       const response = await fetch("/api/v1/schedule-items", {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }),
       });
-      if (!response.ok) throw new Error("업무 상태를 변경하지 못했습니다.");
+      await readScheduleItemsResponse(response, "업무 상태를 변경하지 못했습니다.");
       await load();
     } catch (updateError) { setError(updateError instanceof Error ? updateError.message : "업무 상태를 변경하지 못했습니다."); }
     finally { setBusy(false); }
@@ -3371,10 +3402,10 @@ function SchedulePlanningBoard() {
 
   const remove = async (id: string) => {
     if (!window.confirm("이 업무를 삭제할까요?")) return;
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setNotice("");
     try {
       const response = await fetch(`/api/v1/schedule-items?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-      if (!response.ok) throw new Error("업무를 삭제하지 못했습니다.");
+      await readScheduleItemsResponse(response, "업무를 삭제하지 못했습니다.");
       await load();
     } catch (removeError) { setError(removeError instanceof Error ? removeError.message : "업무를 삭제하지 못했습니다."); }
     finally { setBusy(false); }
@@ -3394,13 +3425,14 @@ function SchedulePlanningBoard() {
     <section className="schedule-planning-panel" aria-label="업무 플래닝과 Todo">
       <div className="schedule-planning-heading">
         <div><span className="section-kicker">WORK PLANNING · TODO</span><h2>업무 플래닝</h2><p>대화, Agent 실행, 승인에서 생성된 업무와 직접 등록한 Todo를 한 흐름으로 관리합니다.</p></div>
-        <button type="button" className="schedule-create-btn" onClick={() => { if (showForm) resetForm(); else { setEditingId(null); setShowForm(true); } }}>{showForm ? "닫기" : "+ 업무 추가"}</button>
+        <button type="button" className="schedule-create-btn" onClick={() => { setError(""); setNotice(""); if (showForm) resetForm(); else { setEditingId(null); setShowForm(true); } }}>{showForm ? "닫기" : "+ 업무 추가"}</button>
       </div>
       <div className="schedule-planning-metrics"><span><strong>{openCount}</strong> 진행 중</span><span><strong>{dueCount}</strong> 확인 필요</span><span><strong>{alerts.length}</strong> 알림</span><span><strong>{items.filter((item) => item.auto_generated === 1).length}</strong> 자동 등록</span></div>
       {error && <div className="schedule-alert" role="alert">{error}</div>}
+      {notice && <div className="schedule-save-status" role="status">{notice}<button type="button" onClick={() => setNotice("")}>닫기</button></div>}
       {alerts.length > 0 && <div className="schedule-plan-alerts" role="status"><strong>확인이 필요한 업무</strong><span>{alerts.slice(0, 3).map((item) => `${item.alert_type === "overdue" ? "기한 초과" : "예정"} · ${item.title}`).join(" / ")}</span></div>}
       {showForm && <div className="schedule-plan-form">
-        <label className="form-label">업무 제목<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="예: 내일 설비 점검 결과 제출" maxLength={240} autoFocus /></label>
+        <label className="form-label">업무 제목<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="예: 내일 설비 점검 결과 제출" minLength={2} maxLength={240} aria-describedby="schedule-title-hint" required autoFocus /><small id="schedule-title-hint">2~240자</small></label>
         <label className="form-label">설명<textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="완료 기준이나 참고 내용을 적어 주세요." rows={2} /></label>
         <div className="form-row">
           <label className="form-label">종류<select value={kind} onChange={(event) => setKind(event.target.value as PlannedWorkItem["kind"])}>{Object.entries(plannedKindLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
@@ -3408,7 +3440,7 @@ function SchedulePlanningBoard() {
           <label className="form-label">마감 시각<div className="schedule-plan-deadline-control"><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} aria-label="마감 날짜" /><select value={dueHour} onChange={(event) => setDueHour(event.target.value)} aria-label="마감 시각 시">{scheduleHourOptions.map((hour) => <option key={hour} value={hour}>{hour}시</option>)}</select><select value={dueMinute} onChange={(event) => setDueMinute(event.target.value)} aria-label="마감 시각 분">{scheduleMinuteOptions.map((minute) => <option key={minute} value={minute}>{minute}분</option>)}</select></div><small className="schedule-plan-deadline-hint">24시간제 · 30분 단위</small></label>
         </div>
         <label className="schedule-checkbox"><input type="checkbox" checked={notify} onChange={(event) => setNotify(event.target.checked)} /> 마감 15분 전 알림</label>
-        <div className="modal-actions"><button type="button" className="quiet-button" onClick={resetForm}>취소</button><button type="button" className="schedule-create-btn" disabled={!title.trim() || busy} onClick={() => void save()}>{busy ? "처리 중..." : editingId ? "변경 저장" : "업무 등록"}</button></div>
+        <div className="modal-actions"><button type="button" className="quiet-button" onClick={resetForm}>취소</button><button type="button" className="schedule-create-btn" disabled={title.trim().length < 2 || busy} onClick={() => void save()}>{busy ? "처리 중..." : editingId ? "변경 저장" : "업무 등록"}</button></div>
       </div>}
       <div className="schedule-planning-toolbar"><div className="schedule-filters" role="group" aria-label="업무 상태 필터">{(["all", "open", "attention", "done"] as const).map((value) => <button key={value} type="button" className={filter === value ? "active" : ""} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? "전체" : value === "open" ? "진행 중" : value === "attention" ? "확인 필요" : "완료"}</button>)}</div><span>{loading ? "불러오는 중..." : `${visible.length}개 업무`}</span></div>
       <div className="schedule-plan-list">{visible.length === 0 ? <p className="empty-state">등록된 업무가 없습니다. 대화에서 업무를 요청하거나 직접 할 일을 추가해 보세요.</p> : visible.map((item) => <article key={item.id} className={`schedule-plan-item schedule-plan-${item.status}`}>

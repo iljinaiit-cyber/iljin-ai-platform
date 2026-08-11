@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const MODEL = "@cf/zai-org/glm-4.7-flash";
+const GEMMA_MODEL = "@cf/google/gemma-4-26b-a4b-it";
 const TIER_MAX_TOKENS = 1_200;
 const REASONING_HEADROOM = 1_024;
 
@@ -56,7 +57,7 @@ const fakeDb = {
 };
 
 /** AI 바인딩을 가짜 응답으로 바꾸고, 실제 전달된 입력을 기록한다. */
-function stubProvider(respond) {
+function stubProvider(respond, model = MODEL) {
   const calls = [];
   globalThis.__ILJIN_RUNTIME_ENV__ = {
     DB: fakeDb,
@@ -66,7 +67,7 @@ function stubProvider(respond) {
         return respond(calls.length - 1, input);
       },
     },
-    CLOUDFLARE_AI_MODEL: MODEL,
+    CLOUDFLARE_AI_MODEL: model,
     MAX_EGRESS_SENSITIVITY: "internal",
     LLM_TIMEOUT_MS: "5000",
   };
@@ -111,6 +112,16 @@ test("Cloudflare 채팅 호출은 사고를 끈 채 나간다", async (t) => {
   assert.equal(calls.length, 1, "성공한 요청은 한 번만 호출한다");
   assert.deepEqual(calls[0].input.chat_template_kwargs, { enable_thinking: false });
   assert.equal(calls[0].input.max_tokens, TIER_MAX_TOKENS);
+});
+
+test("Gemma 4 채팅 호출도 내장 사고를 끈 채 나간다", async (t) => {
+  if (!requireGateway(t)) return;
+  const calls = stubProvider(() => answer("Gemma 답변입니다."), GEMMA_MODEL);
+
+  await ask();
+
+  assert.equal(calls[0].model, GEMMA_MODEL);
+  assert.deepEqual(calls[0].input.chat_template_kwargs, { enable_thinking: false });
 });
 
 test("빈 응답은 상한을 올려 한 번만 재시도하고 포기한다", async (t) => {

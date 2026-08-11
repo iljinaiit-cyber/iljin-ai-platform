@@ -52,12 +52,9 @@ export function RequirementsChecklist() {
           <ul className="requirement-list">
             {items.map((item) => (
               <li key={item.id} className="requirement-row">
-                <span className="requirement-id mono">{item.id}</span>
-                <div>
-                  <strong>{item.title || item.label || item.id}</strong>
-                  {item.note ? <small>{item.note}</small> : null}
-                </div>
-                {item.status ? <span className={`status-pill status-${item.status}`}>{item.status}</span> : null}
+                <div className="requirement-card-top"><span className="requirement-id mono">{item.id}</span>{item.status ? <span className={`status-pill status-${item.status}`}>{item.status}</span> : null}</div>
+                <strong>{item.title || item.label || item.id}</strong>
+                {item.note ? <small>{item.note}</small> : null}
               </li>
             ))}
           </ul>
