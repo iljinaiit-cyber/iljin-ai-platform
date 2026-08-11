@@ -299,7 +299,7 @@ function safeMessages(messages: GatewayMessage[], reasoningTier: ReasoningTier =
 - 실무 적용 방법과 주의사항
 - 제공된 근거와 일반적 분석을 구분하고, 근거가 부족하면 추측하지 말고 한계 명시
 
-복합 주제는 \`### 1.\`, \`### 2.\` 형식의 번호 소제목으로 3~5개 섹션으로 구조화합니다. 각 섹션은 1~2개의 짧은 문단으로 작성하고, 핵심 수치나 조건은 **굵게** 강조합니다. 출처가 있으면 \`[출처명](URL)\` 형식의 링크로 표시합니다. 같은 말을 반복해 분량을 채우지 않습니다.${FOLLOW_UP_INSTRUCTION}`,
+복합 주제는 \`### 1.\`, \`### 2.\` 형식의 번호 소제목으로 5~7개 섹션으로 구조화합니다. 현황·근거, 원인·영향, 대안·트레이드오프, 실행 방법, 리스크·한계, 다음 행동 중 질문에 맞는 관점을 빠뜨리지 않습니다. 각 섹션은 1~3개의 짧은 문단 또는 필요한 목록으로 작성하고, 핵심 수치나 조건은 **굵게** 강조합니다. 출처가 있으면 \`[출처명](URL)\` 형식의 링크로 표시합니다. 같은 말을 반복해 분량을 채우지 않습니다.${FOLLOW_UP_INSTRUCTION}`,
     deep: ` 단순히 긴 설명이 아니라 경영진·실무 책임자가 바로 판단하고 실행할 수 있는 **심층 의사결정 문서**로 답변합니다.
 
 첫 1~2문장에서 질문의 조건과 독자를 반영한 핵심 판단을 직접 제시합니다. 이후 질문 유형에 맞춰 다음 요소를 5~8개의 \`## 1.\`, \`## 2.\` 번호 섹션으로 구성합니다. 관련 없는 섹션을 억지로 채우지는 않습니다.
@@ -340,12 +340,12 @@ function safeMessages(messages: GatewayMessage[], reasoningTier: ReasoningTier =
  * "결론부터 짧게"를 지시하는 tier 인데 2,400 토큰을 허용할 이유가 없다.
  * 혼합 가정(swift 50% · expert 40% · deep 10%)에서 상대 비용이 42% 로 떨어진다.
  *
- * 품질 영향: swift 는 원래 짧은 답변을 요구하므로 잘릴 여지가 적다. deep 은
- * 종전과 같다. expert 만 절반이 되므로 골든셋으로 Answer Relevance 를 확인하라.
+ * 품질 영향: swift 는 원래 짧은 답변을 요구하므로 잘릴 여지가 적다. expert 는
+ * 표준 답변의 다각도 분석을 수용하도록 1,800 토큰을 허용하고, deep 은 종전과 같다.
  */
 const TIER_MAX_OUTPUT_TOKENS: Record<ReasoningTier, number> = {
   swift: 600,
-  expert: 1_200,
+  expert: 1_800,
   deep: DEFAULT_MAX_OUTPUT_TOKENS,
 };
 
@@ -362,7 +362,7 @@ function normalizedMaxOutputTokens(value?: number, reasoningTier?: ReasoningTier
  *
  * glm-4.7-flash 같은 하이브리드 추론 모델은 Workers AI 채팅 템플릿에서
  * `enable_thinking` 이 기본 true 다(worker-configuration.d.ts 의 ChatTemplateKwargs).
- * 사고 토큰도 max_tokens 예산에서 나가므로, tier 상한(swift 600 · expert 1,200)
+ * 사고 토큰도 max_tokens 예산에서 나가므로, tier 상한(swift 600 · expert 1,800)
  * 안에서 사고가 예산을 다 써버리면 message.content 가 빈 문자열로 돌아온다.
  *
  * 2026-08-10 채팅 실패(EMPTY_PROVIDER_RESPONSE → LOCAL_PROVIDER_NOT_CONFIGURED)가

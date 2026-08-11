@@ -24,7 +24,8 @@ export async function GET(request: Request) {
   try {
     const principal = await resolvePrincipal(request);
     const status = new URL(request.url).searchParams.get("status") as ScheduleWorkItemStatus | "all" | null;
-    const requestedStatus = status && status !== "all" && statuses.has(status) ? status : "all";
+    if (status && status !== "all" && !statuses.has(status)) return invalid(traceId, "업무 상태 필터가 올바르지 않습니다.");
+    const requestedStatus = status && status !== "all" ? status : "all";
     return ok({ items: await listScheduleWorkItems(principal, { status: requestedStatus }), notifications: await listScheduleAlerts(principal) }, traceId);
   } catch (error) { return fail(error, traceId); }
 }
@@ -74,7 +75,7 @@ export async function PATCH(request: Request) {
     const principal = await resolvePrincipal(request);
     const body = await request.json() as {
       id?: string; title?: string; description?: string; status?: ScheduleWorkItemStatus;
-      priority?: ScheduleWorkItemPriority; due_at?: string | null; notify_enabled?: boolean;
+      kind?: ScheduleWorkItemKind; priority?: ScheduleWorkItemPriority; due_at?: string | null; notify_enabled?: boolean;
     };
     if (typeof body.id !== "string" || !body.id.trim()) {
       return invalid(traceId, "업무 항목 ID가 필요합니다.");
@@ -88,6 +89,9 @@ export async function PATCH(request: Request) {
     if (body.status !== undefined && !statuses.has(body.status)) {
       return invalid(traceId, "업무 상태가 올바르지 않습니다.");
     }
+    if (body.kind !== undefined && !kinds.has(body.kind)) {
+      return invalid(traceId, "업무 종류가 올바르지 않습니다.");
+    }
     if (body.priority !== undefined && !priorities.has(body.priority)) {
       return invalid(traceId, "우선순위가 올바르지 않습니다.");
     }
@@ -98,7 +102,7 @@ export async function PATCH(request: Request) {
       return invalid(traceId, "알림 설정 형식이 올바르지 않습니다.");
     }
     await updateScheduleWorkItem(principal, body.id, {
-      title: body.title, description: body.description, status: body.status, priority: body.priority,
+      title: body.title, description: body.description, status: body.status, kind: body.kind, priority: body.priority,
       dueAt: body.due_at, notifyEnabled: body.notify_enabled,
     });
     return ok({ ok: true }, traceId);

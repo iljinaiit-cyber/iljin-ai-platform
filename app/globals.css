@@ -7505,6 +7505,80 @@ td {
   }
 }
 
+/* Compact work examples: preserve the information hierarchy in a shorter card. */
+.usecase-grid {
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.usecase-card {
+  min-height: 0;
+  padding: 12px;
+}
+
+.card-topline {
+  gap: 6px;
+  font-size: 10px;
+}
+
+.risk {
+  min-height: 20px;
+  padding: 2px 6px;
+  font-size: 9px;
+}
+
+.usecase-card h3 {
+  margin: 9px 0 4px;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.usecase-card > p {
+  min-height: 0;
+  margin: 0 0 8px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.source-list {
+  gap: 3px;
+}
+
+.source-list span {
+  padding: 2px 5px;
+  font-size: 9px;
+}
+
+.card-meta {
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin-top: 9px;
+  font-size: 10px;
+}
+
+.card-meta div {
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px;
+}
+
+.card-action {
+  min-height: 32px;
+  padding-top: 7px;
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .usecase-card {
+    padding: 11px;
+  }
+
+  .card-meta {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
 /* Schedule follows the same page rhythm as the portal's search, activity, and admin views. */
 .view-stack.schedule-view {
   width: 100%;
@@ -7722,6 +7796,38 @@ td {
   padding-block: 14px;
 }
 
+.schedule-plan-alerts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 20px 12px;
+  border: 1px solid var(--warning-soft);
+  border-left: 3px solid var(--warning);
+  background: var(--warning-soft);
+  padding: 10px 12px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.schedule-plan-alerts strong {
+  flex: 0 0 auto;
+  color: var(--warning);
+  font-size: 12px;
+}
+
+.schedule-plan-alerts span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-plan-failed-label {
+  color: var(--danger);
+  font-weight: 800;
+}
+
 @media (max-width: 700px) {
   .view-stack.schedule-view {
     gap: 12px;
@@ -7743,6 +7849,17 @@ td {
   .schedule-calendar-panel,
   .schedule-side-panel {
     padding: 14px;
+  }
+
+  .schedule-plan-alerts {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+    margin-inline: 12px;
+  }
+
+  .schedule-plan-alerts span {
+    white-space: normal;
   }
 
   .calendar-day {

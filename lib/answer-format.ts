@@ -19,11 +19,11 @@ export function answerLengthInstruction(length: AnswerLength | undefined) {
   if (length === "detailed") {
     return "심층 의사결정 답변으로 작성하세요. 결론 → 근거와 분석 → 대안·실행 순서 또는 권고안 → 정량 효과·리스크와 한계 → 다음 행동 순서로 필요한 섹션을 충분히 구성하세요.";
   }
-  return "표준 답변으로 작성하세요. 핵심 결론을 먼저 제시하고, 핵심 근거·실무 적용·주의사항을 3~5개의 짧은 섹션으로 균형 있게 설명하세요.";
+  return "표준 답변으로 작성하세요. 한 줄 결론을 먼저 제시한 뒤 5~7개의 짧은 섹션으로 현황·핵심 근거·원인 또는 영향·대안 비교·실무 적용·리스크와 한계·다음 행동을 질문에 맞게 다각도로 설명하세요. 근거가 있는 수치·조건·시점은 빠뜨리지 말고, 근거와 분석·권고를 구분하세요.";
 }
 
 export function answerOutputTokenBudget(length: AnswerLength | undefined) {
-  return length === "brief" ? 600 : length === "detailed" ? 2_400 : 1_200;
+  return length === "brief" ? 600 : length === "detailed" ? 2_400 : 1_800;
 }
 
 export function answerReasoningTier(length: AnswerLength | undefined) {

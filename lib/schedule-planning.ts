@@ -86,7 +86,10 @@ function normalizeDate(value?: string | null) {
 
 function defaultReminder(dueAt: string | null, notifyEnabled: boolean) {
   if (!dueAt || !notifyEnabled) return null;
-  return new Date(Math.max(Date.now(), Date.parse(dueAt) - 15 * 60 * 1000)).toISOString();
+  const dueTime = Date.parse(dueAt);
+  if (Number.isNaN(dueTime)) return null;
+  const reminderTime = dueTime - 15 * 60 * 1000;
+  return reminderTime > Date.now() ? new Date(reminderTime).toISOString() : null;
 }
 
 export async function createScheduleWorkItem(input: {
@@ -153,7 +156,7 @@ export async function listScheduleWorkItems(principal: Principal, options?: { st
 }
 
 export async function updateScheduleWorkItem(principal: Principal, workItemId: string, patch: {
-  title?: string; description?: string; status?: ScheduleWorkItemStatus;
+  title?: string; description?: string; kind?: ScheduleWorkItemKind; status?: ScheduleWorkItemStatus;
   priority?: ScheduleWorkItemPriority; dueAt?: string | null; notifyEnabled?: boolean;
 }) {
   await ensureSchedulePlanningSchema();
@@ -161,15 +164,16 @@ export async function updateScheduleWorkItem(principal: Principal, workItemId: s
     .bind(workItemId, principal.tenantId, principal.email).first<ScheduleWorkItem>();
   if (!current) throw new Error("업무 항목을 찾을 수 없습니다.");
   const title = patch.title === undefined ? current.title : patch.title.trim().slice(0, 240);
+  if (title.length < 2) throw new Error("업무 제목은 2자 이상이어야 합니다.");
   const dueAt = patch.dueAt === undefined ? current.due_at : normalizeDate(patch.dueAt);
   const notifyEnabled = patch.notifyEnabled === undefined ? Boolean(current.notify_enabled) : patch.notifyEnabled;
   const status = patch.status || current.status;
   const reminderAt = defaultReminder(dueAt, notifyEnabled && status !== "done" && status !== "cancelled");
   const updatedAt = nowIso();
-  await getD1().prepare(`UPDATE schedule_work_items SET title = ?, description = ?, status = ?, priority = ?,
+  await getD1().prepare(`UPDATE schedule_work_items SET title = ?, description = ?, kind = ?, status = ?, priority = ?,
     due_at = ?, reminder_at = ?, notify_enabled = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND owner_email = ?`)
     .bind(title, patch.description === undefined ? current.description : patch.description.trim().slice(0, 2000) || null,
-      status, patch.priority || current.priority, dueAt, reminderAt, notifyEnabled ? 1 : 0,
+      patch.kind || current.kind, status, patch.priority || current.priority, dueAt, reminderAt, notifyEnabled ? 1 : 0,
       updatedAt, workItemId, principal.tenantId, principal.email).run();
   await getD1().prepare("DELETE FROM schedule_notifications WHERE work_item_id = ? AND delivered_at IS NULL").bind(workItemId).run();
   if (reminderAt) {
@@ -214,10 +218,20 @@ export async function syncScheduleWorkItemStatus(principal: Principal, sourceTyp
   await db.prepare(`UPDATE schedule_work_items SET status = ?, updated_at = ?
     WHERE tenant_id = ? AND owner_email = ? AND source_type = ? AND source_id = ?`)
     .bind(status, updatedAt, principal.tenantId, principal.email, sourceType, sourceId).run();
-  if (status === "done" || status === "cancelled") {
-    await db.prepare(`DELETE FROM schedule_notifications WHERE tenant_id = ? AND owner_email = ?
-      AND work_item_id IN (SELECT id FROM schedule_work_items WHERE tenant_id = ? AND owner_email = ? AND source_type = ? AND source_id = ?)`)
-      .bind(principal.tenantId, principal.email, principal.tenantId, principal.email, sourceType, sourceId).run();
+  const items = await db.prepare(`SELECT id, due_at, notify_enabled FROM schedule_work_items
+    WHERE tenant_id = ? AND owner_email = ? AND source_type = ? AND source_id = ?`)
+    .bind(principal.tenantId, principal.email, sourceType, sourceId).all<Pick<ScheduleWorkItem, "id" | "due_at" | "notify_enabled">>();
+  for (const item of items.results || []) {
+    const reminderAt = defaultReminder(item.due_at, status !== "done" && status !== "cancelled" && Boolean(item.notify_enabled));
+    await db.prepare("UPDATE schedule_work_items SET reminder_at = ? WHERE id = ? AND tenant_id = ? AND owner_email = ?")
+      .bind(reminderAt, item.id, principal.tenantId, principal.email).run();
+    await db.prepare("DELETE FROM schedule_notifications WHERE work_item_id = ? AND tenant_id = ? AND owner_email = ? AND delivered_at IS NULL")
+      .bind(item.id, principal.tenantId, principal.email).run();
+    if (reminderAt) {
+      await db.prepare(`INSERT INTO schedule_notifications
+        (id, tenant_id, owner_email, work_item_id, scheduled_at, created_at) VALUES (?, ?, ?, ?, ?, ?)`)
+        .bind(id("notification"), principal.tenantId, principal.email, item.id, reminderAt, updatedAt).run();
+    }
   }
 }
 
