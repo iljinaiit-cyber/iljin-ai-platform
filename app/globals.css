@@ -1885,14 +1885,20 @@ h3 {
 }
 
 .sidebar-collapsed .brand-lockup img {
-  width: 24px;
-  height: 24px;
+  width: 36px;
+  height: 36px;
   object-fit: contain;
 }
 
 .sidebar-collapsed .sidebar-toggle {
-  top: 56px;
+  top: 88px;
   right: 17px;
+}
+
+@media (min-width: 1081px) {
+  .sidebar-collapsed .primary-nav {
+    padding-top: 54px;
+  }
 }
 .admin-section-nav button:hover > span,
 .admin-section-nav button:focus-visible > span { color: var(--brand-700); }
