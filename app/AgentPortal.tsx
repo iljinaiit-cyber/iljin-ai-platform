@@ -2127,7 +2127,7 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
   return (
     <div className="workspace-layout">
       <section className="chat-workspace" aria-labelledby="chat-title">
-        <div className="workspace-heading"><div><h1 id="chat-title">AI Chat Agent</h1><p>현재 기준일과 접근 가능한 최신 문서 버전·웹 자료를 우선해 답변합니다.</p></div><button className="button button-secondary workspace-new-button" type="button" onClick={onNewConversation}>새 대화</button></div>
+        <div className="workspace-heading"><div><p id="chat-title">현재 기준일과 접근 가능한 최신 문서 버전·웹 자료를 우선해 답변합니다.</p></div><button className="button button-secondary workspace-new-button" type="button" onClick={onNewConversation}>새 대화</button></div>
          <section className="chat-smart-suggestions" aria-labelledby="chat-smart-suggestions-title">
           <div className="chat-smart-suggestions-heading">
             <div>

@@ -17,6 +17,10 @@ test("answer format instructions define distinct paragraph, bullet, and table co
   assert.match(source, /inferAnswerFormat/);
   assert.match(source, /5~7개의 짧은 섹션/);
   assert.match(source, /2_400 : 1_800/);
+  assert.match(source, /15년 차 수석 시장 분석가/);
+  assert.match(source, /## 개요 및 핵심 요약/);
+  assert.match(source, /## 주요 데이터 및 인사이트/);
+  assert.match(source, /## 참고한 정보 출처 및 링크/);
 });
 
 test("chat routes share the same answer format contract", async () => {

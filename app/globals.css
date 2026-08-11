@@ -7579,6 +7579,25 @@ td {
   }
 }
 
+/* The top bar owns the page title; keep the chat workspace header descriptive. */
+.workspace-heading p {
+  display: block;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.workspace-heading > div:first-child {
+  flex: 1 1 auto;
+}
+
+@media (max-width: 700px) {
+  .workspace-heading p {
+    font-size: 11px;
+  }
+}
+
 /* Schedule follows the same page rhythm as the portal's search, activity, and admin views. */
 .view-stack.schedule-view {
   width: 100%;

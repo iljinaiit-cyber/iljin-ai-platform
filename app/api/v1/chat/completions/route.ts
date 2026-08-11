@@ -83,6 +83,11 @@ function ensureInternetCitationCoverage(content: string, citations: WebRagCitati
   return `${content}\n\n## 참고 출처\n${citations.map((citation) => `- [${citation.id}] ${citation.title}`).join("\n")}`;
 }
 
+function ensureDeepInternetSourceSection(content: string, citations: WebRagCitation[], length: Body["answer_length"]) {
+  if (length !== "detailed" || !citations.length || /## 참고한 정보 출처|## 참고 출처/.test(content)) return content;
+  return `${content}\n\n## 참고한 정보 출처 및 링크\n${citations.map((citation) => `- [${citation.id}] [${citation.title}](${citation.url}) · ${citation.source}${citation.publishedAt ? ` · ${citation.publishedAt}` : ""}`).join("\n")}`;
+}
+
 function ensureReferenceDateHeader(content: string) {
   if (/^> 기준일:/m.test(content)) return content;
   const date = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "long" }).format(new Date());
@@ -201,7 +206,7 @@ export async function POST(request: Request) {
           denseScore: item.score, url: item.url, sourceType: "web" as const, source: item.source,
           publishedAt: item.publishedAt,
         }));
-        completion.content = ensureInternetCitationCoverage(completion.content, citations);
+        completion.content = ensureDeepInternetSourceSection(ensureInternetCitationCoverage(completion.content, citations), citations, answerLength);
         internetGrounded = true;
         console.info(JSON.stringify({ event: "internet-grounded", traceId, providersUsed: webSearch.providersUsed, providerPath: webSearch.providerPath }));
       } catch (error) {
