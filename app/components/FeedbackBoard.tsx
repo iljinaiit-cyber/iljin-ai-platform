@@ -34,6 +34,7 @@ type FeedbackPost = {
 };
 
 type Capabilities = { canModerate: boolean; canNotice: boolean; canEditAny: boolean };
+type Pagination = { page: number; pageSize: number; total: number; totalPages: number };
 
 const text = {
   all: "\uC804\uCCB4",
@@ -51,6 +52,8 @@ const text = {
   cancel: "\uCDE8\uC18C",
   noticeOn: "\uACF5\uC9C0 \uC9C0\uC815",
   noticeOff: "\uACF5\uC9C0 \uD574\uC81C",
+  previous: "\uC774\uC804",
+  next: "\uB2E4\uC74C",
 };
 
 const categoryLabels: Record<FeedbackCategory, string> = {
@@ -92,22 +95,24 @@ export function FeedbackBoard() {
   const [statusSavingId, setStatusSavingId] = useState<string | null>(null);
   const [commentSavingId, setCommentSavingId] = useState<string | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
-  const [noticeSaving, setNoticeSaving] = useState(false);
   const [editSavingId, setEditSavingId] = useState<string | null>(null);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState({ title: "", content: "", category: "other" as FeedbackCategory });
   const [capabilities, setCapabilities] = useState<Capabilities>({ canModerate: false, canNotice: false, canEditAny: false });
+  const [pagination, setPagination] = useState<Pagination>({ page: 1, pageSize: 10, total: 0, totalPages: 1 });
   const [draft, setDraft] = useState({ category: "feature" as FeedbackCategory, title: "", content: "" });
-  const [noticeDraft, setNoticeDraft] = useState({ title: "", content: "" });
 
-  const loadPosts = async () => {
+  const loadPosts = async (requestedPage = page, requestedFilter = filter) => {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/v1/feedback", { cache: "no-store" });
-      const payload = await response.json() as { items?: FeedbackPost[]; capabilities?: Capabilities; error?: { message?: string } };
+      const search = new URLSearchParams({ page: String(requestedPage) });
+      if (requestedFilter !== "all") search.set("category", requestedFilter);
+      const response = await fetch(`/api/v1/feedback?${search.toString()}`, { cache: "no-store" });
+      const payload = await response.json() as { items?: FeedbackPost[]; pagination?: Pagination; capabilities?: Capabilities; error?: { message?: string } };
       if (!response.ok) throw new Error(payload.error?.message || "\uAC8C\uC2DC\uAE00\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
       setPosts(payload.items || []);
+      if (payload.pagination) setPagination(payload.pagination);
       if (payload.capabilities) setCapabilities(payload.capabilities);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "\uAC8C\uC2DC\uAE00\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.");
@@ -117,13 +122,13 @@ export function FeedbackBoard() {
   };
 
   useEffect(() => {
-    const timer = window.setTimeout(() => { void loadPosts(); }, 0);
+    const timer = window.setTimeout(() => { void loadPosts(1, "all"); }, 0);
     return () => window.clearTimeout(timer);
   }, []);
 
   const visiblePosts = useMemo(
-    () => filter === "all" ? posts : posts.filter((post) => post.category === filter),
-    [filter, posts],
+    () => posts,
+    [posts],
   );
 
   const submit = async (event: FormEvent) => {
@@ -142,38 +147,14 @@ export function FeedbackBoard() {
       });
       const payload = await response.json() as { item?: FeedbackPost; error?: { message?: string } };
       if (!response.ok || !payload.item) throw new Error(payload.error?.message || "\uAC8C\uC2DC\uAE00 \uB4F1\uB85D\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.");
-      setPosts((current) => [payload.item!, ...current]);
       setDraft({ category: "feature", title: "", content: "" });
+      setPage(1);
+      await loadPosts(1, filter);
       setNotice("\uAC8C\uC2DC\uAE00\uC774 \uB4F1\uB85D\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "\uAC8C\uC2DC\uAE00 \uB4F1\uB85D\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.");
     } finally {
       setSaving(false);
-    }
-  };
-
-  const submitNotice = async (event: FormEvent) => {
-    event.preventDefault();
-    const title = noticeDraft.title.trim();
-    const content = noticeDraft.content.trim();
-    if (!title || !content || noticeSaving) return;
-    setNoticeSaving(true);
-    setError("");
-    try {
-      const response = await fetch("/api/v1/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ category: "notice", isNotice: true, title, content }),
-      });
-      const payload = await response.json() as { item?: FeedbackPost; error?: { message?: string } };
-      if (!response.ok || !payload.item) throw new Error(payload.error?.message || "\uACF5\uC9C0 \uB4F1\uB85D\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.");
-      setPosts((current) => [payload.item!, ...current]);
-      setNoticeDraft({ title: "", content: "" });
-      setNotice("\uACF5\uC9C0\uAC00 \uB4F1\uB85D\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "\uACF5\uC9C0 \uB4F1\uB85D\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.");
-    } finally {
-      setNoticeSaving(false);
     }
   };
 
@@ -292,15 +273,15 @@ export function FeedbackBoard() {
   return (
     <div className="view-stack feedback-board">
       <div className="page-heading">
-        <div><span className="section-kicker">USER VOICE</span><h1>{"\uC0AC\uC6A9\uC790 \uC758\uACAC"}</h1><p>{"\uC11C\uBE44\uC2A4\uC5D0 \uB300\uD55C \uC81C\uC548\uACFC \uC758\uACAC\uC744 \uB0A8\uACA8 \uC8FC\uC138\uC694."}</p></div>
-        <span className="feedback-count">{text.all} {posts.length}{"\uAC74"}</span>
+        <div><span className="section-kicker">USER VOICE</span><h1 className="sr-only">{"\uC0AC\uC6A9\uC790 \uC758\uACAC"}</h1><p>{"\uC11C\uBE44\uC2A4\uC5D0 \uB300\uD55C \uC81C\uC548\uACFC \uC758\uACAC\uC744 \uB0A8\uACA8 \uC8FC\uC138\uC694."}</p></div>
+        <span className="feedback-count">{text.all} {pagination.total}{"\uAC74"}</span>
       </div>
 
       <div className="feedback-layout">
         <section className="panel feedback-list-panel" aria-labelledby="feedback-list-title">
           <div className="panel-title"><div><h2 id="feedback-list-title">{"\uAC8C\uC2DC\uAE00 \uBAA9\uB85D"}</h2><p className="panel-description">{"\uB313\uae00\uACFC \uC88B\uC544\uC694\uB85C \uC758\uACAC\uC744 \uD568\uAED8 \uAD00\uB9AC\uD569\uB2C8\uB2E4."}</p></div><button className="button button-secondary feedback-refresh" type="button" onClick={() => void loadPosts()} disabled={loading}>{"\uC0C8\uB85C\uACE0\uCE68"}</button></div>
           <div className="feedback-filters" role="tablist" aria-label={"\uAC8C\uC2DC\uD310 \uBD84\uB958"}>
-            {filters.map((item) => <button key={item.value} type="button" role="tab" aria-selected={filter === item.value} className={filter === item.value ? "selected" : ""} onClick={() => setFilter(item.value)}>{item.label}</button>)}
+            {filters.map((item) => <button key={item.value} type="button" role="tab" aria-selected={filter === item.value} className={filter === item.value ? "selected" : ""} onClick={() => { setFilter(item.value); setPage(1); void loadPosts(1, item.value); }}>{item.label}</button>)}
           </div>
           {error && <p className="form-error" role="alert">{error}</p>}
           {notice && <p className="feedback-notice" role="status">{notice}</p>}
@@ -336,6 +317,11 @@ export function FeedbackBoard() {
               </article>;
             })}
           </div>}
+          {pagination.totalPages > 1 && <nav className="feedback-pagination" aria-label={"\uAC8C\uC2DC\uAE00 \uD398\uC774\uC9C0"}>
+            <button type="button" className="feedback-page-button" onClick={() => { setPage(pagination.page - 1); void loadPosts(pagination.page - 1, filter); }} disabled={pagination.page <= 1 || loading}>{text.previous}</button>
+            <span>{pagination.page} / {pagination.totalPages}</span>
+            <button type="button" className="feedback-page-button" onClick={() => { setPage(pagination.page + 1); void loadPosts(pagination.page + 1, filter); }} disabled={pagination.page >= pagination.totalPages || loading}>{text.next}</button>
+          </nav>}
         </section>
 
         <section className="panel feedback-form-panel" aria-labelledby="feedback-form-title">

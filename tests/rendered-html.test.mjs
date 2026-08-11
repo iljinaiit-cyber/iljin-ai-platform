@@ -891,3 +891,30 @@ test("shows live queued embedding progress for registered documents", async () =
   assert.match(rag, /index_stage/);
   assert.match(worker, /isTextDocument/);
 });
+
+test("decodes Korean legacy text before embedding and reindexing", async () => {
+  const [decoder, assetRoute, worker, rag, ingest] = await Promise.all([
+    readFile(new URL("lib/document-text.ts", root), "utf8"),
+    readFile(new URL("app/api/v1/assets/route.ts", root), "utf8"),
+    readFile(new URL("indexer/worker.ts", root), "utf8"),
+    readFile(new URL("lib/rag.ts", root), "utf8"),
+    readFile(new URL("app/components/DocumentIngest.tsx", root), "utf8"),
+  ]);
+  assert.match(decoder, /TextDecoder\("utf-8", \{ fatal: true \}\)/);
+  assert.match(decoder, /TextDecoder\("euc-kr"\)/);
+  assert.match(assetRoute, /decodeDocumentText/);
+  assert.match(worker, /decodeDocumentText/);
+  assert.match(rag, /decodeDocumentText/);
+  assert.match(ingest, /decodeDocumentText/);
+});
+
+test("lists Vector DB files with reindex and delete controls", async () => {
+  const portal = await readFile(new URL("app/AgentPortal.tsx", root), "utf8");
+  assert.match(portal, /VECTOR DB FILES/);
+  assert.match(portal, /Vector DB 파일 목록/);
+  assert.match(portal, /vectorDbFiles/);
+  assert.match(portal, /Cloudflare Vectorize/);
+  assert.match(portal, /manageAsset\(asset, "reindex"\)/);
+  assert.match(portal, /manageAsset\(asset, "delete"\)/);
+  assert.match(portal, /api\/admin\/assets\?limit=100/);
+});

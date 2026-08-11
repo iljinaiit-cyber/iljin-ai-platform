@@ -7,9 +7,18 @@ export async function GET(request: Request) {
   const traceId = newTraceId();
   try {
     const principal = await resolvePrincipal(request);
-    const category = new URL(request.url).searchParams.get("category") || undefined;
+    const searchParams = new URL(request.url).searchParams;
+    const category = searchParams.get("category") || undefined;
+    const page = Number(searchParams.get("page") || "1");
+    const result = await listFeedbackPosts(principal, category, page);
     return ok({
-      items: await listFeedbackPosts(principal, category),
+      items: result.items,
+      pagination: {
+        page: result.page,
+        pageSize: result.pageSize,
+        total: result.total,
+        totalPages: result.totalPages,
+      },
       capabilities: {
         canModerate: principal.role === "admin" || principal.role === "manager",
         canNotice: principal.role === "admin",

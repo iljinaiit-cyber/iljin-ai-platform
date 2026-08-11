@@ -10,6 +10,7 @@
  */
 import { setRuntimeEnv, type IndexJobMessage, type QueueProducer, type RuntimeEnv } from "../lib/runtime-env";
 import { analyzeMultimodalBytes } from "../lib/multimodal";
+import { decodeDocumentText } from "../lib/document-text";
 import { failQueuedIngest, processIngestBatch, INGEST_CHUNK_WINDOW, getDueIngestionSources, runIngestionSource } from "../lib/rag";
 import { runDueTasks } from "../lib/scheduled-tasks";
 
@@ -59,7 +60,7 @@ async function handleMessage(message: QueueMessage<IndexJobMessage>, env: Env) {
         const isTextDocument = asset.mimeType.startsWith("text/")
           || asset.mimeType === "application/json"
           || /\.(txt|md|markdown|csv|json|ya?ml|html?)$/i.test(asset.title);
-        if (isTextDocument) return { markdown: new TextDecoder().decode(original), regions: [] };
+        if (isTextDocument) return { markdown: decodeDocumentText(original), regions: [] };
         const analysis = await analyzeMultimodalBytes(asset.title, asset.mimeType, original);
         return { markdown: analysis.markdown, regions: analysis.regions };
       },

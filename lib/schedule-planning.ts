@@ -30,6 +30,17 @@ export type ScheduleAlert = ScheduleWorkItem & { alert_type: "overdue" | "upcomi
 
 let schemaReady: Promise<void> | undefined;
 
+async function addMissingColumns(
+  table: "schedule_work_items" | "schedule_notifications",
+  additions: readonly (readonly [string, string])[],
+) {
+  const db = getD1();
+  const columns = await db.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>();
+  const names = new Set((columns.results || []).map((column) => column.name));
+  const missing = additions.filter(([name]) => !names.has(name));
+  if (missing.length) await db.batch(missing.map(([, sql]) => db.prepare(sql)));
+}
+
 export async function ensureSchedulePlanningSchema() {
   if (!schemaReady) {
     schemaReady = (async () => {
@@ -49,14 +60,33 @@ export async function ensureSchedulePlanningSchema() {
           created_at TEXT NOT NULL
         )`),
       ]);
-      const columns = await db.prepare("PRAGMA table_info(schedule_work_items)").all<{ name: string }>();
-      const names = new Set((columns.results || []).map((column) => column.name));
-      const additions = [
+      await addMissingColumns("schedule_work_items", [
+        ["tenant_id", "ALTER TABLE schedule_work_items ADD COLUMN tenant_id TEXT NOT NULL DEFAULT ''"],
+        ["owner_email", "ALTER TABLE schedule_work_items ADD COLUMN owner_email TEXT NOT NULL DEFAULT ''"],
+        ["title", "ALTER TABLE schedule_work_items ADD COLUMN title TEXT NOT NULL DEFAULT ''"],
+        ["description", "ALTER TABLE schedule_work_items ADD COLUMN description TEXT"],
         ["kind", "ALTER TABLE schedule_work_items ADD COLUMN kind TEXT NOT NULL DEFAULT 'todo'"],
+        ["status", "ALTER TABLE schedule_work_items ADD COLUMN status TEXT NOT NULL DEFAULT 'open'"],
         ["priority", "ALTER TABLE schedule_work_items ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'"],
-      ] as const;
-      const missing = additions.filter(([name]) => !names.has(name));
-      if (missing.length) await db.batch(missing.map(([, sql]) => db.prepare(sql)));
+        ["due_at", "ALTER TABLE schedule_work_items ADD COLUMN due_at TEXT"],
+        ["reminder_at", "ALTER TABLE schedule_work_items ADD COLUMN reminder_at TEXT"],
+        ["source_type", "ALTER TABLE schedule_work_items ADD COLUMN source_type TEXT"],
+        ["source_id", "ALTER TABLE schedule_work_items ADD COLUMN source_id TEXT"],
+        ["parent_id", "ALTER TABLE schedule_work_items ADD COLUMN parent_id TEXT"],
+        ["auto_generated", "ALTER TABLE schedule_work_items ADD COLUMN auto_generated INTEGER NOT NULL DEFAULT 0"],
+        ["notify_enabled", "ALTER TABLE schedule_work_items ADD COLUMN notify_enabled INTEGER NOT NULL DEFAULT 1"],
+        ["metadata_json", "ALTER TABLE schedule_work_items ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'"],
+        ["created_at", "ALTER TABLE schedule_work_items ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"],
+        ["updated_at", "ALTER TABLE schedule_work_items ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"],
+      ]);
+      await addMissingColumns("schedule_notifications", [
+        ["tenant_id", "ALTER TABLE schedule_notifications ADD COLUMN tenant_id TEXT NOT NULL DEFAULT ''"],
+        ["owner_email", "ALTER TABLE schedule_notifications ADD COLUMN owner_email TEXT NOT NULL DEFAULT ''"],
+        ["work_item_id", "ALTER TABLE schedule_notifications ADD COLUMN work_item_id TEXT NOT NULL DEFAULT ''"],
+        ["scheduled_at", "ALTER TABLE schedule_notifications ADD COLUMN scheduled_at TEXT NOT NULL DEFAULT ''"],
+        ["delivered_at", "ALTER TABLE schedule_notifications ADD COLUMN delivered_at TEXT"],
+        ["created_at", "ALTER TABLE schedule_notifications ADD COLUMN created_at TEXT NOT NULL DEFAULT ''"],
+      ]);
       await db.batch([
         db.prepare("CREATE INDEX IF NOT EXISTS schedule_work_items_tenant_status_idx ON schedule_work_items(tenant_id, owner_email, status, due_at)"),
         db.prepare("CREATE INDEX IF NOT EXISTS schedule_work_items_source_idx ON schedule_work_items(tenant_id, source_type, source_id)"),

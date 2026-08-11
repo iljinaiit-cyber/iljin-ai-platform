@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
+import { decodeDocumentText } from "../../lib/document-text";
 import "./DocumentIngest.css";
 
 type IngestedDocument = { assetId: string; jobId?: string | null; status: string; segmentCount?: number };
@@ -115,7 +116,7 @@ export function DocumentIngest({ onIndexed }: Props) {
     addFiles(files);
     const file = files[0];
     setError("");
-    if (TEXT_LIKE.test(file.name)) setContent(await file.text());
+    if (TEXT_LIKE.test(file.name)) setContent(decodeDocumentText(await file.arrayBuffer()));
     if (!title.trim()) setTitle(file.name.replace(/\.[^.]+$/, ""));
     event.target.value = "";
   };

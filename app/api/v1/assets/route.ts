@@ -4,6 +4,7 @@ import { authorizeFeature } from "../../../../lib/admin-governance";
 import { analyzeMultimodalFile, isMultimodalFile } from "../../../../lib/multimodal";
 import { attachConversationAsset } from "../../../../lib/conversations";
 import { getRuntimeEnv } from "../../../../lib/runtime-env";
+import { decodeDocumentText } from "../../../../lib/document-text";
 import { fail, newTraceId, ok } from "../../_shared";
 
 async function queueDocument(input: Parameters<typeof beginQueuedIngest>[0]) {
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
       }
       const multimodal = isMultimodalFile(file);
       const multimodalAnalysis = multimodal ? await analyzeMultimodalFile(file, originalData) : null;
-      const analysis = multimodalAnalysis || { markdown: new TextDecoder().decode(originalData), regions: [] };
+      const analysis = multimodalAnalysis || { markdown: decodeDocumentText(originalData), regions: [] };
       const result = await ingestDocument({
         title: String(form.get("title") || file.name),
         content: analysis.markdown,

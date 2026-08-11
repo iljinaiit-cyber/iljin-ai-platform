@@ -140,15 +140,24 @@ function mapPost(row: FeedbackRow, email: string, comments: FeedbackComment[]): 
   };
 }
 
-export async function listFeedbackPosts(principal: Principal, category?: string) {
+export async function listFeedbackPosts(principal: Principal, category?: string, requestedPage = 1, pageSize = 10) {
   await ensureFeedbackSchema();
   const db = getD1();
   const categoryFilter = category && ["feature", "bug", "question", "other", "notice"].includes(category)
     ? category
     : undefined;
   const whereCategory = categoryFilter ? " AND f.category = ?" : "";
+  const countParams: unknown[] = [principal.tenantId];
+  if (categoryFilter) countParams.push(categoryFilter);
+  const totalRow = await db.prepare(`SELECT COUNT(*) AS count FROM feedback_posts f
+    WHERE f.tenant_id = ?${whereCategory}`).bind(...countParams).first<{ count: number | string }>();
+  const total = Number(totalRow?.count || 0);
+  const safePageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(total / safePageSize));
+  const page = Math.min(Math.max(1, Math.floor(Number(requestedPage) || 1)), totalPages);
   const params: unknown[] = [principal.email, principal.tenantId];
   if (categoryFilter) params.push(categoryFilter);
+  params.push(safePageSize, (page - 1) * safePageSize);
   const rows = await db.prepare(`SELECT f.id, f.category, f.title, f.content, f.is_notice, f.status,
       f.author_email, f.author_display_name, COALESCE(u.department, '') AS author_department, f.created_at,
       (SELECT COUNT(*) FROM feedback_likes l WHERE l.post_id = f.id AND l.tenant_id = f.tenant_id) AS like_count,
@@ -157,9 +166,9 @@ export async function listFeedbackPosts(principal: Principal, category?: string)
     FROM feedback_posts f
     LEFT JOIN user_profiles u ON u.tenant_id = f.tenant_id AND u.email = f.author_email
     WHERE f.tenant_id = ?${whereCategory}
-    ORDER BY f.is_notice DESC, f.created_at DESC LIMIT 200`).bind(...params).all<FeedbackRow>();
+    ORDER BY f.is_notice DESC, f.created_at DESC LIMIT ? OFFSET ?`).bind(...params).all<FeedbackRow>();
   const postRows = rows.results || [];
-  if (postRows.length === 0) return [];
+  if (postRows.length === 0) return { items: [], page, pageSize: safePageSize, total, totalPages };
   const placeholders = postRows.map(() => "?").join(",");
   const comments = await db.prepare(`SELECT id, post_id, content, author_email, author_display_name, author_department, created_at
     FROM feedback_comments WHERE tenant_id = ? AND post_id IN (${placeholders}) ORDER BY created_at ASC`)
@@ -170,16 +179,20 @@ export async function listFeedbackPosts(principal: Principal, category?: string)
     list.push(mapComment(row, principal.email));
     commentsByPost.set(row.post_id, list);
   }
-  return postRows.map((row) => mapPost(row, principal.email, commentsByPost.get(row.id) || []));
+  return {
+    items: postRows.map((row) => mapPost(row, principal.email, commentsByPost.get(row.id) || [])),
+    page,
+    pageSize: safePageSize,
+    total,
+    totalPages,
+  };
 }
 
 export async function createFeedbackPost(principal: Principal, input: { category?: unknown; title?: unknown; content?: unknown; isNotice?: unknown }) {
   await ensureFeedbackSchema();
   assertCategory(input.category);
-  const isNotice = input.category === "notice" || input.isNotice === true;
-  if (isNotice) requireRole(principal, ["admin"]);
-  if (isNotice && input.category !== "notice") {
-    throw new AuthError("공지 게시글은 공지 분류로 등록해 주세요.", 400, "AUTH_INVALID_INPUT");
+  if (input.category === "notice" || input.isNotice === true) {
+    throw new AuthError("공지글은 기존 게시글에서 공지로 지정해 주세요.", 400, "AUTH_INVALID_INPUT");
   }
   const title = String(input.title || "").trim().slice(0, 120);
   const content = String(input.content || "").trim().slice(0, 5000);
@@ -189,10 +202,10 @@ export async function createFeedbackPost(principal: Principal, input: { category
   await getD1().prepare(`INSERT INTO feedback_posts
     (id, tenant_id, author_email, author_display_name, category, title, content, is_notice, status, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'received', ?, ?)`).bind(
-      id, principal.tenantId, principal.email, principal.displayName, input.category, title, content, isNotice ? 1 : 0, timestamp, timestamp,
+      id, principal.tenantId, principal.email, principal.displayName, input.category, title, content, 0, timestamp, timestamp,
     ).run();
   return {
-    id, category: input.category, title, content, isNotice, status: "received" as const,
+    id, category: input.category, title, content, isNotice: false, status: "received" as const,
     authorName: principal.displayName, authorDepartment: principal.department, isMine: true, createdAt: timestamp,
     likeCount: 0, likedByMe: false, commentCount: 0, comments: [],
   } satisfies FeedbackPost;

@@ -8,6 +8,7 @@ import { rewriteQuery, generateInsufficiencyQuestions, FOLLOW_UP_INSTRUCTION, ty
 import { isLikelyInjectedContent, maskPii } from "./guardrails";
 import { answerPreferenceInstruction } from "./answer-format";
 import { buildOrganizationDictionary, graphRelatedSegments, indexSegmentOntology } from "./ontology";
+import { decodeDocumentText } from "./document-text";
 
 export type ReasoningTier = "swift" | "expert" | "deep";
 
@@ -2173,7 +2174,7 @@ export async function reindexAsset(principal: Principal, assetId: string) {
     }
     originalContent = converted.data;
   } else {
-    originalContent = new TextDecoder().decode(originalBuffer);
+    originalContent = decodeDocumentText(originalBuffer);
   }
   const content = normalizeText(originalContent);
   const chunks = chunkDocument(content);
@@ -2504,7 +2505,7 @@ async function ingestBytesFromSource(
   const classification = source.classification as "public" | "internal" | "confidential";
   const isText = mimeType.startsWith("text/") || ["application/json", "application/xml", "application/csv"].includes(mimeType);
   if (isText) {
-    const text = new TextDecoder().decode(bytes);
+    const text = decodeDocumentText(bytes);
     await ingestDocument({
       title,
       content: text,
@@ -2517,7 +2518,7 @@ async function ingestBytesFromSource(
     });
     return true;
   }
-  const text = new TextDecoder().decode(bytes);
+  const text = decodeDocumentText(bytes);
   await ingestDocument({
     title,
     content: text,

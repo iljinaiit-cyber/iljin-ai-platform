@@ -2426,7 +2426,7 @@ function SearchView({ type, setType, canUpload, onChat }: { type: string; setTyp
     <div className="view-stack knowledge-base">
       <section className="knowledge-hero">
         <div className="knowledge-hero-heading">
-          <div><span className="knowledge-eyebrow">ILJIN ENTERPRISE KNOWLEDGE DATA</span><h1>ILJIN Knowledge Data Base</h1><p>{scope === "internal" ? "질의를 재작성하고 Dense·BM25 결과를 RRF로 융합한 뒤 재정렬·근거 검증까지 수행합니다." : "사내 정보와 분리된 공개 웹에서 최신 외부 참고자료를 조사합니다."}</p></div>
+          <div><span className="knowledge-eyebrow">ILJIN ENTERPRISE KNOWLEDGE DATA</span><h1 className="sr-only">ILJIN Knowledge Data Base</h1><p>{scope === "internal" ? "질의를 재작성하고 Dense·BM25 결과를 RRF로 융합한 뒤 재정렬·근거 검증까지 수행합니다." : "사내 정보와 분리된 공개 웹에서 최신 외부 참고자료를 조사합니다."}</p></div>
           <div className="knowledge-policy"><span>ACL</span><strong>권한 기반 지식 접근</strong><small>{overview?.summary.department || "소속 부서"} Context 적용</small></div>
         </div>
         <div className="search-scope-switch search-scope-switch--hero" role="group" aria-label="지식 검색 범위">
@@ -2509,7 +2509,7 @@ function ActivityView({ onNavigate, onOpenConversation }: { onNavigate: (view: V
   };
 
   return <div className="view-stack">
-    <div className="page-heading"><div><h1>내 활동</h1><p>최근 대화, 검색, Agent 실행과 승인 이력을 확인합니다.</p></div><a className="button button-secondary" href="/api/v1/activity?format=csv">활동 CSV 내보내기</a></div>
+    <div className="page-heading"><div><h1 className="sr-only">내 활동</h1><p>최근 대화, 검색, Agent 실행과 승인 이력을 확인합니다.</p></div><a className="button button-secondary" href="/api/v1/activity?format=csv">활동 CSV 내보내기</a></div>
     {error && <p className="form-error" role="alert">{error}</p>}
     <section className="panel table-wrap"><table><caption className="sr-only">최근 활동 목록</caption><thead><tr><th>유형</th><th>활동</th><th>일시</th><th>상태</th><th><span className="sr-only">작업</span></th></tr></thead><tbody>
       {!loading && items.length === 0 && <tr><td colSpan={5}>저장된 활동이 없습니다.</td></tr>}
@@ -2648,7 +2648,6 @@ function AdminSectionNav({ activeSection, onSelect }: { activeSection: AdminSect
 
   return (
     <nav className="admin-section-nav" aria-label="관리자 운영 영역">
-      <span className="admin-section-nav__label">관리자 영역</span>
       {sections.map(([id, label], index) => (
         <button key={id} type="button" className={activeSection === id ? "active" : ""} aria-pressed={activeSection === id} onClick={() => goToSection(id)}>
           <span>{String(index + 1).padStart(2, "0")}</span>{label}
@@ -2711,7 +2710,7 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
     };
     try {
       const [assetData, jobData, accessData, healthData, qualityData, overviewData, organizationData] = await Promise.all([
-        checkedJson<{ assets?: AssetRow[] }>("/api/admin/assets"),
+        checkedJson<{ assets?: AssetRow[] }>("/api/admin/assets?limit=100"),
         checkedJson<{ jobs?: JobRow[] }>("/api/admin/index-jobs"),
         checkedJson<{ items?: AccessUser[] }>("/api/admin/access-requests"),
         checkedJson<Health>("/api/health"),
@@ -2755,8 +2754,7 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
       );
       const payload = await response.json() as { error?: { message?: string } };
       if (!response.ok) throw new Error(payload.error?.message || "문서 작업을 처리하지 못했습니다.");
-      if (action === "delete") setAssets((items) => items.filter((item) => item.id !== asset.id));
-      else setAssets((items) => items.map((item) => item.id === asset.id ? { ...item, status: "queued" } : item));
+      await loadAdminData();
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "문서 작업을 처리하지 못했습니다.");
     } finally {
@@ -2819,6 +2817,7 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
   const assetStatusLabel: Record<string, string> = { indexed: "색인 완료", queued: "색인 대기", processing: "처리 중", failed: "색인 오류" };
   const classificationLabel: Record<string, string> = { public: "공개", internal: "사내", confidential: "기밀" };
   const sourceLabel: Record<string, string> = { upload: "직접 업로드", image: "이미지", "requirements-seed": "기본 문서", "file-link": "파일 링크", "r2-folder": "R2 폴더" };
+  const vectorDbFiles = assets.filter((asset) => asset.status === "indexed" && Boolean(asset.embedding_model && asset.embedding_dimensions && asset.segment_count > 0));
   const formatAssetDate = (value: string) => {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? "시간 정보 없음" : date.toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -2839,16 +2838,8 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
       if (assetSort === "segments") return Number(right.segment_count || 0) - Number(left.segment_count || 0);
       return Date.parse(right.updated_at) - Date.parse(left.updated_at);
     });
-  const sectionAnchors: Record<AdminSection, string> = {
-    overview: "admin-platform",
-    access: "admin-access",
-    organization: "admin-organization",
-    governance: "admin-governance",
-    knowledge: "admin-ingestion",
-  };
   const selectSection = (section: AdminSection) => {
     setActiveSection(section);
-    setTimeout(() => document.getElementById(sectionAnchors[section])?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
   const services = [
     ["LLM Gateway", health.gateway?.configured, health.gateway?.model || "gemma-4-31b"],
@@ -2866,16 +2857,19 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
 
   return (
     <div className="view-stack admin-view">
-      <div className="admin-page-title"><div><span className="section-kicker">ADMINISTRATION</span><h1>관리자 페이지</h1><p>전체 플랫폼 사용 현황과 운영·권한·데이터 관리 상태를 확인합니다.</p></div></div>
-      <div className="page-heading"><div><h1>RAG 운영 Dashboard</h1><p>Database·Storage·AI 모델의 실제 인덱싱 상태를 표시합니다.</p></div><div className="admin-actions"><span className="live-state" role="status" aria-live="polite" title={loadError || undefined}><span className={`status-dot ${loading ? "status-dot-checking" : loadError ? "status-dot-offline" : "status-dot-ready"}`} /> {loading ? "API 확인 중" : loadError ? "API 응답 오류" : "API 응답 완료"}</span><button className="button button-secondary" type="button" onClick={() => void loadAdminData()} disabled={loading}>{loading ? "동기화 중" : "데이터 새로고침"}</button></div></div>
+      <div className="admin-page-title"><div><span className="section-kicker">ADMINISTRATION</span><h1 className="sr-only">관리자 페이지</h1><p>전체 플랫폼 사용 현황과 운영·권한·데이터 관리 상태를 확인합니다.</p></div></div>
+      <AdminSectionNav activeSection={activeSection} onSelect={selectSection} />
+      <div className="admin-tab-screen" id="admin-tab-screen" tabIndex={-1}>
+      {activeSection === "overview" && <>
+      <div className="page-heading"><div><h1 className="sr-only">RAG 운영 Dashboard</h1><p>Database·Storage·AI 모델의 실제 인덱싱 상태를 표시합니다.</p></div><div className="admin-actions"><span className="live-state" role="status" aria-live="polite" title={loadError || undefined}><span className={`status-dot ${loading ? "status-dot-checking" : loadError ? "status-dot-offline" : "status-dot-ready"}`} /> {loading ? "API 확인 중" : loadError ? "API 응답 오류" : "API 응답 완료"}</span><button className="button button-secondary" type="button" onClick={() => void loadAdminData()} disabled={loading}>{loading ? "동기화 중" : "데이터 새로고침"}</button></div></div>
       {lastSyncedAt && <p className="admin-sync-note" role="status">마지막 동기화 · {lastSyncedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</p>}
       <section className="metric-grid admin-legacy-metrics">
         {[["인덱싱 Asset", String(assets.filter((asset) => asset.status === "indexed").length), "Database 실데이터"],["검색 Segment", String(segmentCount), "Dense Vector 포함"],["승인 대기", String(pendingAccess), "사용자 접근 요청"],["완료 Index Job", String(completedJobs), failedJobs ? `실패 ${failedJobs}` : "실패 0"]].map(([label, value, trend]) => <article className="metric-card" key={label}><span>{label}</span><strong>{value}</strong><small>{trend}</small></article>)}
       </section>
       <AdminOverviewDashboard overview={overview} health={health} qualityGates={qualityGates} loading={loading} onSelect={selectSection} />
       <AdminIssueSummary items={issueItems} onSelect={selectSection} />
-      <AdminSectionNav activeSection={activeSection} onSelect={selectSection} />
-      {activeSection === "overview" && <PlatformOperationsConsole />}
+      <PlatformOperationsConsole />
+      </>}
       {activeSection === "access" && <section className="panel access-review-panel" id="admin-access">
         <div className="panel-title"><div><span className="section-kicker">REGISTRATION APPROVAL</span><h2>가입 승인</h2></div><span className={`status-pill ${pendingAccess ? "status-승인-대기" : "status-승인-완료"}`}>{pendingAccess ? `${pendingAccess}건 대기` : "대기 없음"}</span></div>
         <p className="panel-description">가입 신청자의 법인·부서·사유·역할을 조직 마스터 기준으로 검토하고 승인합니다.</p>
@@ -2896,11 +2890,13 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
       <div className="admin-grid" id="admin-assets">
         <section className="panel"><div className="panel-title"><div><span className="section-kicker">SERVICE HEALTH</span><h2>RAG 구성요소</h2></div><span className={`status-pill ${services.every(([, ready]) => ready) ? "status-완료" : "status-부분-완료"}`}>{services.every(([, ready]) => ready) ? "준비" : "확인 필요"}</span></div><div className="service-list">{services.map(([name, ready, detail]) => <div key={name}><span className={`status-dot ${ready ? "" : "status-dot-warning"}`} /><strong>{name}</strong><span>{ready ? "연결" : "미설정"}</span><small>{detail}</small></div>)}</div></section>
         <section className="panel"><div className="panel-title"><div><span className="section-kicker">QUALITY GATE</span><h2>실시간 검증 상태</h2></div><span className={`status-pill ${qualityGates.length > 0 && qualityGates.every((gate) => gate.passed) ? "status-완료" : "status-부분-완료"}`}>{qualityGates.filter((gate) => gate.passed).length}/{qualityGates.length || 6} 통과</span></div><div className="quality-list">{qualityGates.map((gate) => <div key={gate.id}><div><strong>{gate.label}</strong><span>{gate.evidence}</span></div><progress value={gate.passed ? 100 : 0} max="100">{gate.passed ? "100%" : "0%"}</progress><small>{gate.value} {gate.unit}</small></div>)}</div></section>
+         <section className="panel knowledge-assets-panel" aria-labelledby="vector-db-files-title"><div className="panel-title knowledge-assets-panel__heading"><div><span className="section-kicker">VECTOR DB FILES</span><h2 id="vector-db-files-title">Vector DB 파일 목록</h2><p className="panel-description">Cloudflare Vectorize에 세그먼트가 저장된 문서만 표시합니다. 재색인과 삭제는 원본·메타데이터·벡터를 함께 갱신합니다.</p></div><span className="status-pill status-완료">{vectorDbFiles.length}건</span></div><div className="knowledge-assets-list" aria-live="polite">{vectorDbFiles.map((asset) => <article key={asset.id} className="knowledge-asset-card knowledge-asset-card--indexed"><div className="knowledge-asset-card__main"><div className="knowledge-asset-card__title"><div><h3>{asset.title}</h3><p>{sourceLabel[asset.source_type] || asset.source_type} · {asset.mime_type || "형식 정보 없음"}</p></div><span className="knowledge-asset-status">Vector DB</span></div><dl className="knowledge-asset-meta"><div><dt>벡터</dt><dd>{Number(asset.segment_count || 0).toLocaleString("ko-KR")}개</dd></div><div><dt>차원</dt><dd>{asset.embedding_dimensions}D</dd></div><div><dt>모델</dt><dd>{asset.embedding_model}</dd></div><div><dt>최종 변경</dt><dd>{formatAssetDate(asset.updated_at)}</dd></div></dl></div><div className="knowledge-asset-card__actions">{asset.original_uploaded_at && <a className="text-button" href={`/api/v1/assets/${encodeURIComponent(asset.id)}/original`}>원문 열기</a>}<button type="button" className="text-button" disabled={assetActionId === asset.id} onClick={() => void manageAsset(asset, "reindex")}>{assetActionId === asset.id ? "처리 중" : "재색인"}</button><button type="button" className="text-button text-button-danger" disabled={assetActionId === asset.id} onClick={() => void manageAsset(asset, "delete")}>삭제</button></div></article>)}{!vectorDbFiles.length && <div className="knowledge-assets-empty"><strong>Vector DB에 저장된 문서가 없습니다.</strong><span>문서를 등록하고 임베딩이 완료되면 이 목록에 표시됩니다.</span></div>}</div><p className="knowledge-assets-panel__count">{vectorDbFiles.length}건 표시</p></section>
          <section className="panel knowledge-assets-panel" aria-labelledby="knowledge-assets-title"><div className="panel-title knowledge-assets-panel__heading"><div><span className="section-kicker">KNOWLEDGE ASSETS</span><h2 id="knowledge-assets-title">문서 자산 현황</h2><p className="panel-description">문서의 색인 상태와 접근 범위, 최신 변경 정보를 한 화면에서 확인합니다.</p></div><div className="admin-table-tools"><input className="table-input" value={assetQuery} onChange={(event) => setAssetQuery(event.target.value)} placeholder="제목·출처·등급 검색" aria-label="문서 자산 검색" /><select className="table-select" value={assetSort} onChange={(event) => setAssetSort(event.target.value as AssetSort)} aria-label="문서 정렬"><option value="updated">최근 변경순</option><option value="title">제목순</option><option value="segments">세그먼트 많은 순</option></select></div></div><div className="asset-status-filters" role="group" aria-label="문서 상태 빠른 필터">{(["all", "indexed", "queued", "processing", "failed"] as const).map((status) => { const count = status === "all" ? assets.length : assets.filter((asset) => asset.status === status).length; if (status !== "all" && count === 0) return null; return <button key={status} type="button" className={assetStatus === status ? "active" : ""} aria-pressed={assetStatus === status} onClick={() => setAssetStatus(status)}><span>{status === "all" ? "전체" : assetStatusLabel[status]}</span><strong>{count}</strong></button>; })}</div><div className="knowledge-assets-list" aria-live="polite">{filteredAssets.slice(0, 8).map((asset) => <article key={asset.id} className={`knowledge-asset-card knowledge-asset-card--${asset.status}`}><div className="knowledge-asset-card__main"><div className="knowledge-asset-card__title"><div><h3>{asset.title}</h3><p>{sourceLabel[asset.source_type] || asset.source_type} · {asset.mime_type || "형식 정보 없음"}</p></div><span className="knowledge-asset-status">{assetStatusLabel[asset.status] || asset.status}</span></div><dl className="knowledge-asset-meta"><div><dt>접근 등급</dt><dd>{classificationLabel[asset.classification] || asset.classification}</dd></div><div><dt>대상 부서</dt><dd>{asset.department_scope || "전체"}</dd></div><div><dt>색인 단위</dt><dd>{Number(asset.segment_count || 0).toLocaleString("ko-KR")} segments</dd></div><div><dt>최종 변경</dt><dd>{formatAssetDate(asset.updated_at)}</dd></div></dl><div className="knowledge-asset-detail"><span>벡터 {asset.embedding_dimensions ? `${asset.embedding_dimensions}D` : "미생성"}</span><span>{asset.embedding_model || "임베딩 모델 미생성"}</span><span>{formatAssetSize(asset.original_size)}</span></div></div><div className="knowledge-asset-card__actions">{asset.original_uploaded_at && <a className="text-button" href={`/api/v1/assets/${encodeURIComponent(asset.id)}/original`}>원문 열기</a>}<button type="button" className="text-button" disabled={assetActionId === asset.id} onClick={() => void manageAsset(asset, "reindex")}>{assetActionId === asset.id ? "처리 중" : "재색인"}</button><button type="button" className="text-button text-button-danger" disabled={assetActionId === asset.id} onClick={() => void manageAsset(asset, "delete")}>삭제</button></div></article>)}{!filteredAssets.length && <div className="knowledge-assets-empty"><strong>조건에 맞는 문서가 없습니다.</strong><span>검색어 또는 상태 필터를 조정해 보세요.</span></div>}</div><p className="knowledge-assets-panel__count">{filteredAssets.length}/{assets.length}건 표시{filteredAssets.length > 8 ? " · 최근 8건만 표시" : ""}</p></section>
          <section className="panel table-wrap"><div className="panel-title"><div><span className="section-kicker">INDEX JOBS</span><h2>최근 인덱싱 작업</h2></div><span>{failedJobs ? `실패 ${failedJobs}` : "정상"}</span></div><table><caption className="sr-only">최근 인덱싱 작업</caption><thead><tr><th>문서</th><th>단계</th><th>상태</th><th>시도</th><th>작업</th></tr></thead><tbody>{jobs.slice(0, 6).map((job) => <tr key={job.id}><td><strong>{job.title || job.id}</strong>{job.error_code && <small className="table-subtext">오류 코드 · {job.error_code}</small>}</td><td>{job.stage}</td><td>{job.status}</td><td>{job.attempt_count}</td><td>{job.status === "failed" ? <button type="button" className="text-button" disabled={jobActionId === job.id} onClick={() => void retryJob(job)}>{jobActionId === job.id ? "재시도 중" : "재시도"}</button> : "—"}</td></tr>)}{!jobs.length && <tr><td colSpan={5}>인덱싱 작업이 없습니다.</td></tr>}</tbody></table></section>
       </div>
       </>}
       {activeSection === "overview" && <div id="admin-control"><AiControlTower currentEmail={currentEmail} /></div>}
+      </div>
     </div>
   );
 }
@@ -3062,7 +3058,7 @@ function ScheduleView() {
       <div className="page-heading schedule-header">
         <div>
           <span className="section-kicker">SCHEDULE</span>
-          <h1>스케줄 관리</h1>
+          <h1 className="sr-only">스케줄 관리</h1>
           <p className="schedule-subtitle">반복 작업의 다음 실행 시각과 최근 결과를 한 곳에서 확인하세요.</p>
         </div>
         <button type="button" className="schedule-create-btn" onClick={() => setShowCreateModal(true)}>+ 새 예약 작업</button>
@@ -3207,6 +3203,9 @@ const plannedKindLabels: Record<PlannedWorkItem["kind"], string> = {
   execution: "실행",
 };
 
+const scheduleHourOptions = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0"));
+const scheduleMinuteOptions = ["00", "30"];
+
 function SchedulePlanningBoard() {
   const [items, setItems] = useState<PlannedWorkItem[]>([]);
   const [alerts, setAlerts] = useState<ScheduleAlertItem[]>([]);
@@ -3217,7 +3216,9 @@ function SchedulePlanningBoard() {
   const [description, setDescription] = useState("");
   const [kind, setKind] = useState<PlannedWorkItem["kind"]>("todo");
   const [priority, setPriority] = useState<PlannedWorkItem["priority"]>("normal");
-  const [dueAt, setDueAt] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [dueHour, setDueHour] = useState("09");
+  const [dueMinute, setDueMinute] = useState("00");
   const [notify, setNotify] = useState(true);
   const [currentTime, setCurrentTime] = useState(() => Date.now());
   const [filter, setFilter] = useState<"all" | "open" | "done" | "attention">("all");
@@ -3254,7 +3255,9 @@ function SchedulePlanningBoard() {
     setDescription("");
     setKind("todo");
     setPriority("normal");
-    setDueAt("");
+    setDueDate("");
+    setDueHour("09");
+    setDueMinute("00");
     setNotify(true);
     setEditingId(null);
     setShowForm(false);
@@ -3273,7 +3276,10 @@ function SchedulePlanningBoard() {
     setDescription(item.description || "");
     setKind(item.kind);
     setPriority(item.priority);
-    setDueAt(item.due_at ? toDateTimeLocal(item.due_at) : "");
+    const localDueAt = item.due_at ? toDateTimeLocal(item.due_at) : "";
+    setDueDate(localDueAt.slice(0, 10));
+    setDueHour(localDueAt.slice(11, 13) || "09");
+    setDueMinute(Number(localDueAt.slice(14, 16)) >= 30 ? "30" : "00");
     setNotify(Boolean(item.notify_enabled));
     setShowForm(true);
   };
@@ -3282,11 +3288,12 @@ function SchedulePlanningBoard() {
     if (!title.trim()) return;
     setBusy(true); setError("");
     try {
+      const dueAt = dueDate ? new Date(`${dueDate}T${dueHour}:${dueMinute}:00`).toISOString() : null;
       const response = await fetch("/api/v1/schedule-items", {
         method: editingId ? "PATCH" : "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(editingId
-          ? { id: editingId, title: title.trim(), description, kind, priority, notify_enabled: notify, due_at: dueAt ? new Date(dueAt).toISOString() : null }
-          : { title: title.trim(), description, kind, priority, notify_enabled: notify, due_at: dueAt ? new Date(dueAt).toISOString() : null }),
+          ? { id: editingId, title: title.trim(), description, kind, priority, notify_enabled: notify, due_at: dueAt }
+          : { title: title.trim(), description, kind, priority, notify_enabled: notify, due_at: dueAt }),
       });
       const data = await response.json() as { error?: { message?: string } };
       if (!response.ok) throw new Error(data.error?.message || (editingId ? "업무를 수정하지 못했습니다." : "업무를 등록하지 못했습니다."));
@@ -3344,7 +3351,7 @@ function SchedulePlanningBoard() {
         <div className="form-row">
           <label className="form-label">종류<select value={kind} onChange={(event) => setKind(event.target.value as PlannedWorkItem["kind"])}>{Object.entries(plannedKindLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
           <label className="form-label">우선순위<select value={priority} onChange={(event) => setPriority(event.target.value as PlannedWorkItem["priority"])}><option value="low">낮음</option><option value="normal">보통</option><option value="high">높음</option><option value="urgent">긴급</option></select></label>
-          <label className="form-label">마감 시각<input type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} /></label>
+          <label className="form-label">마감 시각<div className="schedule-plan-deadline-control"><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} aria-label="마감 날짜" /><select value={dueHour} onChange={(event) => setDueHour(event.target.value)} aria-label="마감 시각 시">{scheduleHourOptions.map((hour) => <option key={hour} value={hour}>{hour}시</option>)}</select><select value={dueMinute} onChange={(event) => setDueMinute(event.target.value)} aria-label="마감 시각 분">{scheduleMinuteOptions.map((minute) => <option key={minute} value={minute}>{minute}분</option>)}</select></div><small className="schedule-plan-deadline-hint">24시간제 · 30분 단위</small></label>
         </div>
         <label className="schedule-checkbox"><input type="checkbox" checked={notify} onChange={(event) => setNotify(event.target.checked)} /> 마감 15분 전 알림</label>
         <div className="modal-actions"><button type="button" className="quiet-button" onClick={resetForm}>취소</button><button type="button" className="schedule-create-btn" disabled={!title.trim() || busy} onClick={() => void save()}>{busy ? "처리 중..." : editingId ? "변경 저장" : "업무 등록"}</button></div>
