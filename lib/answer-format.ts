@@ -23,7 +23,7 @@ export function answerLengthInstruction(length: AnswerLength | undefined) {
 }
 
 export function answerOutputTokenBudget(length: AnswerLength | undefined) {
-  return length === "brief" ? 600 : length === "detailed" ? 2_400 : 1_800;
+  return length === "brief" ? 600 : length === "detailed" ? 3_600 : 1_800;
 }
 
 export function answerReasoningTier(length: AnswerLength | undefined) {

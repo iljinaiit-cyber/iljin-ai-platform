@@ -86,7 +86,7 @@ const DEFAULT_LOCAL_MODEL = "gemma4:latest";
 // per environment when a heavier model is justified for a specific workload.
 export const DEFAULT_CLOUDFLARE_MODEL = "@cf/zai-org/glm-4.7-flash";
 const DEFAULT_TIMEOUT_MS = 30_000;
-const DEFAULT_MAX_OUTPUT_TOKENS = 2_400;
+const DEFAULT_MAX_OUTPUT_TOKENS = 3_600;
 const MAX_OUTPUT_TOKENS = 4_096;
 
 function selectCloudflareModel(runtime: RuntimeEnv, reasoningTier?: ReasoningTier, overrideModel?: string) {
@@ -396,9 +396,20 @@ function thinkingOffBody(provider: GatewayProvider, model: string): Record<strin
  * 사고가 예산을 먹더라도 본문이 남도록 상한만 올려 한 번 더 시도한다.
  */
 const REASONING_HEADROOM_TOKENS = 1_024;
+const CONTINUATION_CONTEXT_LIMIT = 6_000;
+const CONTINUATION_INSTRUCTION = "직전 답변은 출력 길이 제한으로 중단되었습니다. 이미 작성한 개요·섹션·문장을 반복하지 말고, 마지막 문장 다음 또는 아직 작성하지 않은 다음 섹션부터 이어서 작성하세요. 원래 질문의 형식과 인용 규칙을 유지하고, 원래 제공된 근거 밖의 사실·수치·출처를 추가하지 마세요.";
 
 function withReasoningHeadroom(maxOutputTokens: number) {
   return Math.min(maxOutputTokens + REASONING_HEADROOM_TOKENS, MAX_OUTPUT_TOKENS);
+}
+
+function mergeUsage(first: GatewayCompletion["usage"], second: GatewayCompletion["usage"]): GatewayCompletion["usage"] {
+  if (!first && !second) return undefined;
+  return {
+    prompt_tokens: Number(first?.prompt_tokens || 0) + Number(second?.prompt_tokens || 0),
+    completion_tokens: Number(first?.completion_tokens || 0) + Number(second?.completion_tokens || 0),
+    total_tokens: Number(first?.total_tokens || 0) + Number(second?.total_tokens || 0),
+  };
 }
 
 /** 모델이 남긴 사고 흔적(<think>…</think>)을 답변 본문에서 제거한다. */
@@ -797,19 +808,58 @@ export async function completeWithCloudflare(messages: GatewayMessage[], traceId
   }
 }
 
+type GatewayPolicy = {
+  localEnabled?: boolean;
+  cloudflareEnabled?: boolean;
+  sensitivity?: GatewaySensitivity;
+  maxOutputTokens?: number;
+  reasoningTier?: ReasoningTier;
+  localModelOverride?: string;
+  cloudflareModelOverride?: string;
+};
+
+async function continueTruncatedCompletion(
+  messages: GatewayMessage[],
+  traceId: string,
+  policy: GatewayPolicy,
+  reasoningTier: ReasoningTier | undefined,
+  completion: GatewayCompletion,
+): Promise<GatewayCompletion> {
+  if (completion.finishReason !== "length" || !completion.content.trim()) return completion;
+
+  try {
+    const continuation = await completeWithGateway(
+      [
+        ...messages,
+        { role: "assistant", content: completion.content.slice(-CONTINUATION_CONTEXT_LIMIT) },
+        { role: "user", content: CONTINUATION_INSTRUCTION },
+      ],
+      `${traceId}-continue`,
+      policy,
+      reasoningTier,
+      false,
+    );
+    return {
+      ...continuation,
+      content: `${completion.content.trimEnd()}\n\n${continuation.content.trimStart()}`,
+      usage: mergeUsage(completion.usage, continuation.usage),
+      traceId: completion.traceId,
+    };
+  } catch (error) {
+    console.warn("[llm-gateway] continuation after output limit failed", {
+      traceId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return completion;
+  }
+}
+
 export async function completeWithGateway(
   messages: GatewayMessage[],
   traceId: string,
-  policy: {
-    localEnabled?: boolean;
-    cloudflareEnabled?: boolean;
-    sensitivity?: GatewaySensitivity;
-    maxOutputTokens?: number;
-    reasoningTier?: ReasoningTier;
-    localModelOverride?: string;
-    cloudflareModelOverride?: string;
-  } = {},
+  policy: GatewayPolicy = {},
   reasoningTier?: ReasoningTier,
+  continueOnLength = true,
 ): Promise<GatewayCompletion> {
   validateMessages(messages);
   const tier = reasoningTier ?? policy.reasoningTier;
@@ -840,7 +890,8 @@ export async function completeWithGateway(
     );
   } else if (policy.cloudflareEnabled !== false) {
     try {
-      return await completeWithCloudflare(messages, traceId, policy.maxOutputTokens, tier, policy.cloudflareModelOverride);
+      const cloudflare = await completeWithCloudflare(messages, traceId, policy.maxOutputTokens, tier, policy.cloudflareModelOverride);
+      return continueOnLength ? continueTruncatedCompletion(messages, traceId, policy, tier, cloudflare) : cloudflare;
     } catch (error) {
       if (!(error instanceof GatewayError)) throw error;
       if (["INVALID_MESSAGES", "INVALID_MESSAGE", "MESSAGE_TOO_LONG", "CONTEXT_TOO_LARGE"].includes(error.code)) throw error;
@@ -860,13 +911,15 @@ export async function completeWithGateway(
   if (policy.localEnabled !== false) {
     try {
       const local = await completeWithLocal(messages, traceId, policy.maxOutputTokens, tier, policy.localModelOverride);
-      if (sensitivity === "confidential") return local;
+      if (sensitivity === "confidential") {
+        return continueOnLength ? continueTruncatedCompletion(messages, traceId, policy, tier, local) : local;
+      }
       local.fallback = {
         from: "cloudflare",
         path: ["cloudflare", "local"],
         reason: cloudflareFailure.code,
       };
-      return local;
+      return continueOnLength ? continueTruncatedCompletion(messages, traceId, policy, tier, local) : local;
     } catch (error) {
       if (!(error instanceof GatewayError)) throw error;
       if (["INVALID_MESSAGES", "INVALID_MESSAGE", "MESSAGE_TOO_LONG", "CONTEXT_TOO_LARGE"].includes(error.code)) throw error;

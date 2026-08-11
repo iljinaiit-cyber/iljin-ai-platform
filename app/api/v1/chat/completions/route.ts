@@ -286,6 +286,7 @@ export async function POST(request: Request) {
       provider: completion.provider,
       model: completion.model,
       latency_ms: completion.latencyMs,
+      finish_reason: completion.finishReason,
       usage: completion.usage,
       follow_up_questions: followUpQuestions,
       related_questions: relatedQuestions,

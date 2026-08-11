@@ -407,6 +407,7 @@ type GatewayResponse = {
   choices?: Array<{ message?: { content?: string } }>;
   provider?: string;
   model?: string;
+  finish_reason?: string;
   trace_id?: string;
   latency_ms?: number;
   conversation_id?: string;
@@ -1268,6 +1269,7 @@ export function AgentPortal() {
           trace_id?: string;
           provider?: string;
           model?: string;
+          finish_reason?: string;
           latency_ms?: number;
           usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
           follow_up_questions?: FollowUpQuestion[];
@@ -1396,7 +1398,9 @@ export function AgentPortal() {
           setNotice("최종 답변 생성 전입니다. 정확한 답변을 위해 보충 정보를 입력해 주세요.");
         } else {
           const providerLabel = (done.provider || provider) === "cloudflare" ? "Cloud LLM" : "로컬 LLM";
-          setNotice(`${providerLabel} Streaming 답변을 완료했습니다. ${done.latency_ms ?? 0}밀리초가 걸렸습니다.`);
+          setNotice(done.finish_reason === "length"
+            ? `${providerLabel} 답변이 출력 한도에 도달해 일부 내용이 생략되었습니다.`
+            : `${providerLabel} Streaming 답변을 완료했습니다. ${done.latency_ms ?? 0}밀리초가 걸렸습니다.`);
         }
         return;
       }
@@ -1436,7 +1440,9 @@ export function AgentPortal() {
         setNotice("최종 답변 생성 전입니다. 정확한 답변을 위해 보충 정보를 입력해 주세요.");
       } else {
         const providerLabel = payload.provider === "cloudflare" ? "Cloud LLM" : "로컬 LLM";
-        setNotice(`${providerLabel} 답변을 준비했습니다. ${payload.latency_ms ?? 0}밀리초가 걸렸습니다.`);
+        setNotice(payload.finish_reason === "length"
+          ? `${providerLabel} 답변이 출력 한도에 도달해 일부 내용이 생략되었습니다.`
+          : `${providerLabel} 답변을 준비했습니다. ${payload.latency_ms ?? 0}밀리초가 걸렸습니다.`);
       }
     } catch (error) {
       cancelTypewriter?.();

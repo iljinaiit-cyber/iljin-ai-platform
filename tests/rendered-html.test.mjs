@@ -544,7 +544,7 @@ test("produces expert-depth answers with adaptive output budgets and structured 
   assert.match(portal, /answer-table-wrap/);
   assert.match(chatRoute, /function maxOutputTokensFor/);
   assert.match(chatRoute, /answerOutputTokenBudget/);
-  assert.match(answerFormat, /length === "brief" \? 600 : length === "detailed" \? 2_400 : 1_800/);
+  assert.match(answerFormat, /length === "brief" \? 600 : length === "detailed" \? 3_600 : 1_800/);
   assert.match(answerFormat, /심층 의사결정 답변으로 작성하세요/);
   assert.match(gateway, /MAX_OUTPUT_TOKENS = 4_096/);
   assert.match(gateway, /max_tokens: maxOutputTokens/);
