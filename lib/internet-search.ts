@@ -3,7 +3,7 @@ import type { Principal } from "./identity";
 import { ensureRagSchema, RagError } from "./rag";
 import { getRuntimeEnv, type RuntimeEnv } from "./runtime-env";
 
-export type InternetSearchProvider = "tavily" | "exa" | "google" | "brave" | "webpilot" | "duckduckgo" | "jina" | "wikimedia";
+export type InternetSearchProvider = "tavily" | "exa" | "google" | "naver" | "youtube" | "brave" | "webpilot" | "duckduckgo" | "jina" | "wikimedia";
 export type InternetSourceCategory = "government" | "academic" | "reference" | "web";
 export type InternetSearchIntent = "current" | "comparison" | "how-to" | "fact";
 
@@ -97,7 +97,7 @@ type ProviderAdapter = {
 };
 
 const WIKIMEDIA_USER_AGENT = "ILJIN-AI-Portal/1.0 (https://iljin-ai-works.pages.dev)";
-const DEFAULT_PROVIDER_ORDER: InternetSearchProvider[] = ["tavily", "exa", "google", "brave", "webpilot", "duckduckgo", "jina", "wikimedia"];
+const DEFAULT_PROVIDER_ORDER: InternetSearchProvider[] = ["google", "naver", "youtube", "tavily", "exa", "brave", "webpilot", "duckduckgo", "jina", "wikimedia"];
 const FRESHNESS_PATTERN = /\b(today|latest|current|recent|news|update|release|price)\b|오늘|최신|현재|최근|뉴스|동향|출시|업데이트|가격|시세|이번\s*(주|달|분기|해)/i;
 const HISTORICAL_PATTERN = /\b(history|historical|formerly|past|archive)\b|역사|과거|당시|연혁|예전|아카이브/i;
 const COMPARISON_PATTERN = /\b(compare|comparison|versus|vs\.?|difference|best)\b|비교|차이|장단점|추천|순위/i;
@@ -127,6 +127,18 @@ const PROVIDER_META: Record<InternetSearchProvider, Omit<InternetSearchProviderS
     name: "Google Programmable Search",
     capability: "Google Custom Search JSON API 기반 범용 웹 검색",
     configuration: "GOOGLE_SEARCH_API_KEY + GOOGLE_SEARCH_ENGINE_ID",
+  },
+  naver: {
+    id: "naver",
+    name: "NAVER Search",
+    capability: "NAVER API HUB 웹문서·뉴스 검색, 한국어 최신 정보 보강",
+    configuration: "NAVER_API_HUB_CLIENT_ID + NAVER_API_HUB_CLIENT_SECRET",
+  },
+  youtube: {
+    id: "youtube",
+    name: "YouTube Search",
+    capability: "YouTube Data API 기반 영상·채널·게시일 검색",
+    configuration: "YOUTUBE_API_KEY 또는 GOOGLE_SEARCH_API_KEY",
   },
   brave: {
     id: "brave",
@@ -507,6 +519,71 @@ async function googleSearch(query: string, limit: number, runtime: RuntimeEnv) {
   });
 }
 
+async function naverSearch(query: string, limit: number, runtime: RuntimeEnv) {
+  const headers = {
+    Accept: "application/json",
+    "X-NCP-APIGW-API-KEY-ID": runtime.NAVER_API_HUB_CLIENT_ID?.trim() || "",
+    "X-NCP-APIGW-API-KEY": runtime.NAVER_API_HUB_CLIENT_SECRET?.trim() || "",
+  };
+  const endpoint = (kind: "webkr" | "news") => {
+    const url = new URL(`https://naverapihub.apigw.ntruss.com/search/v1/${kind}`);
+    url.searchParams.set("query", query);
+    url.searchParams.set("display", String(Math.min(Math.max(limit, 1), 10)));
+    url.searchParams.set("start", "1");
+    url.searchParams.set("format", "json");
+    if (kind === "news") url.searchParams.set("sort", freshnessForQuery(query) ? "date" : "sim");
+    return url.toString();
+  };
+  const kinds: Array<"webkr" | "news"> = freshnessForQuery(query) ? ["news", "webkr"] : ["webkr"];
+  const payloads = await Promise.all(kinds.map(async (kind) => ({
+    kind,
+    payload: await fetchJson(endpoint(kind), { headers }) as {
+      items?: Array<{ title?: string; link?: string; originallink?: string; description?: string; pubDate?: string }>;
+    },
+  })));
+  return payloads.flatMap(({ kind, payload }) => (payload.items || []).flatMap((item, index) => {
+    const result = makeResult("naver", index, {
+      title: item.title,
+      url: item.originallink || item.link,
+      snippet: item.description,
+      publishedAt: item.pubDate,
+    });
+    return result ? [{ ...result, id: `web_naver_${kind}_${index + 1}`, sourceCategoryLabel: kind === "news" ? "NAVER 뉴스" : "NAVER 웹문서" }] : [];
+  }));
+}
+
+async function youtubeSearch(query: string, limit: number, runtime: RuntimeEnv) {
+  const url = new URL("https://www.googleapis.com/youtube/v3/search");
+  const locale = searchLanguage(query);
+  url.searchParams.set("key", runtime.YOUTUBE_API_KEY?.trim() || runtime.GOOGLE_SEARCH_API_KEY?.trim() || "");
+  url.searchParams.set("part", "snippet");
+  url.searchParams.set("q", query);
+  url.searchParams.set("type", "video");
+  url.searchParams.set("maxResults", String(Math.min(Math.max(limit, 1), 10)));
+  url.searchParams.set("safeSearch", "strict");
+  url.searchParams.set("regionCode", locale.country.toUpperCase());
+  url.searchParams.set("relevanceLanguage", locale.searchLang);
+  url.searchParams.set("order", freshnessForQuery(query) ? "date" : "relevance");
+  const payload = await fetchJson(url.toString(), { headers: { Accept: "application/json" } }) as {
+    items?: Array<{
+      id?: { videoId?: string };
+      snippet?: { title?: string; description?: string; channelTitle?: string; publishedAt?: string };
+    }>;
+  };
+  return (payload.items || []).flatMap((item, index) => {
+    const videoId = item.id?.videoId;
+    if (!videoId) return [];
+    const snippet = item.snippet || {};
+    const result = makeResult("youtube", index, {
+      title: snippet.title,
+      url: `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
+      snippet: [snippet.channelTitle ? `채널: ${snippet.channelTitle}.` : "", snippet.description || ""].filter(Boolean).join(" "),
+      publishedAt: snippet.publishedAt,
+    });
+    return result ? [{ ...result, sourceCategoryLabel: "YouTube 동영상" }] : [];
+  });
+}
+
 async function braveSearch(query: string, limit: number, runtime: RuntimeEnv) {
   const url = new URL("https://api.search.brave.com/res/v1/web/search");
   const locale = searchLanguage(query);
@@ -837,6 +914,16 @@ const PROVIDER_ADAPTERS: Record<InternetSearchProvider, ProviderAdapter> = {
     configured: (runtime) => Boolean(runtime.GOOGLE_SEARCH_API_KEY?.trim() && runtime.GOOGLE_SEARCH_ENGINE_ID?.trim()),
     search: googleSearch,
   },
+  naver: {
+    id: "naver",
+    configured: (runtime) => Boolean(runtime.NAVER_API_HUB_CLIENT_ID?.trim() && runtime.NAVER_API_HUB_CLIENT_SECRET?.trim()),
+    search: naverSearch,
+  },
+  youtube: {
+    id: "youtube",
+    configured: (runtime) => Boolean(runtime.YOUTUBE_API_KEY?.trim() || runtime.GOOGLE_SEARCH_API_KEY?.trim()),
+    search: youtubeSearch,
+  },
   brave: {
     id: "brave",
     configured: (runtime) => Boolean(runtime.BRAVE_SEARCH_API_KEY?.trim()),
@@ -1051,7 +1138,7 @@ export function getInternetSearchStatus(): InternetSearchStatus {
     status: fullWebConfigured ? "ready" : "fallback",
     detail: fullWebConfigured
       ? `${PROVIDER_META[activeProvider].name}부터 최대 ${MAX_PARALLEL_PROVIDERS}개 공급자를 배치로 병렬 조회해 결과를 종합하고, 그래도 부족하면 다음 배치로 확장합니다.`
-      : "DuckDuckGo 무료 웹 검색과 Wikimedia 백과사전을 사용합니다. 상용 검색 API(Tavily·Exa·Google·Brave) 구성 시 더 풍부하고 다양한 출처를 병렬로 조회합니다.",
+      : "DuckDuckGo·Jina 무료 웹 검색과 Wikimedia 백과사전을 사용합니다. Google·NAVER·YouTube·Tavily·Exa·Brave 구성 시 더 풍부하고 다양한 출처를 병렬로 조회합니다.",
     providers,
   };
 }

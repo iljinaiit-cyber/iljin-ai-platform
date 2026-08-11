@@ -73,6 +73,9 @@ export type RuntimeEnv = {
   EXA_API_KEY?: string;
   GOOGLE_SEARCH_API_KEY?: string;
   GOOGLE_SEARCH_ENGINE_ID?: string;
+  NAVER_API_HUB_CLIENT_ID?: string;
+  NAVER_API_HUB_CLIENT_SECRET?: string;
+  YOUTUBE_API_KEY?: string;
   BRAVE_SEARCH_API_KEY?: string;
   WEBPILOT_API_URL?: string;
   WEBPILOT_API_KEY?: string;
@@ -126,6 +129,9 @@ export function getRuntimeEnv(): RuntimeEnv {
       EXA_API_KEY: process.env.EXA_API_KEY,
       GOOGLE_SEARCH_API_KEY: process.env.GOOGLE_SEARCH_API_KEY,
       GOOGLE_SEARCH_ENGINE_ID: process.env.GOOGLE_SEARCH_ENGINE_ID,
+      NAVER_API_HUB_CLIENT_ID: process.env.NAVER_API_HUB_CLIENT_ID,
+      NAVER_API_HUB_CLIENT_SECRET: process.env.NAVER_API_HUB_CLIENT_SECRET,
+      YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY,
       BRAVE_SEARCH_API_KEY: process.env.BRAVE_SEARCH_API_KEY,
       WEBPILOT_API_URL: process.env.WEBPILOT_API_URL,
       WEBPILOT_API_KEY: process.env.WEBPILOT_API_KEY,

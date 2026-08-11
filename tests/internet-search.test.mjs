@@ -53,16 +53,60 @@ function jsonResponse(body) {
 /** 매칭되지 않은 요청(예: 페이지 본문 보강, 자유 폴백)은 빈 성공 응답으로 흡수한다. */
 function stubFetch(handlers) {
   const calls = [];
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, init) => {
     const href = typeof url === "string" ? url : url.toString();
     calls.push(href);
     for (const [pattern, respond] of handlers) {
-      if (href.includes(pattern)) return respond();
+      if (href.includes(pattern)) return respond(href, init);
     }
     return { ok: true, headers: { get: () => null }, json: async () => ({}), text: async () => "" };
   };
   return calls;
 }
+
+test("Google, NAVER, and YouTube results are merged in one provider batch", async (t) => {
+  if (!requireBundle(t)) return;
+  globalThis.__ILJIN_RUNTIME_ENV__ = {
+    INTERNET_SEARCH_PROVIDER_ORDER: "google,naver,youtube",
+    GOOGLE_SEARCH_API_KEY: "google-key",
+    GOOGLE_SEARCH_ENGINE_ID: "google-cx",
+    NAVER_API_HUB_CLIENT_ID: "naver-id",
+    NAVER_API_HUB_CLIENT_SECRET: "naver-secret",
+    YOUTUBE_API_KEY: "youtube-key",
+  };
+  const requestHeaders = [];
+  const calls = stubFetch([
+    ["customsearch.googleapis.com", () => jsonResponse({
+      items: [{ title: "Google result", link: "https://google-source.example/a", snippet: "Google web result" }],
+    })],
+    ["naverapihub.apigw.ntruss.com/search/v1/news", (_href, init) => {
+      requestHeaders.push(init?.headers);
+      return jsonResponse({
+        items: [{ title: "NAVER news", originallink: "https://naver-source.example/b", description: "NAVER news result", pubDate: "Mon, 10 Aug 2026 09:00:00 +0900" }],
+      });
+    }],
+    ["naverapihub.apigw.ntruss.com/search/v1/webkr", (_href, init) => {
+      requestHeaders.push(init?.headers);
+      return jsonResponse({ items: [] });
+    }],
+    ["www.googleapis.com/youtube/v3/search", () => jsonResponse({
+      items: [{
+        id: { videoId: "video-1" },
+        snippet: { title: "YouTube result", description: "Video explanation", channelTitle: "Example channel", publishedAt: "2026-08-10T01:00:00Z" },
+      }],
+    })],
+  ]);
+
+  const response = await internetSearch.searchInternet("latest AI news", { principal, traceId: "TRC-MULTI", limit: 8 });
+
+  assert.ok(calls.some((url) => url.includes("customsearch.googleapis.com")));
+  assert.ok(calls.some((url) => url.includes("naverapihub.apigw.ntruss.com")));
+  assert.ok(calls.some((url) => url.includes("www.googleapis.com/youtube/v3/search")));
+  assert.equal(requestHeaders[0]?.["X-NCP-APIGW-API-KEY-ID"], "naver-id");
+  assert.equal(requestHeaders[0]?.["X-NCP-APIGW-API-KEY"], "naver-secret");
+  assert.deepEqual(new Set(response.providersUsed), new Set(["google", "naver", "youtube"]));
+  assert.ok(response.results.some((result) => result.url === "https://www.youtube.com/watch?v=video-1"));
+});
 
 function requireBundle(t) {
   if (internetSearch) return true;

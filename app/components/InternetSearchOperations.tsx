@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import "./InternetSearchOperations.css";
 
-type SearchProvider = "tavily" | "exa" | "google" | "brave" | "webpilot" | "duckduckgo" | "jina" | "wikimedia";
+type SearchProvider = "tavily" | "exa" | "google" | "naver" | "youtube" | "brave" | "webpilot" | "duckduckgo" | "jina" | "wikimedia";
 
 type ProviderStatus = {
   id: SearchProvider;
@@ -47,6 +47,8 @@ const providerName = (provider: SearchProvider) => ({
   tavily: "Tavily Search",
   exa: "Exa Search",
   google: "Google Programmable Search",
+  naver: "NAVER Search",
+  youtube: "YouTube Search",
   brave: "Brave Search",
   webpilot: "WebPilot 호환 API",
   duckduckgo: "DuckDuckGo Web Search",
