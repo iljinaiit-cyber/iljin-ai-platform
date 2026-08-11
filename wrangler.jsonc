@@ -57,6 +57,7 @@
     "DEFAULT_USER_ROLE": "user",
     "ALLOW_DEV_IDENTITY": "false",
     "ADMIN_EMAILS": "iljin.ai.it@iljin.com",
+    "RESEND_FROM_EMAIL": "ILJIN AI Works <no-reply@notify.iljin.com>",
 
     // ── hardening 배선 대기 변수 ──────────────────────────────────────
     // 아직 이 값을 읽는 코드가 없다. 배선(10 §H.5) 전까지는 무효다.
@@ -112,6 +113,7 @@
         "DEFAULT_USER_ROLE": "user",
         "ALLOW_DEV_IDENTITY": "false",
         "ADMIN_EMAILS": "iljin.ai.it@iljin.com",
+        "RESEND_FROM_EMAIL": "ILJIN AI Works <no-reply@notify.iljin.com>",
         "APP_ENV": "preview",
         "COST_PROFILE": "test",
         "MAX_SENSITIVITY": "public",
@@ -163,6 +165,7 @@
         "DEFAULT_USER_ROLE": "user",
         "ALLOW_DEV_IDENTITY": "false",
         "ADMIN_EMAILS": "iljin.ai.it@iljin.com",
+        "RESEND_FROM_EMAIL": "ILJIN AI Works <no-reply@notify.iljin.com>",
         "APP_ENV": "production",
         "COST_PROFILE": "prod",
         "MAX_SENSITIVITY": "confidential",
@@ -185,5 +188,7 @@
   //   npx wrangler pages secret put CLOUDFLARE_API_TOKEN --project-name iljin-ai
   //   npx wrangler pages secret put TAVILY_API_KEY --project-name iljin-ai
   //   npx wrangler pages secret put EXA_API_KEY --project-name iljin-ai
+  //   npx wrangler pages secret put RESEND_API_KEY --project-name iljin-ai
+  // RESEND_FROM_EMAIL must use a sender address on a Resend-verified domain.
   //   (preview 용은 --preview 플래그를 붙인다)
 }

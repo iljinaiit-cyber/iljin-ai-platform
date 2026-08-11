@@ -53,8 +53,8 @@ test("implements D1 email-password login and administrator approval before busin
   assert.match(identity, /access\.requested/);
   assert.match(identity, /status = 'approved'/);
   assert.match(identity, /access\.approved/);
-  assert.match(portal, /관리자 승인 대기/);
-  assert.match(portal, /사용자 접근 승인/);
+  assert.match(portal, /가입 승인 대기/);
+  assert.match(portal, /가입 승인/);
   assert.match(portal, /이메일 가입 신청/);
   assert.match(portal, /registrationEmailAllowed/);
   assert.match(portal, /일진 임직원 이메일\(@iljin\.com\)만 가입할 수 있습니다/);
@@ -65,6 +65,11 @@ test("implements D1 email-password login and administrator approval before busin
   assert.doesNotMatch(portal, /ChatGPT|signin-with-chatgpt/i);
   assert.match(meRoute, /resolveAccessIdentity/);
   assert.match(registerRoute, /registerEmailAccount/);
+  assert.match(registerRoute, /verificationUrl/);
+  assert.doesNotMatch(registerRoute, /sessionCookie/);
+  assert.match(identity, /email_verification_requests/);
+  assert.match(identity, /RESEND_API_KEY/);
+  assert.match(portal, /verificationRequired/);
   assert.match(loginRoute, /loginEmailAccount/);
   assert.match(logoutRoute, /expiredSessionCookie/);
   assert.match(applicationRoute, /submitAccessApplication/);
@@ -82,6 +87,16 @@ test("implements D1 email-password login and administrator approval before busin
   assert.match(schema, /authSessions/);
   assert.match(migration, /CREATE TABLE `auth_credentials`/);
   assert.match(migration, /CREATE TABLE `auth_sessions`/);
+});
+
+test("returns a recoverable configuration error when the authentication database binding is unavailable", async () => {
+  const response = await request("/api/auth/me");
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get("retry-after"), "30");
+  const payload = await response.json();
+  assert.equal(payload.error.code, "RUNTIME_CONFIGURATION_REQUIRED");
+  assert.equal(payload.error.retryable, true);
+  assert.match(payload.error.trace_id, /^trc_/);
 });
 
 test("keeps required accessibility and responsive safeguards", async () => {
@@ -514,9 +529,10 @@ test("tracks the complete development checklist and applies new common chat and 
 });
 
 test("produces expert-depth answers with adaptive output budgets and structured rendering", async () => {
-  const [portal, chatRoute, gateway, rag, css] = await Promise.all([
+  const [portal, chatRoute, answerFormat, gateway, rag, css] = await Promise.all([
     readFile(new URL("app/AgentPortal.tsx", root), "utf8"),
     readFile(new URL("app/api/v1/chat/completions/route.ts", root), "utf8"),
+    readFile(new URL("lib/answer-format.ts", root), "utf8"),
     readFile(new URL("lib/llm-gateway.ts", root), "utf8"),
     readFile(new URL("lib/rag.ts", root), "utf8"),
     readFile(new URL("app/globals.css", root), "utf8"),
@@ -527,8 +543,9 @@ test("produces expert-depth answers with adaptive output budgets and structured 
   assert.match(portal, /function FormattedAnswer/);
   assert.match(portal, /answer-table-wrap/);
   assert.match(chatRoute, /function maxOutputTokensFor/);
-  assert.match(chatRoute, /length === "brief" \? 600 : length === "detailed" \? 1_800 : 1_200/);
-  assert.match(chatRoute, /핵심 결론 → 근거와 분석 → 실무적 의미 또는 실행 방안 → 리스크·한계/);
+  assert.match(chatRoute, /answerOutputTokenBudget/);
+  assert.match(answerFormat, /length === "brief" \? 600 : length === "detailed" \? 2_400 : 1_200/);
+  assert.match(answerFormat, /심층 의사결정 답변으로 작성하세요/);
   assert.match(gateway, /MAX_OUTPUT_TOKENS = 4_096/);
   assert.match(gateway, /max_tokens: maxOutputTokens/);
   assert.match(gateway, /분야별 수석 전문가/);
@@ -854,4 +871,23 @@ test("connects file links, personal PC folders, and local databases to scheduled
   assert.match(worker, /getDueIngestionSources/);
   assert.match(connectorRoute, /documents\.manage/);
   assert.match(connectorRoute, /local-db/);
+});
+
+test("shows live queued embedding progress for registered documents", async () => {
+  const [document, assetRoute, assetDetail, rag, worker] = await Promise.all([
+    readFile(new URL("app/components/DocumentIngest.tsx", root), "utf8"),
+    readFile(new URL("app/api/v1/assets/route.ts", root), "utf8"),
+    readFile(new URL("app/api/v1/assets/[id]/route.ts", root), "utf8"),
+    readFile(new URL("lib/rag.ts", root), "utf8"),
+    readFile(new URL("indexer/worker.ts", root), "utf8"),
+  ]);
+  assert.match(document, /embedding-progress/);
+  assert.match(document, /processedChunks/);
+  assert.match(document, /\/api\/v1\/assets\/\$\{assetId\}/);
+  assert.match(assetRoute, /beginQueuedIngest/);
+  assert.match(assetRoute, /INDEX_QUEUE/);
+  assert.match(assetDetail, /getAsset/);
+  assert.match(rag, /processed_chunks/);
+  assert.match(rag, /index_stage/);
+  assert.match(worker, /isTextDocument/);
 });

@@ -1817,6 +1817,7 @@ export async function completeWithRag(input: {
   responsePreferences?: {
     length: "brief" | "standard" | "detailed";
     format: "paragraph" | "bullets" | "table";
+    learningContext?: string;
   };
   reasoningTier?: ReasoningTier;
   contextFileBlock?: string;
@@ -1924,7 +1925,7 @@ export async function completeWithRag(input: {
     : "";
 
   const preference = input.responsePreferences
-    ? `${answerPreferenceInstruction(input.responsePreferences.length, input.responsePreferences.format)}\n`
+    ? `${answerPreferenceInstruction(input.responsePreferences.length, input.responsePreferences.format)}${input.responsePreferences.learningContext || ""}\n`
     : "";
 
   // Tier-specific reasoning instructions
@@ -2080,6 +2081,8 @@ export async function getAsset(principal: Principal, assetId: string) {
   const row = await getD1().prepare(`SELECT id, title, source_type, mime_type, status, classification,
     department_scope, version, segment_count, original_size, original_etag, original_uploaded_at,
     embedding_model, embedding_dimensions, created_at, updated_at,
+    (SELECT j.status FROM index_jobs j WHERE j.asset_id = assets.id ORDER BY j.created_at DESC LIMIT 1) AS index_status,
+    (SELECT j.stage FROM index_jobs j WHERE j.asset_id = assets.id ORDER BY j.created_at DESC LIMIT 1) AS index_stage,
     (SELECT j.processed_chunks FROM index_jobs j WHERE j.asset_id = assets.id ORDER BY j.created_at DESC LIMIT 1) AS processed_chunks,
     (SELECT j.total_chunks FROM index_jobs j WHERE j.asset_id = assets.id ORDER BY j.created_at DESC LIMIT 1) AS total_chunks,
     (SELECT j.error_message FROM index_jobs j WHERE j.asset_id = assets.id ORDER BY j.created_at DESC LIMIT 1) AS error_message

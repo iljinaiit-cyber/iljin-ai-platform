@@ -86,6 +86,8 @@ export type RuntimeEnv = {
   ALLOW_DEV_IDENTITY?: string;
   ADMIN_EMAILS?: string;
   ADMIN_BOOTSTRAP_TOKEN?: string;
+  RESEND_API_KEY?: string;
+  RESEND_FROM_EMAIL?: string;
   DISABLED_AI_KINDS?: string;
   DAILY_BUDGET_PER_USER?: string;
   DAILY_BUDGET_PER_TENANT?: string;
@@ -137,6 +139,8 @@ export function getRuntimeEnv(): RuntimeEnv {
       ALLOW_DEV_IDENTITY: process.env.ALLOW_DEV_IDENTITY,
       ADMIN_EMAILS: process.env.ADMIN_EMAILS,
       ADMIN_BOOTSTRAP_TOKEN: process.env.ADMIN_BOOTSTRAP_TOKEN,
+      RESEND_API_KEY: process.env.RESEND_API_KEY,
+      RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
       DISABLED_AI_KINDS: process.env.DISABLED_AI_KINDS,
       DAILY_BUDGET_PER_USER: process.env.DAILY_BUDGET_PER_USER,
       DAILY_BUDGET_PER_TENANT: process.env.DAILY_BUDGET_PER_TENANT,

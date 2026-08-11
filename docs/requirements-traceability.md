@@ -169,7 +169,7 @@ npm run test:rag:golden
 | 흐름 | 구현 | 검증 |
 |---|---|---|
 | 자체 로그인 | `POST /api/auth/register/login/logout`, PBKDF2-SHA256 자격증명, HttpOnly 세션 쿠키 | 미로그인 401, 잘못된 자격증명 401, 로그아웃 후 세션 폐기 |
-| 이메일 가입 | `POST /api/auth/register`가 이메일·이름·부서·신청 사유를 D1 `pending` 상태로 등록 | 중복 이메일 409, 비밀번호 정책·필수값 검증 |
+| 이메일 가입 | `POST /api/auth/register`가 Resend 인증 메일을 발송하고, `POST /api/auth/verify-email`이 토큰 검증 뒤 D1 `pending` 계정을 생성 | 만료·재사용 토큰 차단, 1분 재발송 대기, 일 3회 제한 |
 | 재신청 | `POST /api/auth/application`이 희망 부서·신청 사유를 갱신하고 `pending` 전환 | 반려 후 재신청, `AUTH_APPROVAL_REQUIRED` |
 | 미승인 차단 | `resolvePrincipal`이 Unrequested/Pending/Rejected 상태를 업무 API에서 거부 | 신청 전·승인 대기·반려 상태별 403 |
 | 관리자 검토 | `GET|PATCH /api/admin/access-requests`와 관리자 Console | 부서·사용자/매니저 역할 지정, 승인·거절 |

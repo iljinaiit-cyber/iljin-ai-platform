@@ -791,6 +791,17 @@ h3 {
 
 .access-gate-actions .button { text-decoration: none; }
 
+.access-trace {
+  display: block;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #dce5ee;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .sidebar {
   position: fixed;
   inset: 0 auto 0 0;
@@ -3231,6 +3242,36 @@ a.answer-citation:hover {
   font-size: 12px;
 }
 
+.answer-feedback-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line) !important;
+  background: var(--surface) !important;
+}
+
+.answer-feedback-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.answer-feedback-button:hover:not(:disabled) {
+  border-color: var(--brand-400) !important;
+  color: var(--brand-700);
+}
+
+.answer-feedback-button.selected.positive {
+  background: #eaf7ef !important;
+  border-color: #72c596 !important;
+  color: #147442;
+}
+
+.answer-feedback-button.selected.negative {
+  background: #fff0ef !important;
+  border-color: #e7a09a !important;
+  color: #a33b34;
+}
+
 .knowledge-operational-strip .knowledge-model {
   color: #8feef2;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -3954,6 +3995,217 @@ td {
 
 .admin-table-tools .table-input { width: 150px; }
 .admin-table-tools > span { color: var(--muted); font-size: 11px; white-space: nowrap; }
+
+.knowledge-assets-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 14px;
+}
+
+.knowledge-assets-panel__heading {
+  align-items: flex-start;
+}
+
+.knowledge-assets-panel__heading .panel-description {
+  max-width: 540px;
+  margin-top: 5px;
+}
+
+.asset-status-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.asset-status-filters button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 11px;
+}
+
+.asset-status-filters button strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.asset-status-filters button:hover,
+.asset-status-filters button.active {
+  border-color: var(--brand-600);
+  background: var(--brand-100);
+  color: var(--brand-800);
+}
+
+.knowledge-assets-list {
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+
+.knowledge-asset-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+  padding: 15px 0;
+}
+
+.knowledge-asset-card__main {
+  display: grid;
+  min-width: 0;
+  gap: 11px;
+}
+
+.knowledge-asset-card__title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.knowledge-asset-card h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.knowledge-asset-card__title p,
+.knowledge-assets-panel__count {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.knowledge-asset-status {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--ink-soft);
+  padding: 4px 7px;
+  font-size: 10px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.knowledge-asset-card--indexed .knowledge-asset-status {
+  border-color: color-mix(in srgb, #17823b 35%, var(--line));
+  background: #edf8f0;
+  color: #176d33;
+}
+
+.knowledge-asset-card--queued .knowledge-asset-status,
+.knowledge-asset-card--processing .knowledge-asset-status {
+  border-color: color-mix(in srgb, #ae7400 35%, var(--line));
+  background: #fff8e7;
+  color: #855800;
+}
+
+.knowledge-asset-card--failed .knowledge-asset-status {
+  border-color: color-mix(in srgb, #b53d32 35%, var(--line));
+  background: #fff0ee;
+  color: #a1342a;
+}
+
+.knowledge-asset-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.knowledge-asset-meta div {
+  min-width: 0;
+  border-left: 2px solid var(--line);
+  padding-left: 8px;
+}
+
+.knowledge-asset-meta dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.knowledge-asset-meta dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.knowledge-asset-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.knowledge-asset-detail span + span {
+  border-left: 1px solid var(--line);
+  padding-left: 12px;
+}
+
+.knowledge-asset-card__actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+.text-button-danger { color: #a1342a; }
+
+.knowledge-assets-empty {
+  display: grid;
+  gap: 4px;
+  place-items: center;
+  min-height: 150px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.knowledge-assets-empty strong { color: var(--ink-soft); }
+
+@media (max-width: 760px) {
+  .knowledge-assets-panel__heading,
+  .knowledge-asset-card {
+    grid-template-columns: 1fr;
+  }
+
+  .knowledge-assets-panel__heading .admin-table-tools {
+    width: 100%;
+  }
+
+  .knowledge-assets-panel__heading .table-input,
+  .knowledge-assets-panel__heading .table-select {
+    flex: 1 1 150px;
+  }
+
+  .knowledge-asset-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .knowledge-asset-card__actions {
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+  }
+}
+
+@media (max-width: 440px) {
+  .knowledge-asset-meta { grid-template-columns: 1fr; }
+  .knowledge-asset-card__title { flex-direction: column; }
+  .knowledge-asset-detail { display: grid; gap: 4px; }
+  .knowledge-asset-detail span + span { border-left: 0; padding-left: 0; }
+}
 
 .access-review-panel {
   display: grid;
@@ -7186,4 +7438,314 @@ td {
   .schedule-planning-toolbar { padding-inline: 12px; }
 
   .schedule-plan-list { padding-inline: 12px; }
+}
+
+/* Compact heading rhythm: keep title, context and actions in one visual row. */
+@media (min-width: 901px) {
+  .hero-copy h1 {
+    max-width: 1200px;
+    font-size: clamp(28px, 3.2vw, 44px);
+    white-space: nowrap;
+  }
+
+  .page-heading > div:first-child,
+  .admin-page-title > div:first-child,
+  .workspace-heading > div:first-child,
+  .knowledge-hero-heading > div:first-child {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    min-width: 0;
+  }
+
+  .page-heading h1,
+  .admin-page-title h1,
+  .knowledge-hero h1 {
+    margin: 0;
+  }
+
+  .page-heading p,
+  .admin-page-title p,
+  .knowledge-hero-heading p {
+    flex: 1 1 260px;
+    min-width: 220px;
+  }
+
+  .page-heading,
+  .admin-page-title {
+    align-items: center;
+  }
+
+  .section-heading,
+  .panel-title,
+  .result-heading,
+  .knowledge-section-heading {
+    align-items: center;
+  }
+
+  .section-heading h2,
+  .panel-title h2,
+  .result-heading h2,
+  .knowledge-section-heading h2 {
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .hero-copy h1 {
+    white-space: normal;
+  }
+
+  .page-heading > div:first-child,
+  .admin-page-title > div:first-child,
+  .workspace-heading > div:first-child,
+  .knowledge-hero-heading > div:first-child {
+    display: block;
+  }
+}
+
+/* Schedule follows the same page rhythm as the portal's search, activity, and admin views. */
+.view-stack.schedule-view {
+  width: 100%;
+  max-width: 1540px;
+  gap: 16px;
+  padding: 0;
+}
+
+.schedule-header {
+  align-items: flex-end;
+  margin: 0;
+  padding: 0 2px;
+}
+
+.schedule-header h1 {
+  margin: 7px 0 4px;
+  color: var(--ink);
+  font-size: clamp(28px, 3vw, 38px);
+  letter-spacing: -0.045em;
+}
+
+.schedule-subtitle {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.schedule-create-btn {
+  min-height: 42px;
+  border: 1px solid var(--brand-700);
+  border-radius: 6px;
+  background: linear-gradient(135deg, var(--brand-900), var(--brand-600));
+  padding: 0 16px;
+  box-shadow: 0 7px 18px rgba(5, 99, 193, 0.14);
+  font-size: 13px;
+}
+
+.schedule-create-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--brand-700), var(--brand-500));
+}
+
+.schedule-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+}
+
+.schedule-summary article {
+  min-height: 108px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 17px 18px;
+  box-shadow: 0 7px 26px rgba(5, 67, 132, 0.04);
+}
+
+.schedule-summary strong {
+  margin: 8px 0 3px;
+  color: var(--ink);
+  font-size: clamp(24px, 2.5vw, 34px);
+  letter-spacing: -0.04em;
+}
+
+.schedule-grid {
+  grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.9fr);
+  gap: 16px;
+}
+
+.schedule-calendar-panel,
+.schedule-side-panel,
+.schedule-planning-panel {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 7px 26px rgba(5, 67, 132, 0.05);
+}
+
+.schedule-calendar-panel {
+  min-width: 0;
+  padding: 20px;
+}
+
+.schedule-side-panel {
+  min-width: 0;
+  padding: 18px;
+}
+
+.calendar-nav {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.calendar-nav button {
+  min-width: 38px;
+  height: 34px;
+  border-radius: 6px;
+  border-color: var(--line);
+  color: var(--ink-soft);
+}
+
+.calendar-nav button:hover,
+.calendar-today-btn:hover {
+  border-color: var(--brand-300) !important;
+  background: var(--brand-100) !important;
+  color: var(--brand-700);
+}
+
+.calendar-grid {
+  gap: 2px;
+}
+
+.calendar-weekday {
+  padding: 8px 0 6px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.calendar-day {
+  min-height: 72px;
+  border-radius: 6px;
+}
+
+.calendar-day:hover,
+.calendar-day.has-tasks {
+  background: var(--surface-soft);
+}
+
+.calendar-day.today {
+  border-color: var(--brand-500);
+  background: var(--brand-100);
+}
+
+.calendar-day.selected {
+  border-color: var(--brand-700);
+  background: var(--brand-700);
+}
+
+.schedule-filters {
+  margin: 0 0 6px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-soft);
+}
+
+.schedule-filters button {
+  min-height: 30px;
+  border-radius: 4px;
+}
+
+.schedule-filters button.active {
+  border-color: var(--brand-200);
+  background: var(--surface);
+  color: var(--brand-700);
+  box-shadow: 0 2px 7px rgba(5, 67, 132, 0.06);
+}
+
+.schedule-task-card {
+  gap: 10px;
+  padding: 13px 0;
+}
+
+.schedule-task-time {
+  border-radius: 5px;
+  background: var(--brand-100);
+  color: var(--brand-700);
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule-task-actions button,
+.schedule-plan-actions button {
+  min-height: 30px;
+  border-radius: 5px;
+  border-color: var(--line);
+  color: var(--ink-soft);
+}
+
+.schedule-task-actions button:hover,
+.schedule-plan-actions button:hover {
+  border-color: var(--brand-300);
+  background: var(--brand-100);
+  color: var(--brand-700);
+}
+
+.schedule-planning-panel {
+  margin-top: 0;
+  overflow: hidden;
+}
+
+.schedule-planning-heading {
+  padding: 18px 20px 14px;
+}
+
+.schedule-planning-heading h2 {
+  margin-top: 7px;
+  color: var(--ink);
+  font-size: 21px;
+  letter-spacing: -0.02em;
+}
+
+.schedule-planning-metrics {
+  padding: 10px 20px;
+  background: var(--surface-soft);
+}
+
+.schedule-plan-form {
+  background: var(--surface-soft);
+}
+
+.schedule-plan-item {
+  padding-block: 14px;
+}
+
+@media (max-width: 700px) {
+  .view-stack.schedule-view {
+    gap: 12px;
+  }
+
+  .schedule-header {
+    padding: 0;
+  }
+
+  .schedule-summary {
+    gap: 8px;
+  }
+
+  .schedule-summary article {
+    min-height: 96px;
+    padding: 14px;
+  }
+
+  .schedule-calendar-panel,
+  .schedule-side-panel {
+    padding: 14px;
+  }
+
+  .calendar-day {
+    min-height: 54px;
+  }
 }

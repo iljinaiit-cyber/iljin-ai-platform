@@ -293,7 +293,7 @@ type AccessState =
   | { state: "signed_out" }
   | { state: "approved"; user: AccessUser }
   | { state: "unrequested" | "pending" | "rejected"; user: AccessUser }
-  | { state: "error"; message: string };
+  | { state: "error"; message: string; traceId?: string; retryAfter?: number };
 
 type ThemeColor = "blue" | "violet" | "emerald" | "amber" | "rose" | "slate" | "indigo" | "cyan";
 
@@ -734,10 +734,11 @@ function RequirementBadge({ children }: { children: string }) {
   return <span className="req-badge">{children}</span>;
 }
 
-function AccessGate({ access, onAuthenticated, onSignedOut }: {
+function AccessGate({ access, onAuthenticated, onSignedOut, onRetry }: {
   access: Exclude<AccessState, { state: "approved" }>;
   onAuthenticated: (user: AccessUser) => void;
   onSignedOut: () => void;
+  onRetry: () => void;
 }) {
   const unrequested = access.state === "unrequested";
   const pending = access.state === "pending";
@@ -752,6 +753,7 @@ function AccessGate({ access, onAuthenticated, onSignedOut }: {
   const [adminCode, setAdminCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
+  const [formNotice, setFormNotice] = useState("");
   const showApplication = unrequested || rejected;
   // 초기 관리자 코드를 입력한 경우는 서버가 ADMIN_EMAILS 대조로 판정한다.
   // 여기서 도메인만 보고 미리 막으면 최초 관리자가 가입 자체를 못 한다.
@@ -767,6 +769,7 @@ function AccessGate({ access, onAuthenticated, onSignedOut }: {
     }
     setSubmitting(true);
     setFormError("");
+    setFormNotice("");
     try {
       const response = await fetch(registering ? "/api/auth/register" : "/api/auth/login", {
         method: "POST",
@@ -782,7 +785,13 @@ function AccessGate({ access, onAuthenticated, onSignedOut }: {
             }
           : { email: email.trim(), password }),
       });
-      const payload = await response.json() as { user?: AccessUser; error?: { message?: string } };
+      const payload = await response.json() as { user?: AccessUser; verificationRequired?: boolean; error?: { message?: string } };
+      if (registering && response.ok && payload.verificationRequired) {
+        setPassword("");
+        setAdminCode("");
+        setFormNotice("인증 메일을 보냈습니다. 받은 편지함에서 링크를 열어 이메일 인증을 완료해 주세요.");
+        return;
+      }
       if (!response.ok || !payload.user) {
         throw new Error(payload.error?.message || (registering ? "가입 신청을 처리하지 못했습니다." : "로그인하지 못했습니다."));
       }
@@ -856,6 +865,7 @@ function AccessGate({ access, onAuthenticated, onSignedOut }: {
               <details className="admin-bootstrap"><summary>초기 관리자 계정 설정</summary><label><span>관리자 초기 설정 코드</span><input type="password" value={adminCode} onChange={(event) => setAdminCode(event.target.value)} autoComplete="one-time-code" maxLength={256} placeholder="관리자 이메일인 경우에만 입력" /></label></details>
             </>}
             {formError && <p className="form-error" role="alert">{formError}</p>}
+            {formNotice && <p className="field-hint" role="status">{formNotice}</p>}
             <button className="button button-primary" type="submit" disabled={submitting || !email.trim() || !password || (authMode === "register" && (!displayName.trim() || !department.trim()))}>{submitting ? "처리 중" : authMode === "register" ? "이메일 가입 신청" : "로그인"}</button>
           </form>
         </>}
@@ -867,9 +877,10 @@ function AccessGate({ access, onAuthenticated, onSignedOut }: {
           <button className="button button-primary" type="submit" disabled={submitting || !department.trim()}>{submitting ? "신청 중" : rejected ? "가입 재신청" : "이메일 가입 신청"}</button>
         </form>}
         <div className="access-gate-actions">
-              {(pending || access.state === "error") && <button className="button button-primary" type="button" onClick={() => window.location.reload()}>가입 승인 상태 확인</button>}
+              {(pending || access.state === "error") && <button className="button button-primary" type="button" onClick={onRetry}>{access.state === "error" ? "연결 다시 확인" : "가입 승인 상태 확인"}</button>}
           {(unrequested || pending || rejected) && <button className="button button-secondary" type="button" disabled={submitting} onClick={signOut}>로그아웃</button>}
         </div>
+        {access.state === "error" && access.traceId && <small className="access-trace">문의 시 추적 번호: {access.traceId}</small>}
       </section>
     </main>
   );
@@ -904,6 +915,7 @@ export function AgentPortal() {
     detail: "Health API 응답을 기다리고 있습니다.",
   });
   const [access, setAccess] = useState<AccessState>({ state: "checking" });
+  const [accessCheckVersion, setAccessCheckVersion] = useState(0);
   const [activityDashboard, setActivityDashboard] = useState<ActivityDashboard>({
     items: [],
     suggestedQuestions: defaultChatSuggestions,
@@ -1012,12 +1024,23 @@ export function AgentPortal() {
     const controller = new AbortController();
     fetch("/api/auth/me", { signal: controller.signal, headers: { Accept: "application/json" } })
       .then(async (response) => {
-        const payload = await response.json() as { user?: AccessUser; error?: { message?: string } };
+        const payload = await response.json() as { user?: AccessUser; error?: { message?: string; code?: string; trace_id?: string; retryable?: boolean } };
         if (response.status === 401) {
           setAccess({ state: "signed_out" });
           return;
         }
-        if (!response.ok || !payload.user) throw new Error(payload.error?.message || "로그인 사용자 정보를 확인하지 못했습니다.");
+        if (!response.ok || !payload.user) {
+          const configurationError = payload.error?.code === "RUNTIME_CONFIGURATION_REQUIRED";
+          setAccess({
+            state: "error",
+            message: configurationError
+              ? "인증 서비스 연결을 준비 중입니다. 잠시 후 다시 확인해 주세요."
+              : payload.error?.message || "로그인 사용자 정보를 확인하지 못했습니다.",
+            traceId: payload.error?.trace_id || response.headers.get("X-Trace-Id") || undefined,
+            retryAfter: configurationError ? 30 : undefined,
+          });
+          return;
+        }
         setAccess({ state: payload.user.status, user: payload.user });
       })
       .catch((error: unknown) => {
@@ -1026,7 +1049,7 @@ export function AgentPortal() {
         }
       });
     return () => controller.abort();
-  }, []);
+  }, [accessCheckVersion]);
 
   useEffect(() => {
     if (!("user" in access)) return;
@@ -1534,6 +1557,7 @@ export function AgentPortal() {
           content: string;
           provider?: string;
           model?: string;
+          feedback?: number;
           citations?: GatewayResponse["citations"];
         }>;
         error?: { message?: string };
@@ -1548,6 +1572,7 @@ export function AgentPortal() {
         messageId: message.role === "assistant" ? message.id : undefined,
         provider: message.provider,
         model: message.model,
+        feedback: message.feedback === 1 || message.feedback === -1 ? message.feedback : undefined,
         citations: (message.citations || []).map(gatewayCitationToResult),
       })));
       setView("chat");
@@ -1630,7 +1655,7 @@ export function AgentPortal() {
     }
   };
 
-  if (access.state !== "approved") return <AccessGate access={access} onAuthenticated={(user) => setAccess({ state: user.status, user })} onSignedOut={() => setAccess({ state: "signed_out" })} />;
+  if (access.state !== "approved") return <AccessGate access={access} onAuthenticated={(user) => setAccess({ state: user.status, user })} onSignedOut={() => setAccess({ state: "signed_out" })} onRetry={() => { setAccess({ state: "checking" }); setAccessCheckVersion((version) => version + 1); }} />;
   const currentUser = access.user;
   const canUse = (permission: string, feature?: string) => {
     const permitted = currentUser.permissions?.length
@@ -1787,7 +1812,7 @@ function HomeView({ scope, setScope, cases, user, activity, onNavigate, onOpenCo
       <section className="hero-panel">
         <div className="hero-copy">
           <span className="hero-kicker">{todayLabel}</span>
-          <h1>좋은 하루예요, {user.displayName}님.<br /><em>업무를 어디서부터 시작할까요?</em></h1>
+          <h1>좋은 하루예요, {user.displayName}님. <em>업무를 어디서부터 시작할까요?</em></h1>
           <p>내 권한과 {user.department} 업무 Context를 반영해 안전하게 답변합니다.</p>
         </div>
         <div className="hero-stats" aria-label="오늘의 업무 현황">
@@ -2139,7 +2164,7 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
           {messages.map((message, index) => (
             <article className={`message ${message.role}${message.error ? " error" : ""}`} key={`${message.role}-${index}`}>
               <span className="message-avatar" aria-hidden="true">{message.role === "user" ? currentUser.displayName.slice(0, 1) : "AI"}</span>
-              <div><div className={"message-label" + (message.streamingResponse && message.streamingStage ? " streaming-stage" : "")}>{message.role === "user" ? currentUser.displayName : message.streamingResponse && message.streamingStage ? "ILJIN AI · " + message.streamingStage + (message.tokenCount ? " (" + message.tokenCount + " 토큰)" : "") : message.clarificationRequired ? "ILJIN AI · 답변 전 정보 확인" : message.provider === "cloudflare" ? "ILJIN AI · Cloud LLM" : "ILJIN AI · 로컬"}</div>{message.role === "assistant" && !message.error ? <>{message.streamingResponse && message.streamingSummary && <div className="answer-summary" aria-live="polite"><span>빠른 요약</span><p>{message.streamingSummary}</p></div>}<FormattedAnswer content={message.body} citations={message.citations ? buildCitationLookup(message.citations) : undefined} /></> : <p>{message.body}</p>}{message.role === "assistant" && message.clarificationRequired && message.followUpQuestions?.length && message.clarificationOriginalQuestion ? <ClarificationForm questions={message.followUpQuestions} originalQuestion={message.clarificationOriginalQuestion} disabled={streaming || messages.slice(index + 1).some((item) => item.role === "user")} onSubmit={onClarificationSubmit} /> : message.role === "assistant" && message.followUpQuestions && message.followUpQuestions.length > 0 && <div className="follow-up-questions"><span className="follow-up-label">정확한 답변을 위한 보충 질문</span>{message.followUpQuestions.map((fq, fqIndex) => <button key={fqIndex} type="button" className="follow-up-button" disabled={streaming} onClick={() => onFollowUpClick(fq.question)} title={fq.intent}>{fq.question}</button>)}</div>}{message.role === "assistant" && message.relatedQuestions && message.relatedQuestions.length > 0 && <div className="follow-up-questions related-questions"><span className="follow-up-label">연관 질문 추천</span>{message.relatedQuestions.map((rq, rqIndex) => <button key={rqIndex} type="button" className="follow-up-button related-question-button" disabled={streaming} onClick={() => onFollowUpClick(rq.question)} title={rq.intent}>{rq.question}</button>)}</div>}{message.role === "assistant" && !message.clarificationRequired && <div className="answer-actions"><button type="button" onClick={() => void copyAnswer(message, index)}>{copiedMessage === `${index}` ? "복사됨" : "답변 복사"}</button>{message.error && <button type="button" onClick={() => setQuery([...messages].slice(0, index).reverse().find((item) => item.role === "user")?.body || "")}>질문 다시 입력</button>}{message.messageId && <><button type="button" className={message.feedback === 1 ? "selected" : ""} disabled={Boolean(message.feedback)} onClick={() => onFeedback(message.messageId!, 1)}>도움됨</button><button type="button" className={message.feedback === -1 ? "selected" : ""} disabled={Boolean(message.feedback)} onClick={() => onFeedback(message.messageId!, -1)}>개선 필요</button></>}<span className="trace">{message.traceId ? `${message.model ?? "@cf/zai-org/glm-5.2"} · ${message.latencyMs ?? 0}ms · ${message.traceId}` : message.error ? "Gateway 연결 오류" : "저장된 응답"}</span></div>}</div>
+              <div><div className={"message-label" + (message.streamingResponse && message.streamingStage ? " streaming-stage" : "")}>{message.role === "user" ? currentUser.displayName : message.streamingResponse && message.streamingStage ? "ILJIN AI · " + message.streamingStage + (message.tokenCount ? " (" + message.tokenCount + " 토큰)" : "") : message.clarificationRequired ? "ILJIN AI · 답변 전 정보 확인" : message.provider === "cloudflare" ? "ILJIN AI · Cloud LLM" : "ILJIN AI · 로컬"}</div>{message.role === "assistant" && !message.error ? <>{message.streamingResponse && message.streamingSummary && <div className="answer-summary" aria-live="polite"><span>빠른 요약</span><p>{message.streamingSummary}</p></div>}<FormattedAnswer content={message.body} citations={message.citations ? buildCitationLookup(message.citations) : undefined} /></> : <p>{message.body}</p>}{message.role === "assistant" && message.clarificationRequired && message.followUpQuestions?.length && message.clarificationOriginalQuestion ? <ClarificationForm questions={message.followUpQuestions} originalQuestion={message.clarificationOriginalQuestion} disabled={streaming || messages.slice(index + 1).some((item) => item.role === "user")} onSubmit={onClarificationSubmit} /> : message.role === "assistant" && message.followUpQuestions && message.followUpQuestions.length > 0 && <div className="follow-up-questions"><span className="follow-up-label">정확한 답변을 위한 보충 질문</span>{message.followUpQuestions.map((fq, fqIndex) => <button key={fqIndex} type="button" className="follow-up-button" disabled={streaming} onClick={() => onFollowUpClick(fq.question)} title={fq.intent}>{fq.question}</button>)}</div>}{message.role === "assistant" && message.relatedQuestions && message.relatedQuestions.length > 0 && <div className="follow-up-questions related-questions"><span className="follow-up-label">연관 질문 추천</span>{message.relatedQuestions.map((rq, rqIndex) => <button key={rqIndex} type="button" className="follow-up-button related-question-button" disabled={streaming} onClick={() => onFollowUpClick(rq.question)} title={rq.intent}>{rq.question}</button>)}</div>}{message.role === "assistant" && !message.clarificationRequired && <div className="answer-actions"><button type="button" onClick={() => void copyAnswer(message, index)}>{copiedMessage === `${index}` ? "복사됨" : "답변 복사"}</button>{message.error && <button type="button" onClick={() => setQuery([...messages].slice(0, index).reverse().find((item) => item.role === "user")?.body || "")}>질문 다시 입력</button>}{message.messageId && <><button type="button" className={`answer-feedback-button ${message.feedback === 1 ? "selected positive" : ""}`} aria-label="답변 좋아요" title="좋아요" disabled={Boolean(message.feedback)} onClick={() => onFeedback(message.messageId!, 1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v10H4a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1h3Zm0 10h9.6a2 2 0 0 0 1.95-1.58l1.2-6A2 2 0 0 0 17.8 10H14l.7-3.5A2 2 0 0 0 12.75 4L8 10v10Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round" /></svg><span>좋아요</span></button><button type="button" className={`answer-feedback-button ${message.feedback === -1 ? "selected negative" : ""}`} aria-label="답변 싫어요" title="싫어요" disabled={Boolean(message.feedback)} onClick={() => onFeedback(message.messageId!, -1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14V4H4a1 1 0 0 1-1 1v8a1 1 0 0 1 1 1h3Zm0-10h9.6a2 2 0 0 1 1.95 1.58l1.2 6A2 2 0 0 1 17.8 14H14l.7 3.5A2 2 0 0 1 12.75 20L8 14V4Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round" /></svg><span>싫어요</span></button></>}<span className="trace">{message.traceId ? `${message.model ?? "@cf/zai-org/glm-5.2"} · ${message.latencyMs ?? 0}ms · ${message.traceId}` : message.error ? "Gateway 연결 오류" : "저장된 응답"}</span></div>}</div>
             </article>
           ))}
           {streaming && !messages.some((message) => message.streamingResponse) && <article className="message assistant streaming"><span className="message-avatar" aria-hidden="true">AI</span><div><div className="message-label streaming-stage">ILJIN AI · {generationStage}</div><p><span className="loading-line" /><span className="loading-line short" /></p></div></article>}
@@ -2654,6 +2679,7 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
     embedding_dimensions?: number;
     updated_at: string;
   };
+  type AssetSort = "updated" | "title" | "segments";
   type JobRow = { id: string; asset_id?: string; title?: string; status: string; stage: string; error_code?: string; attempt_count: number; completed_at?: string };
   type Health = { gateway?: { configured?: boolean; model?: string }; rag?: { d1Configured?: boolean; r2Configured?: boolean; embeddingConfigured?: boolean; rerankConfigured?: boolean; embeddingModel?: string; rerankModel?: string; embeddingProvider?: string; rerankProvider?: string } };
   type QualityGate = { id: string; label: string; passed: boolean; value: number; unit: string; evidence: string };
@@ -2675,6 +2701,7 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
   const [jobActionId, setJobActionId] = useState("");
   const [assetQuery, setAssetQuery] = useState("");
   const [assetStatus, setAssetStatus] = useState("all");
+  const [assetSort, setAssetSort] = useState<AssetSort>("updated");
   const [lastSyncedAt, setLastSyncedAt] = useState<Date>();
   const [activeSection, setActiveSection] = useState<AdminSection>("overview");
 
@@ -2793,11 +2820,29 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
   const failedJobs = jobs.filter((job) => job.status === "failed").length;
   const pendingAccess = accessRequests.filter((user) => user.status === "pending").length;
   const segmentCount = assets.reduce((sum, asset) => sum + Number(asset.segment_count || 0), 0);
-  const filteredAssets = assets.filter((asset) => {
-    const query = assetQuery.trim().toLocaleLowerCase("ko-KR");
-    if (query && !asset.title.toLocaleLowerCase("ko-KR").includes(query)) return false;
-    return assetStatus === "all" || asset.status === assetStatus;
-  });
+  const assetStatusLabel: Record<string, string> = { indexed: "색인 완료", queued: "색인 대기", processing: "처리 중", failed: "색인 오류" };
+  const classificationLabel: Record<string, string> = { public: "공개", internal: "사내", confidential: "기밀" };
+  const sourceLabel: Record<string, string> = { upload: "직접 업로드", image: "이미지", "requirements-seed": "기본 문서", "file-link": "파일 링크", "r2-folder": "R2 폴더" };
+  const formatAssetDate = (value: string) => {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "시간 정보 없음" : date.toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  };
+  const formatAssetSize = (size?: number) => {
+    if (!size) return "원문 크기 없음";
+    if (size < 1024 * 1024) return `${Math.max(1, Math.ceil(size / 1024)).toLocaleString("ko-KR")} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  };
+  const filteredAssets = assets
+    .filter((asset) => {
+      const query = assetQuery.trim().toLocaleLowerCase("ko-KR");
+      if (query && !`${asset.title} ${asset.source_type} ${asset.classification}`.toLocaleLowerCase("ko-KR").includes(query)) return false;
+      return assetStatus === "all" || asset.status === assetStatus;
+    })
+    .sort((left, right) => {
+      if (assetSort === "title") return left.title.localeCompare(right.title, "ko-KR");
+      if (assetSort === "segments") return Number(right.segment_count || 0) - Number(left.segment_count || 0);
+      return Date.parse(right.updated_at) - Date.parse(left.updated_at);
+    });
   const sectionAnchors: Record<AdminSection, string> = {
     overview: "admin-platform",
     access: "admin-access",
@@ -2855,7 +2900,7 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
       <div className="admin-grid" id="admin-assets">
         <section className="panel"><div className="panel-title"><div><span className="section-kicker">SERVICE HEALTH</span><h2>RAG 구성요소</h2></div><span className={`status-pill ${services.every(([, ready]) => ready) ? "status-완료" : "status-부분-완료"}`}>{services.every(([, ready]) => ready) ? "준비" : "확인 필요"}</span></div><div className="service-list">{services.map(([name, ready, detail]) => <div key={name}><span className={`status-dot ${ready ? "" : "status-dot-warning"}`} /><strong>{name}</strong><span>{ready ? "연결" : "미설정"}</span><small>{detail}</small></div>)}</div></section>
         <section className="panel"><div className="panel-title"><div><span className="section-kicker">QUALITY GATE</span><h2>실시간 검증 상태</h2></div><span className={`status-pill ${qualityGates.length > 0 && qualityGates.every((gate) => gate.passed) ? "status-완료" : "status-부분-완료"}`}>{qualityGates.filter((gate) => gate.passed).length}/{qualityGates.length || 6} 통과</span></div><div className="quality-list">{qualityGates.map((gate) => <div key={gate.id}><div><strong>{gate.label}</strong><span>{gate.evidence}</span></div><progress value={gate.passed ? 100 : 0} max="100">{gate.passed ? "100%" : "0%"}</progress><small>{gate.value} {gate.unit}</small></div>)}</div></section>
-         <section className="panel table-wrap"><div className="panel-title"><div><span className="section-kicker">ASSETS</span><h2>최근 문서 자산</h2></div><div className="admin-table-tools"><input className="table-input" value={assetQuery} onChange={(event) => setAssetQuery(event.target.value)} placeholder="문서명 검색" aria-label="문서명 검색" /><select className="table-select" value={assetStatus} onChange={(event) => setAssetStatus(event.target.value)} aria-label="문서 상태 필터"><option value="all">전체 상태</option><option value="indexed">indexed</option><option value="queued">queued</option><option value="failed">failed</option></select><span>{filteredAssets.length}/{assets.length}건</span></div></div><table><caption className="sr-only">최근 문서 자산</caption><thead><tr><th>문서</th><th>등급</th><th>상태</th><th>벡터</th><th>원문</th><th>관리</th></tr></thead><tbody>{filteredAssets.slice(0, 6).map((asset) => <tr key={asset.id}><td><strong>{asset.title}</strong><small className="table-subtext">{asset.segment_count} segments</small></td><td>{asset.classification}</td><td>{asset.status}</td><td>{asset.embedding_dimensions ? `${asset.embedding_dimensions}D` : "—"}<small className="table-subtext">{asset.embedding_model || "미생성"}</small></td><td>{asset.original_uploaded_at ? <a className="text-button" href={`/api/v1/assets/${encodeURIComponent(asset.id)}/original`}>Storage 원문</a> : "—"}{asset.original_size ? <small className="table-subtext">{Math.max(1, Math.ceil(asset.original_size / 1024)).toLocaleString("ko-KR")}KB</small> : null}</td><td><div className="review-actions"><button type="button" className="text-button" disabled={assetActionId === asset.id} onClick={() => void manageAsset(asset, "reindex")}>{assetActionId === asset.id ? "처리 중" : "재색인"}</button><button type="button" className="text-button" disabled={assetActionId === asset.id} onClick={() => void manageAsset(asset, "delete")}>삭제</button></div></td></tr>)}{!filteredAssets.length && <tr><td colSpan={6}>조건에 맞는 문서가 없습니다.</td></tr>}</tbody></table></section>
+         <section className="panel knowledge-assets-panel" aria-labelledby="knowledge-assets-title"><div className="panel-title knowledge-assets-panel__heading"><div><span className="section-kicker">KNOWLEDGE ASSETS</span><h2 id="knowledge-assets-title">문서 자산 현황</h2><p className="panel-description">문서의 색인 상태와 접근 범위, 최신 변경 정보를 한 화면에서 확인합니다.</p></div><div className="admin-table-tools"><input className="table-input" value={assetQuery} onChange={(event) => setAssetQuery(event.target.value)} placeholder="제목·출처·등급 검색" aria-label="문서 자산 검색" /><select className="table-select" value={assetSort} onChange={(event) => setAssetSort(event.target.value as AssetSort)} aria-label="문서 정렬"><option value="updated">최근 변경순</option><option value="title">제목순</option><option value="segments">세그먼트 많은 순</option></select></div></div><div className="asset-status-filters" role="group" aria-label="문서 상태 빠른 필터">{(["all", "indexed", "queued", "processing", "failed"] as const).map((status) => { const count = status === "all" ? assets.length : assets.filter((asset) => asset.status === status).length; if (status !== "all" && count === 0) return null; return <button key={status} type="button" className={assetStatus === status ? "active" : ""} aria-pressed={assetStatus === status} onClick={() => setAssetStatus(status)}><span>{status === "all" ? "전체" : assetStatusLabel[status]}</span><strong>{count}</strong></button>; })}</div><div className="knowledge-assets-list" aria-live="polite">{filteredAssets.slice(0, 8).map((asset) => <article key={asset.id} className={`knowledge-asset-card knowledge-asset-card--${asset.status}`}><div className="knowledge-asset-card__main"><div className="knowledge-asset-card__title"><div><h3>{asset.title}</h3><p>{sourceLabel[asset.source_type] || asset.source_type} · {asset.mime_type || "형식 정보 없음"}</p></div><span className="knowledge-asset-status">{assetStatusLabel[asset.status] || asset.status}</span></div><dl className="knowledge-asset-meta"><div><dt>접근 등급</dt><dd>{classificationLabel[asset.classification] || asset.classification}</dd></div><div><dt>대상 부서</dt><dd>{asset.department_scope || "전체"}</dd></div><div><dt>색인 단위</dt><dd>{Number(asset.segment_count || 0).toLocaleString("ko-KR")} segments</dd></div><div><dt>최종 변경</dt><dd>{formatAssetDate(asset.updated_at)}</dd></div></dl><div className="knowledge-asset-detail"><span>벡터 {asset.embedding_dimensions ? `${asset.embedding_dimensions}D` : "미생성"}</span><span>{asset.embedding_model || "임베딩 모델 미생성"}</span><span>{formatAssetSize(asset.original_size)}</span></div></div><div className="knowledge-asset-card__actions">{asset.original_uploaded_at && <a className="text-button" href={`/api/v1/assets/${encodeURIComponent(asset.id)}/original`}>원문 열기</a>}<button type="button" className="text-button" disabled={assetActionId === asset.id} onClick={() => void manageAsset(asset, "reindex")}>{assetActionId === asset.id ? "처리 중" : "재색인"}</button><button type="button" className="text-button text-button-danger" disabled={assetActionId === asset.id} onClick={() => void manageAsset(asset, "delete")}>삭제</button></div></article>)}{!filteredAssets.length && <div className="knowledge-assets-empty"><strong>조건에 맞는 문서가 없습니다.</strong><span>검색어 또는 상태 필터를 조정해 보세요.</span></div>}</div><p className="knowledge-assets-panel__count">{filteredAssets.length}/{assets.length}건 표시{filteredAssets.length > 8 ? " · 최근 8건만 표시" : ""}</p></section>
          <section className="panel table-wrap"><div className="panel-title"><div><span className="section-kicker">INDEX JOBS</span><h2>최근 인덱싱 작업</h2></div><span>{failedJobs ? `실패 ${failedJobs}` : "정상"}</span></div><table><caption className="sr-only">최근 인덱싱 작업</caption><thead><tr><th>문서</th><th>단계</th><th>상태</th><th>시도</th><th>작업</th></tr></thead><tbody>{jobs.slice(0, 6).map((job) => <tr key={job.id}><td><strong>{job.title || job.id}</strong>{job.error_code && <small className="table-subtext">오류 코드 · {job.error_code}</small>}</td><td>{job.stage}</td><td>{job.status}</td><td>{job.attempt_count}</td><td>{job.status === "failed" ? <button type="button" className="text-button" disabled={jobActionId === job.id} onClick={() => void retryJob(job)}>{jobActionId === job.id ? "재시도 중" : "재시도"}</button> : "—"}</td></tr>)}{!jobs.length && <tr><td colSpan={5}>인덱싱 작업이 없습니다.</td></tr>}</tbody></table></section>
       </div>
       </>}
@@ -3017,8 +3062,8 @@ function ScheduleView() {
   const pausedCount = tasks.length - activeCount;
 
   return (
-    <div className="schedule-view">
-      <div className="schedule-header">
+    <div className="view-stack schedule-view">
+      <div className="page-heading schedule-header">
         <div>
           <span className="section-kicker">SCHEDULE</span>
           <h1>스케줄 관리</h1>

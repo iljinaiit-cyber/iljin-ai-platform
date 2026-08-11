@@ -1,8 +1,8 @@
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$projectName = "iljin-ai-works"
-$bucketName = "iljin-ai-works-originals"
+$projectName = "iljin-ai"
+$bucketName = "iljin-ai-originals"
 $envFile = Join-Path $PSScriptRoot "..\.env.local"
 $requiredSecrets = @(
   "BRAVE_SEARCH_API_KEY"

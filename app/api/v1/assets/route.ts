@@ -1,9 +1,18 @@
-import { ingestDocument, listAssets } from "../../../../lib/rag";
+import { beginQueuedIngest, ingestDocument, listAssets } from "../../../../lib/rag";
 import { resolvePrincipal } from "../../../../lib/identity";
 import { authorizeFeature } from "../../../../lib/admin-governance";
 import { analyzeMultimodalFile, isMultimodalFile } from "../../../../lib/multimodal";
 import { attachConversationAsset } from "../../../../lib/conversations";
+import { getRuntimeEnv } from "../../../../lib/runtime-env";
 import { fail, newTraceId, ok } from "../../_shared";
+
+async function queueDocument(input: Parameters<typeof beginQueuedIngest>[0]) {
+  const queue = getRuntimeEnv().INDEX_QUEUE;
+  if (!queue) return null;
+  const result = await beginQueuedIngest(input);
+  if (result.jobId) await queue.send({ assetId: result.assetId, jobId: result.jobId, offset: 0 });
+  return result;
+}
 
 export async function GET(request: Request) {
   const traceId = newTraceId();
@@ -27,13 +36,28 @@ export async function POST(request: Request) {
         return ok({ error: { code: "INVALID_FILE", message: "업로드할 파일이 필요합니다." } }, traceId, { status: 400 });
       }
       const originalData = await file.arrayBuffer();
+      const temporaryConversationId = form.get("retention") === "temporary"
+        ? String(form.get("conversation_id") || "")
+        : "";
+      const queued = await queueDocument({
+        title: String(form.get("title") || file.name),
+        mimeType: file.type || "application/octet-stream",
+        sourceType: file.type.startsWith("image/") ? "image" : "upload",
+        classification: String(form.get("classification") || "internal") as "public" | "internal" | "confidential",
+        departmentScope: String(form.get("department_scope") || "").split(",").map((item) => item.trim()).filter(Boolean),
+        tenantId: principal.tenantId,
+        ownerEmail: principal.email,
+        originalData,
+        deduplicate: !temporaryConversationId,
+      });
+      if (queued) {
+        if (temporaryConversationId) await attachConversationAsset(principal, temporaryConversationId, queued.assetId);
+        return ok(queued, traceId, { status: queued.status === "indexed" ? 200 : 202 });
+      }
       const multimodal = isMultimodalFile(file);
       const analysis = multimodal
         ? await analyzeMultimodalFile(file, originalData)
         : { markdown: new TextDecoder().decode(originalData), regions: [] };
-      const temporaryConversationId = form.get("retention") === "temporary"
-        ? String(form.get("conversation_id") || "")
-        : "";
       const result = await ingestDocument({
         title: String(form.get("title") || file.name),
         content: analysis.markdown,
@@ -61,6 +85,19 @@ export async function POST(request: Request) {
       classification?: "public" | "internal" | "confidential";
       departmentScope?: string[]; deduplicate?: boolean;
     };
+    const originalData = new TextEncoder().encode(body.content ?? "").buffer as ArrayBuffer;
+    const queued = await queueDocument({
+      title: body.title ?? "",
+      mimeType: body.mimeType || "text/plain",
+      sourceType: body.sourceType,
+      classification: body.classification,
+      departmentScope: body.departmentScope,
+      deduplicate: body.deduplicate,
+      tenantId: principal.tenantId,
+      ownerEmail: principal.email,
+      originalData,
+    });
+    if (queued) return ok(queued, traceId, { status: queued.status === "indexed" ? 200 : 202 });
     // 필드를 명시적으로 옮긴다. 스프레드로 통과시키면 클라이언트가 tenantId·
     // ownerEmail 같은 서버 결정 항목을 덮어쓸 수 있다.
     return ok(await ingestDocument({

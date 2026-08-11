@@ -2,12 +2,12 @@
 
 ## 현재 배포
 
-- Pages 프로젝트: `iljin-ai-works`
-- 기본 주소: `https://iljin-ai-works.pages.dev`
+- Pages 프로젝트: `iljin-ai`
+- 기본 주소: `https://iljin-ai.pages.dev`
 - Production branch: `main`
 - 프론트엔드: Cloudflare Pages 정적 자산
 - SSR/API: Pages Advanced Mode의 `_worker.js` (Cloudflare Workers 런타임)
-- D1: `iljin-ai-works-db`, binding `DB`, APAC
+- D1: `iljin-ai-db`, binding `DB`, APAC
 - R2: 계정에서 아직 활성화되지 않음
 
 이 구조는 화면과 `/api/*`를 같은 Origin에서 제공하므로 CORS 설정이나 로그인 쿠키의 별도 도메인 처리가 필요 없다.
@@ -35,7 +35,7 @@ dist/pages/
 
 1. Cloudflare 계정에 보유 도메인을 Zone으로 추가하고 네임서버를 활성화한다.
 2. 사용할 호스트명을 확정한다. 권장값은 `ai.<보유도메인>`이다.
-3. Cloudflare Dashboard의 **Workers & Pages → iljin-ai-works → Custom domains**에서 호스트명을 추가한다.
+3. Cloudflare Dashboard의 **Workers & Pages → iljin-ai → Custom domains**에서 호스트명을 추가한다.
 4. Cloudflare가 생성한 DNS 레코드와 Universal SSL 인증서가 `Active`가 될 때까지 기다린다.
 5. 아래 검증을 수행한다.
 
@@ -56,7 +56,7 @@ Cloudflare Dashboard에서 R2를 활성화한 다음 버킷을 생성하고 `wra
 "r2_buckets": [
   {
     "binding": "BUCKET",
-    "bucket_name": "iljin-ai-works-documents"
+    "bucket_name": "iljin-ai-originals"
   }
 ]
 ```

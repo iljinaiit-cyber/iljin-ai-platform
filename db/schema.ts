@@ -85,6 +85,27 @@ export const authSessions = sqliteTable(
   ],
 );
 
+export const emailVerificationRequests = sqliteTable(
+  "email_verification_requests",
+  {
+    email: text("email").primaryKey(),
+    displayName: text("display_name").notNull(),
+    department: text("department").notNull(),
+    note: text("note"),
+    passwordHash: text("password_hash").notNull(),
+    passwordSalt: text("password_salt").notNull(),
+    passwordIterations: integer("password_iterations").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    sentCount: integer("sent_count").notNull().default(0),
+    lastSentAt: text("last_sent_at"),
+    bootstrapAdmin: integer("bootstrap_admin", { mode: "boolean" }).notNull().default(false),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [index("email_verification_requests_expires_idx").on(table.expiresAt)],
+);
+
 export const rolePermissions = sqliteTable(
   "role_permissions",
   {

@@ -56,6 +56,10 @@ async function handleMessage(message: QueueMessage<IndexJobMessage>, env: Env) {
       offset,
       windowSize: INGEST_CHUNK_WINDOW,
       extract: async (original, asset) => {
+        const isTextDocument = asset.mimeType.startsWith("text/")
+          || asset.mimeType === "application/json"
+          || /\.(txt|md|markdown|csv|json|ya?ml|html?)$/i.test(asset.title);
+        if (isTextDocument) return { markdown: new TextDecoder().decode(original), regions: [] };
         const analysis = await analyzeMultimodalBytes(asset.title, asset.mimeType, original);
         return { markdown: analysis.markdown, regions: analysis.regions };
       },

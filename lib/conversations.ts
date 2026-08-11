@@ -150,8 +150,10 @@ export async function getConversation(principal: Principal, conversationId: stri
   const [conversation, messages, sensitivity, attachments] = await Promise.all([
     db.prepare(`SELECT id, title, status, created_at, updated_at
       FROM conversations WHERE id = ?`).bind(conversationId).first(),
-    db.prepare(`SELECT id, role, content, provider, model, usage_json, citations_json, created_at
-      FROM messages WHERE conversation_id = ? ORDER BY created_at ASC`).bind(conversationId).all(),
+    db.prepare(`SELECT id, role, content, provider, model, usage_json, citations_json, created_at,
+        (SELECT rating FROM message_feedback f WHERE f.message_id = messages.id AND f.owner_email = ?
+          ORDER BY f.created_at DESC LIMIT 1) AS feedback
+      FROM messages WHERE conversation_id = ? ORDER BY created_at ASC`).bind(principal.email, conversationId).all(),
     getConversationSensitivity(principal, conversationId),
     listConversationAttachments(principal, conversationId),
   ]);

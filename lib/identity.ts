@@ -30,7 +30,7 @@ export type AccessIdentity = Principal & {
 export class AuthError extends Error {
   constructor(
     message: string,
-    public readonly status: 400 | 401 | 403 | 409 | 429,
+    public readonly status: 400 | 401 | 403 | 409 | 429 | 503,
     public readonly code:
       | "AUTH_UNAUTHORIZED"
       | "AUTH_FORBIDDEN"
@@ -43,7 +43,11 @@ export class AuthError extends Error {
       | "AUTH_BOOTSTRAP_REQUIRED"
       | "AUTH_BOOTSTRAP_NOT_CONFIGURED"
       | "AUTH_RATE_LIMITED"
-      | "AUTH_EMAIL_DOMAIN_NOT_ALLOWED",
+      | "AUTH_EMAIL_DOMAIN_NOT_ALLOWED"
+      | "AUTH_EMAIL_NOT_CONFIGURED"
+      | "AUTH_EMAIL_DELIVERY_FAILED"
+      | "AUTH_EMAIL_VERIFICATION_INVALID"
+      | "AUTH_EMAIL_VERIFICATION_EXPIRED",
   ) {
     super(message);
   }
@@ -63,6 +67,9 @@ const SESSION_COOKIE = "iljin_session";
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
 const PASSWORD_ITERATIONS = 100_000;
 const REGISTRATION_EMAIL_DOMAIN = "iljin.com";
+const VERIFICATION_TTL_MS = 15 * 60 * 1000;
+const VERIFICATION_RESEND_COOLDOWN_MS = 60 * 1000;
+const VERIFICATION_MAX_SENDS_PER_DAY = 3;
 
 function adminEmails() {
   return new Set(
@@ -112,6 +119,13 @@ export function ensureIdentitySchema() {
           created_at TEXT NOT NULL,
           FOREIGN KEY (email) REFERENCES user_profiles(email) ON DELETE CASCADE
         )`),
+        db.prepare(`CREATE TABLE IF NOT EXISTS email_verification_requests (
+          email TEXT PRIMARY KEY, display_name TEXT NOT NULL, department TEXT NOT NULL, note TEXT,
+          password_hash TEXT NOT NULL, password_salt TEXT NOT NULL, password_iterations INTEGER NOT NULL,
+          token_hash TEXT NOT NULL, expires_at TEXT NOT NULL, sent_count INTEGER NOT NULL DEFAULT 0,
+          last_sent_at TEXT, bootstrap_admin INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        )`),
       ]);
 
       const columns = await db.prepare("PRAGMA table_info(user_profiles)").all<{ name: string }>();
@@ -138,7 +152,9 @@ export function ensureIdentitySchema() {
         db.prepare("CREATE INDEX IF NOT EXISTS audit_logs_tenant_created_idx ON audit_logs(tenant_id, created_at)"),
         db.prepare("CREATE INDEX IF NOT EXISTS auth_sessions_email_idx ON auth_sessions(email)"),
         db.prepare("CREATE INDEX IF NOT EXISTS auth_sessions_expires_idx ON auth_sessions(expires_at)"),
+        db.prepare("CREATE INDEX IF NOT EXISTS email_verification_requests_expires_idx ON email_verification_requests(expires_at)"),
         db.prepare("DELETE FROM auth_sessions WHERE unixepoch(expires_at) <= unixepoch('now')"),
+        db.prepare("DELETE FROM email_verification_requests WHERE unixepoch(expires_at) <= unixepoch('now')"),
       ]);
     })().catch((error) => {
       identitySchemaPromise = undefined;
@@ -324,6 +340,52 @@ type CredentialRow = {
   password_iterations: number;
 };
 
+type EmailVerificationRow = {
+  email: string;
+  display_name: string;
+  department: string;
+  note: string | null;
+  password_hash: string;
+  password_salt: string;
+  password_iterations: number;
+  token_hash: string;
+  expires_at: string;
+  sent_count: number;
+  last_sent_at: string | null;
+  bootstrap_admin: number;
+  created_at: string;
+};
+
+async function sendVerificationEmail(input: { email: string; token: string; verificationUrl: string }) {
+  const runtime = getRuntimeEnv();
+  if (!runtime.RESEND_API_KEY || !runtime.RESEND_FROM_EMAIL) {
+    throw new AuthError("이메일 인증 서비스 설정이 필요합니다.", 503, "AUTH_EMAIL_NOT_CONFIGURED");
+  }
+  const url = new URL(input.verificationUrl);
+  url.searchParams.set("token", input.token);
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${runtime.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+      "User-Agent": "iljin-ai-works/1.0",
+      "Idempotency-Key": await digest(input.token),
+    },
+    body: JSON.stringify({
+      from: runtime.RESEND_FROM_EMAIL,
+      to: [input.email],
+      subject: "ILJIN AI Works 이메일 인증",
+      text: `아래 링크를 열어 이메일 인증을 완료해 주세요.\n\n${url}\n\n이 링크는 15분 동안 유효합니다. 본인이 요청하지 않았다면 이 메일을 무시해 주세요.`,
+      html: `<p>아래 링크를 열어 이메일 인증을 완료해 주세요.</p><p><a href="${url}">이메일 인증하기</a></p><p>이 링크는 15분 동안 유효합니다. 본인이 요청하지 않았다면 이 메일을 무시해 주세요.</p>`,
+    }),
+  });
+  if (response.ok) return;
+  if (response.status === 429) {
+    throw new AuthError("인증 메일 발송 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.", 429, "AUTH_RATE_LIMITED");
+  }
+  throw new AuthError("인증 메일을 발송하지 못했습니다. 잠시 후 다시 시도해 주세요.", 503, "AUTH_EMAIL_DELIVERY_FAILED");
+}
+
 export async function registerEmailAccount(input: {
   email: string;
   password: string;
@@ -331,6 +393,7 @@ export async function registerEmailAccount(input: {
   department: string;
   note?: string;
   adminCode?: string;
+  verificationUrl: string;
   traceId: string;
 }) {
   const email = normalizeEmail(input.email);
@@ -368,7 +431,7 @@ export async function registerEmailAccount(input: {
   if (configuredAdmin && !constantTimeEqual(input.adminCode || "", bootstrapToken)) {
     throw new AuthError("관리자 계정 초기 설정 코드가 필요합니다.", 403, "AUTH_BOOTSTRAP_REQUIRED");
   }
-  const adminApproved = configuredAdmin;
+  const bootstrapAdmin = configuredAdmin;
   const salt = randomBytes(16);
   let passwordHash: string;
   try {
@@ -376,8 +439,67 @@ export async function registerEmailAccount(input: {
   } catch (error) {
     throw new RegistrationSystemError("password_hash", error);
   }
+  const now = new Date();
+  const timestamp = now.toISOString();
+  const previous = await db.prepare(`SELECT email, display_name, department, note, password_hash, password_salt,
+    password_iterations, token_hash, expires_at, sent_count, last_sent_at, bootstrap_admin, created_at
+    FROM email_verification_requests WHERE email = ?`).bind(email).first<EmailVerificationRow>();
+  const lastSentAt = previous?.last_sent_at ? Date.parse(previous.last_sent_at) : 0;
+  const recentSendCount = lastSentAt && now.getTime() - lastSentAt < 24 * 60 * 60 * 1000 ? previous!.sent_count : 0;
+  if (lastSentAt && now.getTime() - lastSentAt < VERIFICATION_RESEND_COOLDOWN_MS) {
+    throw new AuthError("인증 메일은 1분 후 다시 요청할 수 있습니다.", 429, "AUTH_RATE_LIMITED");
+  }
+  if (recentSendCount >= VERIFICATION_MAX_SENDS_PER_DAY) {
+    throw new AuthError("오늘의 인증 메일 재발송 횟수를 초과했습니다.", 429, "AUTH_RATE_LIMITED");
+  }
+  const token = bytesToBase64Url(randomBytes(32));
+  const tokenHash = await digest(token);
+  const expiresAt = new Date(now.getTime() + VERIFICATION_TTL_MS).toISOString();
+  try {
+    await db.prepare(`INSERT INTO email_verification_requests
+      (email, display_name, department, note, password_hash, password_salt, password_iterations,
+       token_hash, expires_at, sent_count, last_sent_at, bootstrap_admin, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(email) DO UPDATE SET display_name = excluded.display_name, department = excluded.department,
+        note = excluded.note, password_hash = excluded.password_hash, password_salt = excluded.password_salt,
+        password_iterations = excluded.password_iterations, token_hash = excluded.token_hash,
+        expires_at = excluded.expires_at, bootstrap_admin = excluded.bootstrap_admin, updated_at = excluded.updated_at`).bind(
+          email, displayName, department, note, passwordHash, bytesToBase64Url(salt), PASSWORD_ITERATIONS,
+          tokenHash, expiresAt, previous?.sent_count || 0, previous?.last_sent_at || null,
+          bootstrapAdmin ? 1 : 0, previous?.created_at || timestamp, timestamp,
+        ).run();
+  } catch (error) {
+    throw new RegistrationSystemError("account_write", error);
+  }
+  try {
+    await sendVerificationEmail({ email, token, verificationUrl: input.verificationUrl });
+    await db.prepare(`UPDATE email_verification_requests SET sent_count = ?, last_sent_at = ?, updated_at = ?
+      WHERE email = ? AND token_hash = ?`).bind(recentSendCount + 1, timestamp, timestamp, email, tokenHash).run();
+  } catch (error) {
+    if (error instanceof AuthError) throw error;
+    throw new RegistrationSystemError("account_write", error);
+  }
+  return { verificationRequired: true as const };
+}
+
+export async function verifyEmailRegistration(input: { token: string; traceId: string }) {
+  if (!/^[A-Za-z0-9_-]{40,100}$/.test(input.token)) {
+    throw new AuthError("인증 링크가 올바르지 않습니다.", 400, "AUTH_EMAIL_VERIFICATION_INVALID");
+  }
+  await ensureIdentitySchema();
+  const db = getD1();
+  const tokenHash = await digest(input.token);
+  const request = await db.prepare(`SELECT email, display_name, department, note, password_hash, password_salt,
+    password_iterations, token_hash, expires_at, sent_count, last_sent_at, bootstrap_admin, created_at
+    FROM email_verification_requests WHERE token_hash = ?`).bind(tokenHash).first<EmailVerificationRow>();
+  if (!request) throw new AuthError("인증 링크가 유효하지 않거나 이미 사용되었습니다.", 400, "AUTH_EMAIL_VERIFICATION_INVALID");
+  if (Date.parse(request.expires_at) <= Date.now()) {
+    await db.prepare("DELETE FROM email_verification_requests WHERE email = ? AND token_hash = ?").bind(request.email, tokenHash).run();
+    throw new AuthError("인증 링크가 만료되었습니다. 가입 신청에서 새 메일을 요청해 주세요.", 400, "AUTH_EMAIL_VERIFICATION_EXPIRED");
+  }
   const now = new Date().toISOString();
   const tenantId = getRuntimeEnv().DEFAULT_TENANT_ID || "iljin";
+  const adminApproved = request.bootstrap_admin === 1;
   const role: UserRole = adminApproved ? "admin" : "user";
   const status: UserApprovalStatus = adminApproved ? "approved" : "pending";
   try {
@@ -386,49 +508,38 @@ export async function registerEmailAccount(input: {
         (email, tenant_id, display_name, department, groups_json, role, status,
          approval_requested_at, application_note, approved_by, approved_at, rejection_reason, created_at, updated_at)
         VALUES (?, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?, NULL, ?, ?)
-        ON CONFLICT(email) DO UPDATE SET display_name = excluded.display_name,
-          department = excluded.department, role = excluded.role, status = excluded.status,
-          approval_requested_at = excluded.approval_requested_at, application_note = excluded.application_note,
-          approved_by = excluded.approved_by, approved_at = excluded.approved_at,
-          rejection_reason = NULL, updated_at = excluded.updated_at`).bind(
-            email, tenantId, displayName, department, role, status, now, note,
-            adminApproved ? "system:bootstrap" : null,
-            adminApproved ? now : null,
-            now, now,
+        ON CONFLICT(email) DO UPDATE SET display_name = excluded.display_name, department = excluded.department,
+          role = excluded.role, status = excluded.status, approval_requested_at = excluded.approval_requested_at,
+          application_note = excluded.application_note, approved_by = excluded.approved_by,
+          approved_at = excluded.approved_at, rejection_reason = NULL, updated_at = excluded.updated_at`).bind(
+            request.email, tenantId, request.display_name, request.department, role, status, now, request.note,
+            adminApproved ? "system:bootstrap" : null, adminApproved ? now : null, now, now,
           ),
       db.prepare(`INSERT INTO auth_credentials
         (email, password_hash, password_salt, password_iterations, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?)`).bind(
-          email, passwordHash, bytesToBase64Url(salt), PASSWORD_ITERATIONS, now, now,
+          request.email, request.password_hash, request.password_salt, request.password_iterations, now, now,
         ),
       db.prepare(`INSERT INTO audit_logs
         (id, tenant_id, actor_email, action, resource_type, resource_id, trace_id, outcome, details_json, created_at)
         VALUES (?, ?, ?, ?, 'user_profile', ?, ?, 'success', ?, ?)`).bind(
           `aud_${crypto.randomUUID().replaceAll("-", "")}`,
           tenantId,
-          email,
+          request.email,
           adminApproved ? "access.bootstrap_admin" : "access.requested",
-          email,
+          request.email,
           input.traceId,
-          JSON.stringify({ department, role, selfRegistration: true }),
+          JSON.stringify({ department: request.department, role, selfRegistration: true, emailVerified: true }),
           now,
         ),
+      db.prepare("DELETE FROM email_verification_requests WHERE email = ? AND token_hash = ?").bind(request.email, tokenHash),
     ]);
   } catch (error) {
     throw new RegistrationSystemError("account_write", error);
   }
-  let identity: ProfileRow | null;
-  try {
-    identity = await findProfile(email);
-  } catch (error) {
-    throw new RegistrationSystemError("profile_read", error);
-  }
-  if (!identity) throw new RegistrationSystemError("profile_read", new Error("Registration profile was not found."));
-  try {
-    return { user: toAccessIdentity(identity), token: await createSession(email) };
-  } catch (error) {
-    throw new RegistrationSystemError("session_create", error);
-  }
+  const identity = await findProfile(request.email);
+  if (!identity) throw new RegistrationSystemError("profile_read", new Error("Verified profile was not found."));
+  return { user: toAccessIdentity(identity), token: await createSession(request.email) };
 }
 
 export async function loginEmailAccount(emailInput: string, password: string) {

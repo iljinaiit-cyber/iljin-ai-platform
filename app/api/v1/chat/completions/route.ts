@@ -6,7 +6,7 @@ import {
   maybeSummarizeConversation,
   recordExchange,
 } from "../../../../../lib/conversations";
-import { loadUserPreferences, updateUserPreferencesFromRequest } from "../../../../../lib/user-memory";
+import { buildFeedbackLearningContext, loadUserPreferences, updateUserPreferencesFromRequest } from "../../../../../lib/user-memory";
 import { getConversationSensitivity, recordLlmInvocation } from "../../../../../lib/llm-telemetry";
 import { searchInternet, type InternetSearchResponse } from "../../../../../lib/internet-search";
 import { answerOutputTokenBudget, answerPreferenceInstruction, answerReasoningTier } from "../../../../../lib/answer-format";
@@ -158,10 +158,12 @@ export async function POST(request: Request) {
     );
     const answerLength = body.summary_only ? "brief" : body.answer_length ?? storedPreferences.answerLength ?? "standard";
     const answerFormat = body.answer_format ?? storedPreferences.answerFormat ?? "paragraph";
+    const feedbackLearningContext = buildFeedbackLearningContext(storedPreferences);
     const reasoningTier = body.reasoning_tier === "swift" || body.reasoning_tier === "expert" || body.reasoning_tier === "deep"
       ? body.reasoning_tier
       : answerReasoningTier(answerLength);
     const preference = `${responsePreferenceInstruction(answerLength, answerFormat)}${body.summary_only ? "\n첫 줄에 질문에 대한 한 문장 요약만 작성하고, 추가 설명은 작성하지 마세요." : ""}`;
+    const preferenceWithLearning = `${preference}${feedbackLearningContext}`;
     const userContent = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
     const contextMessages = body.conversation_id
       ? [
@@ -183,7 +185,7 @@ export async function POST(request: Request) {
       try {
         const webSearch = await searchInternet(userContent, { principal, traceId, limit: INTERNET_GROUNDING_SOURCE_LIMIT });
         completion = await completeWithGateway(
-          [{ role: "user", content: buildConversationAwareInternetPrompt(userContent, webSearch, preference, contextMessages.slice(0, -1)) }],
+          [{ role: "user", content: buildConversationAwareInternetPrompt(userContent, webSearch, preferenceWithLearning, contextMessages.slice(0, -1)) }],
           traceId,
           { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength) },
           reasoningTier,
@@ -207,7 +209,7 @@ export async function POST(request: Request) {
         completion = await completeWithGateway(
           [...contextMessages, {
             role: "user",
-            content: `${userContent}\n\n${preference}\n\n실시간 웹 검색 결과를 가져올 수 없습니다. 최신 사실이라고 단정하지 말고, 일반 지식 범위에서 답변한 뒤 필요한 경우 사용자가 재검색할 수 있도록 안내하세요.`,
+            content: `${userContent}\n\n${preferenceWithLearning}\n\n실시간 웹 검색 결과를 가져올 수 없습니다. 최신 사실이라고 단정하지 말고, 일반 지식 범위에서 답변한 뒤 필요한 경우 사용자가 재검색할 수 있도록 안내하세요.`,
           }],
           traceId,
           { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength) },
@@ -222,7 +224,7 @@ export async function POST(request: Request) {
         principal,
         traceId,
         providerPolicy: { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength) },
-        responsePreferences: { length: answerLength, format: answerFormat },
+        responsePreferences: { length: answerLength, format: answerFormat, learningContext: feedbackLearningContext },
           reasoningTier,
         assetIds: attachmentAssetIds.length ? attachmentAssetIds : undefined,
       });

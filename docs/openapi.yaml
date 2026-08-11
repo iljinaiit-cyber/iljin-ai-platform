@@ -88,13 +88,34 @@ paths:
                 note: { type: string, maxLength: 1000 }
                 adminCode: { type: string, format: password, maxLength: 256 }
       responses:
-        '201':
-          description: 계정과 가입 신청 생성, 세션 쿠키 발급
+        '202':
+          description: Email verification request accepted; no account or session is created yet
         '400':
           $ref: '#/components/responses/BadRequest'
         '409':
           description: 이미 가입된 이메일
 
+  /api/auth/verify-email:
+    post:
+      tags: [Auth]
+      operationId: verifyEmailRegistration
+      summary: Verify an email token and create the pending account session
+      security: []
+      x-implementation-status: current
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, minLength: 40, maxLength: 100 }
+      responses:
+        '200':
+          description: Email verified and pending account created
+        '400':
+          $ref: '#/components/responses/BadRequest'
   /api/auth/login:
     post:
       tags: [Auth]

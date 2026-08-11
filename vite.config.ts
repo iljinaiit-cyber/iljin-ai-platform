@@ -38,6 +38,8 @@ const LOCAL_DEV_VARS = [
   "ALLOW_DEV_IDENTITY",
   "ADMIN_EMAILS",
   "ADMIN_BOOTSTRAP_TOKEN",
+  "RESEND_API_KEY",
+  "RESEND_FROM_EMAIL",
 ] as const;
 
 // .env.local is a local-development file. Its values must never be baked into a
