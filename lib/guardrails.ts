@@ -246,12 +246,30 @@ export async function readDailyBudgetUsage(tenantId: string) {
   const top = await db.prepare(`SELECT bucket_key, spent FROM ai_budget_buckets
     WHERE day = ? AND bucket_key LIKE ? ORDER BY spent DESC LIMIT 20`)
     .bind(day, `u:${tenantId}:%`).all<{ bucket_key: string; spent: number }>();
+  const [daily, organization] = await Promise.all([
+    db.prepare(`SELECT day, SUM(spent) AS spent FROM ai_budget_buckets
+      WHERE day >= date(?, '-6 days') AND bucket_key LIKE ?
+      GROUP BY day ORDER BY day ASC`).bind(day, `t:${tenantId}:%`).all<{ day: string; spent: number }>(),
+    db.prepare(`SELECT u.corp_id, u.dept_id, SUM(b.spent) AS spent
+      FROM ai_budget_buckets b
+      JOIN user_profiles u ON u.tenant_id = ?
+        AND b.bucket_key LIKE 'u:' || u.tenant_id || ':' || u.email || ':%'
+      WHERE b.day = ? AND b.bucket_key LIKE ?
+      GROUP BY u.corp_id, u.dept_id ORDER BY spent DESC`).bind(tenantId, day, `u:${tenantId}:%`)
+      .all<{ corp_id: string | null; dept_id: string | null; spent: number }>(),
+  ]);
 
   return {
     day,
     tenantSpent: Number(tenant?.spent || 0),
     tenantLimit: limits.perTenant,
     perUserLimit: limits.perUser,
+    daily: (daily.results ?? []).map((row) => ({ day: row.day, spent: Number(row.spent || 0) })),
+    organizationUsage: (organization.results ?? []).map((row) => ({
+      corpId: row.corp_id,
+      deptId: row.dept_id,
+      spent: Number(row.spent || 0),
+    })),
     topUsers: (top.results ?? []).map((r) => ({
       email: r.bucket_key.slice(`u:${tenantId}:`.length, -(day.length + 1)),
       spent: Number(r.spent || 0),

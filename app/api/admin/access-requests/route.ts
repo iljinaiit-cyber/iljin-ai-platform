@@ -19,7 +19,8 @@ export async function POST(request: Request) {
     const principal = await resolvePrincipal(request);
     const body = await request.json() as {
       email?: string; decision?: "approved" | "rejected";
-      department?: string; role?: "user" | "manager"; reason?: string;
+      department?: string; corpId?: string | null; deptId?: string | null;
+      role?: "user" | "manager"; reason?: string;
     };
     if (body.decision !== "approved" && body.decision !== "rejected") {
       return ok(
@@ -33,6 +34,8 @@ export async function POST(request: Request) {
       email: body.email ?? "",
       decision: body.decision,
       department: body.department,
+      corpId: body.corpId,
+      deptId: body.deptId,
       role: body.role,
       reason: body.reason,
       traceId,
@@ -42,3 +45,5 @@ export async function POST(request: Request) {
     return fail(error, traceId);
   }
 }
+
+export const PATCH = POST;

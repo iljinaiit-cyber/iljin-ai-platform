@@ -828,20 +828,30 @@ test("caps Cloudflare AI spend below $50 and reserves GLM 5.2 for deep reasoning
   assert.match(config, /@cf\/zai-org\/glm-4\.7-flash/);
 });
 
-test("connects file links and local or network folders to scheduled embedding ingestion", async () => {
-  const [component, rag, worker] = await Promise.all([
+test("connects file links, personal PC folders, and local databases to scheduled embedding ingestion", async () => {
+  const [sources, document, rag, worker, connectorRoute] = await Promise.all([
     readFile(new URL("app/components/IngestionSources.tsx", root), "utf8"),
+    readFile(new URL("app/components/DocumentIngest.tsx", root), "utf8"),
     readFile(new URL("lib/rag.ts", root), "utf8"),
     readFile(new URL("indexer/worker.ts", root), "utf8"),
+    readFile(new URL("app/api/v1/assets/connectors/route.ts", root), "utf8"),
   ]);
-  assert.match(component, /"file-link": "파일 링크"/);
-  assert.match(component, /"network-folder": "네트워크 폴더"/);
-  assert.match(component, /"pc-folder": "PC 폴더"/);
-  assert.match(component, /자동 임베딩 연결/);
+  assert.match(sources, /"file-link": "파일 링크"/);
+  assert.match(sources, /"network-folder": "네트워크 폴더"/);
+  assert.match(sources, /"pc-folder": "PC 폴더"/);
+  assert.match(sources, /자동 임베딩 연결/);
+  assert.match(rag, /source_type: .*"local-db"/);
+  assert.match(rag, /documents: \[\]/);
+  assert.match(document, /개인 PC 폴더/);
+  assert.match(document, /로컬 DB 자동 임베딩 연결/);
+  assert.match(document, /webkitdirectory/);
   assert.match(rag, /safeRemoteUrl/);
   assert.match(rag, /BLOCKED_SOURCE_HOST/);
   assert.match(rag, /MAX_INGESTION_FILE_BYTES/);
   assert.match(rag, /source\.source_type === "network-folder"/);
+  assert.match(rag, /source\.source_type === "local-db"/);
   assert.match(rag, /runIngestionSource/);
   assert.match(worker, /getDueIngestionSources/);
+  assert.match(connectorRoute, /documents\.manage/);
+  assert.match(connectorRoute, /local-db/);
 });

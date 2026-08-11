@@ -641,6 +641,8 @@ export async function reviewAccessRequest(input: {
   email: string;
   decision: "approved" | "rejected";
   department?: string;
+  corpId?: string | null;
+  deptId?: string | null;
   role?: "user" | "manager";
   reason?: string;
   traceId: string;
@@ -660,14 +662,31 @@ export async function reviewAccessRequest(input: {
   }
 
   const now = new Date().toISOString();
-  const department = (input.department || existing.department).trim().slice(0, 120) || existing.department;
+  const organizationSelection = input.decision === "approved" && (input.corpId !== undefined || input.deptId !== undefined);
+  let corpId = organizationSelection ? input.corpId || null : existing.corp_id;
+  let deptId = organizationSelection ? input.deptId || null : existing.dept_id;
+  let department = (input.department || existing.department).trim().slice(0, 120) || existing.department;
+  if (organizationSelection && deptId) {
+    const selectedDepartment = await getD1().prepare("SELECT corp_id, name FROM departments WHERE id = ? AND tenant_id = ? AND status = 'active'")
+      .bind(deptId, input.principal.tenantId).first<{ corp_id: string; name: string }>();
+    if (!selectedDepartment) throw new AuthError("선택한 부서를 찾을 수 없습니다.", 400, "AUTH_INVALID_INPUT");
+    if (corpId && corpId !== selectedDepartment.corp_id) throw new AuthError("선택한 부서와 법인이 일치하지 않습니다.", 400, "AUTH_INVALID_INPUT");
+    corpId = selectedDepartment.corp_id;
+    department = selectedDepartment.name;
+  } else if (organizationSelection && corpId) {
+    const selectedCorporation = await getD1().prepare("SELECT id FROM corporations WHERE id = ? AND tenant_id = ? AND status = 'active'")
+      .bind(corpId, input.principal.tenantId).first<{ id: string }>();
+    if (!selectedCorporation) throw new AuthError("선택한 법인을 찾을 수 없습니다.", 400, "AUTH_INVALID_INPUT");
+  }
   const role: UserRole = input.role === "manager" ? "manager" : "user";
   const reason = input.decision === "rejected" ? input.reason?.trim().slice(0, 500) || "관리자 검토 결과" : null;
   const db = getD1();
   await db.batch([
-    db.prepare(`UPDATE user_profiles SET department = ?, role = ?, status = ?, approved_by = ?,
+    db.prepare(`UPDATE user_profiles SET department = ?, corp_id = ?, dept_id = ?, role = ?, status = ?, approved_by = ?,
       approved_at = ?, rejection_reason = ?, updated_at = ? WHERE email = ? AND tenant_id = ?`).bind(
         department,
+        corpId,
+        deptId,
         role,
         input.decision,
         input.principal.email,
@@ -686,7 +705,7 @@ export async function reviewAccessRequest(input: {
         input.decision === "approved" ? "access.approved" : "access.rejected",
         email,
         input.traceId,
-        JSON.stringify({ department, role, reason }),
+        JSON.stringify({ department, corpId, deptId, role, reason }),
         now,
       ),
   ]);

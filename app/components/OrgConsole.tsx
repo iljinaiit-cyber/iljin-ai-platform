@@ -17,6 +17,8 @@ type ManagedUser = {
 type BudgetPolicy = { scope: string; scopeId: string; dailyLimit: number; updatedBy: string };
 type BudgetUsage = {
   day: string; tenantSpent: number; tenantLimit: number; perUserLimit: number;
+  daily: Array<{ day: string; spent: number }>;
+  organizationUsage: Array<{ corpId: string | null; deptId: string | null; spent: number }>;
   topUsers: Array<{ email: string; spent: number }>;
 };
 type CloudCost = {
@@ -29,7 +31,7 @@ type OntologyStats = {
   byKind: Array<{ kind: string; count: number }>;
 };
 
-type Tab = "org" | "members" | "budget" | "graph";
+type Tab = "org" | "members" | "usage" | "graph";
 
 const KIND_LABEL: Record<string, string> = {
   corporation: "법인", department: "부서", document_no: "문서번호",
@@ -143,7 +145,7 @@ export function OrgConsole({ currentEmail }: { currentEmail: string }) {
       </div>
 
       <div className="auth-mode-switch" role="tablist">
-        {([["org", "조직도"], ["members", `구성원 (${users.length})`], ["budget", "AI 사용량"], ["graph", "지식 그래프"]] as const).map(([id, label]) => (
+        {([["org", "조직도"], ["members", `구성원 (${users.length})`], ["usage", "사용량"], ["graph", "지식 그래프"]] as const).map(([id, label]) => (
           <button key={id} type="button" role="tab" aria-selected={tab === id}
             className={tab === id ? "selected" : ""} onClick={() => setTab(id)}>{label}</button>
         ))}
@@ -266,7 +268,7 @@ export function OrgConsole({ currentEmail }: { currentEmail: string }) {
             </div>
           )}
 
-          {tab === "budget" && usage && (
+          {tab === "usage" && usage && (
             <div className="governance-grid">
               <div>
                 {cloudCost && <>
@@ -289,6 +291,14 @@ export function OrgConsole({ currentEmail }: { currentEmail: string }) {
                     <small>{Math.round((usage.tenantSpent / Math.max(1, usage.tenantLimit)) * 100)}% 소진 · 기본 사용자 한도 {usage.perUserLimit.toLocaleString()}</small>
                   </li>
                 </ul>
+                <h3>최근 7일 추이</h3>
+                <ul className="governance-list usage-trend-list">
+                  {usage.daily.map((item) => {
+                    const max = Math.max(1, ...usage.daily.map((entry) => entry.spent));
+                    return <li key={item.day}><strong>{item.day}</strong><span className="usage-bar"><span style={{ width: `${Math.min(100, (item.spent / max) * 100)}%` }} /></span><small>{item.spent.toLocaleString()}</small></li>;
+                  })}
+                  {!usage.daily.length && <li><small>최근 7일 사용 기록이 없습니다.</small></li>}
+                </ul>
                 <h3>상위 사용자</h3>
                 <ul className="governance-list">
                   {usage.topUsers.map((u) => (
@@ -298,9 +308,18 @@ export function OrgConsole({ currentEmail }: { currentEmail: string }) {
                 </ul>
               </div>
               <div>
-                <h3>조직별 한도</h3>
+                <h3>조직별 사용량</h3>
+                <ul className="governance-list">
+                  {usage.organizationUsage.map((item) => {
+                    const department = departments.find((entry) => entry.id === item.deptId);
+                    const corporation = corporations.find((entry) => entry.id === item.corpId);
+                    return <li key={`${item.corpId || "unassigned"}:${item.deptId || "unassigned"}`}><strong>{department?.path || corporation?.name || "조직 미배정"}</strong><small>{item.spent.toLocaleString()}</small></li>;
+                  })}
+                  {!usage.organizationUsage.length && <li><small>조직별 사용 기록이 없습니다.</small></li>}
+                </ul>
+                <h3>조직별 한도 정책</h3>
                 <p className="agent-ops-note">
-                  부서 값이 법인보다 우선합니다. 0 을 넣으면 오버라이드가 해제되고 기본값으로 돌아갑니다.
+                  부서 한도가 법인 한도보다 우선합니다. 0을 입력하면 해당 정책을 해제하고 기본값으로 돌아갑니다.
                 </p>
                 <ul className="governance-list">
                   {departments.filter((d) => d.status !== "archived").map((d) => {

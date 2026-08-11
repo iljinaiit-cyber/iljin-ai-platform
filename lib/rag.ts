@@ -2303,7 +2303,7 @@ export async function retryIndexJob(principal: Principal, jobId: string) {
 export type IngestionSource = {
   id: string;
   name: string;
-  source_type: "r2-folder" | "http-server" | "file-link" | "network-folder" | "pc-folder";
+  source_type: "r2-folder" | "http-server" | "file-link" | "network-folder" | "pc-folder" | "local-db";
   connection_config: string;
   schedule_interval_minutes: number;
   classification: string;
@@ -2319,7 +2319,7 @@ export type IngestionSource = {
 };
 
 type IngestionSourceType = IngestionSource["source_type"];
-type IngestionConnectionConfig = { prefix?: string; endpoint?: string; url?: string; urls?: string[]; path?: string; headers?: Record<string, string>; filePatterns?: string[]; manifestMethod?: "GET" | "POST" };
+type IngestionConnectionConfig = { prefix?: string; endpoint?: string; url?: string; urls?: string[]; path?: string; database?: string; query?: string; headers?: Record<string, string>; filePatterns?: string[]; manifestMethod?: "GET" | "POST" };
 const MAX_INGESTION_FILE_BYTES = 50 * 1024 * 1024;
 const MAX_INGESTION_MANIFEST_BYTES = 2 * 1024 * 1024;
 const MAX_INGESTION_ITEMS = 100;
@@ -2367,6 +2367,12 @@ function validateIngestionConfig(sourceType: IngestionSourceType, input: unknown
   }
   normalized.endpoint = safeRemoteUrl(config.endpoint, "매니페스트 엔드포인트");
   if (sourceType === "network-folder" || sourceType === "pc-folder") { if (typeof config.path !== "string" || !config.path.trim() || config.path.length > 1024) throw new RagError("동기화할 폴더 경로가 필요합니다.", 400, "INVALID_SOURCE_CONFIG"); normalized.path = config.path.trim(); }
+  if (sourceType === "local-db") {
+    if (typeof config.database !== "string" || !config.database.trim() || config.database.length > 1024) throw new RagError("로컬 DB 경로 또는 연결 이름이 필요합니다.", 400, "INVALID_SOURCE_CONFIG");
+    if (config.query !== undefined && (typeof config.query !== "string" || config.query.length > 4000)) throw new RagError("로컬 DB 조회문은 4000자 이내여야 합니다.", 400, "INVALID_SOURCE_CONFIG");
+    normalized.database = config.database.trim();
+    normalized.query = typeof config.query === "string" ? config.query.trim() : undefined;
+  }
   if (config.manifestMethod !== undefined) { if (config.manifestMethod !== "GET" && config.manifestMethod !== "POST") throw new RagError("매니페스트 방식은 GET 또는 POST만 사용할 수 있습니다.", 400, "INVALID_SOURCE_CONFIG"); normalized.manifestMethod = config.manifestMethod; }
   return normalized;
 }
@@ -2577,23 +2583,36 @@ export async function runIngestionSource(sourceId: string, runtime: RuntimeEnv):
           if (didIngest) ingested++; else skipped++;
         } catch (e) { errors++; errorDetails.push(`${url}: ${e instanceof Error ? e.message : "unknown"}`); }
       }
-    } else if (source.source_type === "http-server" || source.source_type === "network-folder" || source.source_type === "pc-folder") {
+    } else if (source.source_type === "http-server" || source.source_type === "network-folder" || source.source_type === "pc-folder" || source.source_type === "local-db") {
       if (!config.endpoint) throw new RagError("매니페스트 엔드포인트가 구성되지 않았습니다.", 400, "ENDPOINT_NOT_CONFIGURED");
       const method = config.manifestMethod || "GET"; const manifestUrl = new URL(safeRemoteUrl(config.endpoint, "매니페스트 엔드포인트"));
       if (method === "GET" && config.path) manifestUrl.searchParams.set("path", config.path);
-      const response = await fetchWithTimeout(manifestUrl.toString(), { method, headers: { ...(config.headers || {}), ...(method === "POST" ? { "content-type": "application/json" } : {}) }, body: method === "POST" ? JSON.stringify({ path: config.path || undefined, filePatterns: config.filePatterns || undefined }) : undefined });
+      if (method === "GET" && config.database) manifestUrl.searchParams.set("database", config.database);
+      if (method === "GET" && config.query) manifestUrl.searchParams.set("query", config.query);
+      const response = await fetchWithTimeout(manifestUrl.toString(), { method, headers: { ...(config.headers || {}), ...(method === "POST" ? { "content-type": "application/json" } : {}) }, body: method === "POST" ? JSON.stringify({ path: config.path || undefined, database: config.database || undefined, query: config.query || undefined, filePatterns: config.filePatterns || undefined }) : undefined });
       if (!response.ok) throw new Error(`manifest_http_${response.status}`);
       const payload = JSON.parse(new TextDecoder().decode(await readResponseBytes(response, MAX_INGESTION_MANIFEST_BYTES))) as unknown;
-      const items = Array.isArray(payload) ? payload : Array.isArray(asRecord(payload).files) ? asRecord(payload).files as unknown[] : [];
-      if (!Array.isArray(payload) && !Array.isArray(asRecord(payload).files)) throw new RagError("매니페스트는 배열 또는 { files: [] } 형식이어야 합니다.", 400, "INVALID_SOURCE_MANIFEST");
+      const manifest = asRecord(payload);
+      const items = Array.isArray(payload) ? payload : Array.isArray(manifest.files) ? manifest.files as unknown[] : Array.isArray(manifest.documents) ? manifest.documents as unknown[] : [];
+      if (!Array.isArray(payload) && !Array.isArray(manifest.files) && !Array.isArray(manifest.documents)) throw new RagError("매니페스트는 배열, { files: [] } 또는 { documents: [] } 형식이어야 합니다.", 400, "INVALID_SOURCE_MANIFEST");
       for (const rawItem of items.slice(0, MAX_INGESTION_ITEMS)) {
-        const item = asRecord(rawItem); const url = safeRemoteUrl(item.url, "매니페스트 파일");
+        const item = asRecord(rawItem);
+        const inlineContent = typeof item.content === "string" ? item.content : undefined;
+        const url = inlineContent !== undefined ? `inline://${source.id}/${String(item.id || item.title || "document")}` : safeRemoteUrl(item.url, "매니페스트 파일");
         try {
-          // Connector credentials must not be forwarded to arbitrary file URLs.
-          const fileResponse = await fetchWithTimeout(url, {}, 15_000);
-          if (!fileResponse.ok) { errors++; errorDetails.push(`${url}: http_${fileResponse.status}`); continue; }
-          const bytes = await readResponseBytes(fileResponse, MAX_INGESTION_FILE_BYTES);
-          const mimeType = typeof item.mimeType === "string" ? inferMimeType(url, item.mimeType) : inferMimeType(url, fileResponse.headers.get("content-type") || undefined);
+          let bytes: Uint8Array;
+          let mimeType: string;
+          if (inlineContent !== undefined) {
+            bytes = new TextEncoder().encode(inlineContent);
+            if (bytes.byteLength > MAX_INGESTION_FILE_BYTES) throw new Error("response_too_large");
+            mimeType = typeof item.mimeType === "string" ? item.mimeType : "text/plain";
+          } else {
+            // Connector credentials must not be forwarded to arbitrary file URLs.
+            const fileResponse = await fetchWithTimeout(url, {}, 15_000);
+            if (!fileResponse.ok) { errors++; errorDetails.push(`${url}: http_${fileResponse.status}`); continue; }
+            bytes = await readResponseBytes(fileResponse, MAX_INGESTION_FILE_BYTES);
+            mimeType = typeof item.mimeType === "string" ? inferMimeType(url, item.mimeType) : inferMimeType(url, fileResponse.headers.get("content-type") || undefined);
+          }
           const title = typeof item.title === "string" && item.title.trim() ? item.title.trim().slice(0, 240) : url.split("?")[0].split("/").pop() || "untitled";
           const didIngest = await ingestBytesFromSource(source, url, bytes, mimeType, title);
           if (didIngest) ingested++; else skipped++;

@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import "./IngestionSources.css";
 
-type SourceType = "r2-folder" | "http-server" | "file-link" | "network-folder" | "pc-folder";
+type SourceType = "r2-folder" | "http-server" | "file-link" | "network-folder" | "pc-folder" | "local-db";
 type Source = {
   id: string; name?: string; source_type?: SourceType | string; connection_config?: string;
   enabled?: number | boolean; schedule_interval_minutes?: number;
@@ -14,7 +14,7 @@ type FormState = {
   method: "GET" | "POST"; scheduleMinutes: string; classification: "public" | "internal" | "confidential"; departmentScope: string;
 };
 const SOURCE_LABELS: Record<SourceType, string> = {
-  "file-link": "파일 링크", "network-folder": "네트워크 폴더", "pc-folder": "PC 폴더", "http-server": "HTTP 매니페스트", "r2-folder": "R2 폴더",
+  "file-link": "파일 링크", "network-folder": "네트워크 폴더", "pc-folder": "PC 폴더", "local-db": "로컬 DB", "http-server": "HTTP 매니페스트", "r2-folder": "R2 폴더",
 };
 const emptyForm: FormState = { name: "", sourceType: "file-link", links: "", endpoint: "", path: "", prefix: "", method: "GET", scheduleMinutes: "360", classification: "internal", departmentScope: "*" };
 

@@ -275,6 +275,8 @@ type AccessUser = {
   displayName: string;
   tenantId: string;
   department: string;
+  corpId: string | null;
+  deptId: string | null;
   role: "user" | "manager" | "admin";
   status: "unrequested" | "pending" | "approved" | "rejected";
   approvalRequestedAt?: string;
@@ -830,14 +832,14 @@ function AccessGate({ access, onAuthenticated, onSignedOut }: {
       <section className="access-gate-card" aria-live="polite">
         <Image src="/iljin-logo.png" alt="ILJIN" width={112} height={26} priority unoptimized />
         <span className={`access-state access-state-${access.state}`}>
-          {access.state === "checking" ? "로그인 확인 중" : access.state === "signed_out" ? "로그인 필요" : unrequested ? "가입 신청 필요" : pending ? "관리자 승인 대기" : rejected ? "가입 신청 반려" : "연결 오류"}
+          {access.state === "checking" ? "로그인 확인 중" : access.state === "signed_out" ? "로그인 필요" : unrequested ? "가입 신청 필요" : pending ? "가입 승인 대기" : rejected ? "가입 신청 반려" : "연결 오류"}
         </span>
         <h1>{unrequested ? "이메일 가입 신청서를 작성해 주세요" : pending ? "가입 신청이 접수되었습니다" : rejected ? "가입 신청을 다시 제출할 수 있습니다" : access.state === "checking" ? "로그인 상태를 확인하고 있습니다" : access.state === "signed_out" ? "ILJIN AI Works에 로그인해 주세요" : "사용자 상태를 확인하지 못했습니다"}</h1>
-        <p>{unrequested ? "희망 부서와 신청 사유를 제출하면 관리자가 검토합니다." : pending ? "관리자가 부서와 역할을 확인한 뒤 승인하면 모든 업무 기능을 사용할 수 있습니다." : rejected ? user?.rejectionReason || "신청 정보를 보완해 다시 제출해 주세요." : access.state === "checking" ? "잠시만 기다려 주세요." : access.state === "signed_out" ? "기존 계정으로 로그인하거나 @iljin.com 회사 이메일로 가입을 신청할 수 있습니다." : "message" in access ? access.message : "사용자 상태를 확인하지 못했습니다."}</p>
+        <p>{unrequested ? "희망 부서와 신청 사유를 제출하면 관리자가 검토합니다." : pending ? "관리자가 조직과 역할을 확인한 뒤 가입을 승인하면 모든 업무 기능을 사용할 수 있습니다." : rejected ? user?.rejectionReason || "신청 정보를 보완해 다시 제출해 주세요." : access.state === "checking" ? "잠시만 기다려 주세요." : access.state === "signed_out" ? "기존 계정으로 로그인하거나 @iljin.com 회사 이메일로 가입을 신청할 수 있습니다." : "message" in access ? access.message : "사용자 상태를 확인하지 못했습니다."}</p>
         <ol className="signup-steps" aria-label="가입 진행 단계">
           <li className={access.state === "signed_out" || access.state === "checking" ? "active" : "complete"}><span>1</span><div><strong>계정 등록</strong><small>이메일·비밀번호</small></div></li>
           <li className={unrequested ? "active" : pending || rejected ? "complete" : ""}><span>2</span><div><strong>가입 신청</strong><small>이름·부서·신청 사유</small></div></li>
-          <li className={pending ? "active" : rejected ? "rejected" : ""}><span>3</span><div><strong>관리자 승인</strong><small>역할·접근 권한</small></div></li>
+        <li className={pending ? "active" : rejected ? "rejected" : ""}><span>3</span><div><strong>가입 승인</strong><small>조직·역할 배정</small></div></li>
         </ol>
         {access.state === "signed_out" && <>
           <div className="auth-mode-switch" role="group" aria-label="로그인 방식">
@@ -865,7 +867,7 @@ function AccessGate({ access, onAuthenticated, onSignedOut }: {
           <button className="button button-primary" type="submit" disabled={submitting || !department.trim()}>{submitting ? "신청 중" : rejected ? "가입 재신청" : "이메일 가입 신청"}</button>
         </form>}
         <div className="access-gate-actions">
-          {(pending || access.state === "error") && <button className="button button-primary" type="button" onClick={() => window.location.reload()}>승인 상태 확인</button>}
+              {(pending || access.state === "error") && <button className="button button-primary" type="button" onClick={() => window.location.reload()}>가입 승인 상태 확인</button>}
           {(unrequested || pending || rejected) && <button className="button button-secondary" type="button" disabled={submitting} onClick={signOut}>로그아웃</button>}
         </div>
       </section>
@@ -924,6 +926,12 @@ export function AgentPortal() {
     const storedTheme = window.localStorage.getItem(`iljin-ai-theme:${authenticatedEmail}`);
     if (!isThemeColor(storedTheme)) return;
     const timer = setTimeout(() => setThemeColor(storedTheme), 0);
+    return () => clearTimeout(timer);
+  }, [authenticatedEmail]);
+
+  useEffect(() => {
+    const storedSidebar = authenticatedEmail ? window.localStorage.getItem(`iljin-ai-sidebar:${authenticatedEmail}`) : null;
+    const timer = setTimeout(() => setSidebarCollapsed(storedSidebar === "collapsed"), 0);
     return () => clearTimeout(timer);
   }, [authenticatedEmail]);
 
@@ -1593,6 +1601,12 @@ export function AgentPortal() {
     if (authenticatedEmail) window.localStorage.setItem(`iljin-ai-theme:${authenticatedEmail}`, nextTheme);
   };
 
+  const toggleSidebar = () => {
+    const nextCollapsed = !sidebarCollapsed;
+    setSidebarCollapsed(nextCollapsed);
+    if (authenticatedEmail) window.localStorage.setItem(`iljin-ai-sidebar:${authenticatedEmail}`, nextCollapsed ? "collapsed" : "expanded");
+  };
+
   const saveProfile = async (event: FormEvent) => {
     event.preventDefault();
     if (!profileDraft.displayName.trim() || !profileDraft.department.trim() || profileSaving) return;
@@ -1657,9 +1671,9 @@ export function AgentPortal() {
           <div className="security-state" title={apiStatus.detail}><span className={`status-dot status-dot-${apiStatus.state}`} /> {!sidebarCollapsed && apiStatus.label}</div>
           {!sidebarCollapsed && <p>권한·부서 Context 적용</p>}
         </div>
-        <button type="button" className="sidebar-toggle" aria-label={sidebarCollapsed ? "사이드바 펼치기" : "사이드바 접기"} onClick={() => setSidebarCollapsed((c) => !c)}>
+        <button type="button" className="sidebar-toggle" aria-controls="mobile-navigation" aria-expanded={!sidebarCollapsed} aria-label={sidebarCollapsed ? "사이드바 펼치기" : "사이드바 접기"} title={sidebarCollapsed ? "사이드바 펼치기" : "사이드바 접기"} onClick={toggleSidebar}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ transform: sidebarCollapsed ? "rotate(180deg)" : "none", transition: "transform 200ms ease" }}>
-            <path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <path d="M15 18l-6-6 6-6" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
           </svg>
         </button>
       </aside>
@@ -2588,7 +2602,7 @@ function AdminOverviewDashboard({
         <section className="admin-overview-dashboard__panel">
           <div className="panel-title"><div><span className="section-kicker">MANAGEMENT</span><h3>관리 현황</h3></div><span className="admin-overview-dashboard__period">실시간 집계</span></div>
           <div className="admin-overview-dashboard__rows">
-            <button type="button" onClick={() => onSelect("access")}><span>접근 요청 대기</span><strong>{value(usage?.users.pending)}</strong><small>{usage?.users.pending ? "검토가 필요합니다" : "대기 요청 없음"}</small></button>
+            <button type="button" onClick={() => onSelect("access")}><span>가입 승인 대기</span><strong>{value(usage?.users.pending)}</strong><small>{usage?.users.pending ? "가입 신청 검토가 필요합니다" : "대기 신청 없음"}</small></button>
             <button type="button" onClick={() => onSelect("knowledge")}><span>인덱싱 실패</span><strong>{value(management?.failedIndexJobs)}</strong><small>{management?.failedIndexJobs ? "재처리가 필요합니다" : "실패 작업 없음"}</small></button>
             <button type="button" onClick={() => onSelect("governance")}><span>Tool 승인 대기</span><strong>{value(management?.pendingApprovals)}</strong><small>{management?.pendingApprovals ? "승인 검토가 필요합니다" : "대기 승인 없음"}</small></button>
             <div><span>서비스·품질 준비도</span><strong>{readyServices}/5 · {passedGates}/{qualityGates.length || 0}</strong><small>연결 서비스 / 통과 Quality Gate</small></div>
@@ -2605,8 +2619,8 @@ function AdminOverviewDashboard({
 function AdminSectionNav({ activeSection, onSelect }: { activeSection: AdminSection; onSelect: (section: AdminSection) => void }) {
   const sections = [
     ["overview", "운영 개요"],
-    ["access", "접근 승인"],
-    ["organization", "조직·예산"],
+    ["access", "가입 승인"],
+    ["organization", "조직·사용량"],
     ["governance", "권한·기능"],
     ["knowledge", "지식베이스"],
   ] as const;
@@ -2643,10 +2657,14 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
   type JobRow = { id: string; asset_id?: string; title?: string; status: string; stage: string; error_code?: string; attempt_count: number; completed_at?: string };
   type Health = { gateway?: { configured?: boolean; model?: string }; rag?: { d1Configured?: boolean; r2Configured?: boolean; embeddingConfigured?: boolean; rerankConfigured?: boolean; embeddingModel?: string; rerankModel?: string; embeddingProvider?: string; rerankProvider?: string } };
   type QualityGate = { id: string; label: string; passed: boolean; value: number; unit: string; evidence: string };
+  type Corporation = { id: string; name: string; status: string; departmentCount: number; memberCount: number };
+  type Department = { id: string; corpId: string; name: string; status: string; path: string; depth: number };
   const [assets, setAssets] = useState<AssetRow[]>([]);
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [accessRequests, setAccessRequests] = useState<AccessUser[]>([]);
-  const [reviewDrafts, setReviewDrafts] = useState<Record<string, { department: string; role: "user" | "manager" }>>({});
+  const [corporations, setCorporations] = useState<Corporation[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [reviewDrafts, setReviewDrafts] = useState<Record<string, { department: string; corpId: string; deptId: string; role: "user" | "manager" }>>({});
   const [reviewingEmail, setReviewingEmail] = useState("");
   const [health, setHealth] = useState<Health>({});
   const [overview, setOverview] = useState<AdminOverviewData>();
@@ -2669,13 +2687,14 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
       return payload;
     };
     try {
-      const [assetData, jobData, accessData, healthData, qualityData, overviewData] = await Promise.all([
+      const [assetData, jobData, accessData, healthData, qualityData, overviewData, organizationData] = await Promise.all([
         checkedJson<{ assets?: AssetRow[] }>("/api/admin/assets"),
         checkedJson<{ jobs?: JobRow[] }>("/api/admin/index-jobs"),
         checkedJson<{ items?: AccessUser[] }>("/api/admin/access-requests"),
         checkedJson<Health>("/api/health"),
         checkedJson<{ gates?: QualityGate[] }>("/api/admin/quality-gates"),
         checkedJson<AdminOverviewData>("/api/admin/overview"),
+        checkedJson<{ corporations?: Corporation[]; departments?: Department[] }>("/api/admin/organization"),
       ]);
       setAssets(assetData.assets || []);
       setJobs(jobData.jobs || []);
@@ -2683,6 +2702,8 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
       setHealth(healthData);
       setOverview(overviewData);
       setQualityGates(qualityData.gates || []);
+      setCorporations(organizationData.corporations || []);
+      setDepartments(organizationData.departments || []);
       setLoadError("");
       setLastSyncedAt(new Date());
     } catch (error: unknown) {
@@ -2723,6 +2744,8 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
   const reviewAccess = async (user: AccessUser, decision: "approved" | "rejected") => {
     const draft = reviewDrafts[user.email] || {
       department: user.department,
+      corpId: user.corpId || "",
+      deptId: user.deptId || "",
       role: user.role === "manager" ? "manager" as const : "user" as const,
     };
     setReviewingEmail(user.email);
@@ -2735,15 +2758,17 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
           email: user.email,
           decision,
           department: draft.department,
+          corpId: draft.corpId || null,
+          deptId: draft.deptId || null,
           role: draft.role,
-          reason: decision === "rejected" ? "관리자 검토 결과 접근이 보류되었습니다." : undefined,
+          reason: decision === "rejected" ? "관리자 검토 결과 가입 신청이 반려되었습니다." : undefined,
         }),
       });
       const payload = await response.json() as { user?: AccessUser; error?: { message?: string } };
-      if (!response.ok || !payload.user) throw new Error(payload.error?.message || "접근 요청을 처리하지 못했습니다.");
+      if (!response.ok || !payload.user) throw new Error(payload.error?.message || "가입 신청을 처리하지 못했습니다.");
       setAccessRequests((items) => items.map((item) => item.email === user.email ? payload.user! : item));
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "접근 요청을 처리하지 못했습니다.");
+      setLoadError(error instanceof Error ? error.message : "가입 신청을 처리하지 못했습니다.");
     } finally {
       setReviewingEmail("");
     }
@@ -2792,7 +2817,7 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
     ["Reranker", health.rag?.rerankConfigured, `${health.rag?.rerankProvider || "cloudflare"} · ${health.rag?.rerankModel || "@cf/baai/bge-reranker-base"}`],
   ] as const;
   const issueItems = [
-    { label: "접근 승인 대기", value: pendingAccess, detail: pendingAccess ? "승인 검토 필요" : "대기 없음", tone: pendingAccess ? "warning" : "neutral", section: "access" },
+    { label: "가입 승인 대기", value: pendingAccess, detail: pendingAccess ? "가입 신청 검토 필요" : "대기 없음", tone: pendingAccess ? "warning" : "neutral", section: "access" },
     { label: "인덱싱 실패", value: failedJobs, detail: failedJobs ? "재시도 또는 원인 확인 필요" : "실패 작업 없음", tone: failedJobs ? "danger" : "neutral", section: "knowledge" },
     { label: "서비스 미설정", value: services.filter(([, ready]) => !ready).length, detail: services.some(([, ready]) => !ready) ? "연결 상태 확인 필요" : "모든 서비스 연결됨", tone: services.some(([, ready]) => !ready) ? "danger" : "neutral", section: "overview" },
     { label: "품질 게이트 미통과", value: qualityGates.filter((gate) => !gate.passed).length, detail: qualityGates.some((gate) => !gate.passed) ? "릴리스 승인 전 확인 필요" : "모든 게이트 통과", tone: qualityGates.some((gate) => !gate.passed) ? "warning" : "neutral", section: "knowledge" },
@@ -2811,14 +2836,14 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
       <AdminSectionNav activeSection={activeSection} onSelect={selectSection} />
       {activeSection === "overview" && <PlatformOperationsConsole />}
       {activeSection === "access" && <section className="panel access-review-panel" id="admin-access">
-        <div className="panel-title"><div><span className="section-kicker">ACCESS CONTROL</span><h2>사용자 접근 승인</h2></div><span className={`status-pill ${pendingAccess ? "status-승인-대기" : "status-승인-완료"}`}>{pendingAccess ? `${pendingAccess}건 대기` : "대기 없음"}</span></div>
-        <p className="panel-description">이메일 인증을 마치고 가입 신청을 제출한 사용자의 부서·사유·역할을 검토해 접근을 승인합니다.</p>
-        <div className="table-wrap"><table><caption className="sr-only">사용자 접근 승인 요청</caption><thead><tr><th>사용자</th><th>부서</th><th>역할</th><th>상태</th><th>승인 작업</th></tr></thead><tbody>
-          {accessRequests.length === 0 && <tr><td colSpan={5}>접근 요청이 없습니다.</td></tr>}
+        <div className="panel-title"><div><span className="section-kicker">REGISTRATION APPROVAL</span><h2>가입 승인</h2></div><span className={`status-pill ${pendingAccess ? "status-승인-대기" : "status-승인-완료"}`}>{pendingAccess ? `${pendingAccess}건 대기` : "대기 없음"}</span></div>
+        <p className="panel-description">가입 신청자의 법인·부서·사유·역할을 조직 마스터 기준으로 검토하고 승인합니다.</p>
+        <div className="table-wrap"><table><caption className="sr-only">가입 승인 신청 목록</caption><thead><tr><th>사용자</th><th>조직 배정</th><th>역할</th><th>상태</th><th>승인 작업</th></tr></thead><tbody>
+          {accessRequests.length === 0 && <tr><td colSpan={5}>가입 신청이 없습니다.</td></tr>}
           {accessRequests.map((user) => {
-            const draft = reviewDrafts[user.email] || { department: user.department, role: user.role === "manager" ? "manager" as const : "user" as const };
+            const draft = reviewDrafts[user.email] || { department: user.department, corpId: user.corpId || "", deptId: user.deptId || "", role: user.role === "manager" ? "manager" as const : "user" as const };
             const busy = reviewingEmail === user.email;
-            return <tr key={user.email}><td><strong>{user.displayName}</strong><small className="table-subtext">{user.email}</small>{user.applicationNote && <small className="table-subtext application-note">신청 사유 · {user.applicationNote}</small>}</td><td><input className="table-input" value={draft.department} onChange={(event) => setReviewDrafts((items) => ({ ...items, [user.email]: { ...draft, department: event.target.value } }))} aria-label={`${user.displayName} 부서`} /></td><td><select className="table-select" value={draft.role} onChange={(event) => setReviewDrafts((items) => ({ ...items, [user.email]: { ...draft, role: event.target.value as "user" | "manager" } }))} aria-label={`${user.displayName} 역할`}><option value="user">사용자</option><option value="manager">매니저</option></select></td><td><span className={`status-pill status-access-${user.status}`}>{user.status === "pending" ? "승인 대기" : user.status === "approved" ? "승인 완료" : "반려"}</span></td><td><div className="review-actions"><button className="button button-primary" type="button" disabled={busy || !draft.department.trim()} onClick={() => reviewAccess(user, "approved")}>{busy ? "처리 중" : "가입 승인"}</button><button className="button button-secondary" type="button" disabled={busy} onClick={() => reviewAccess(user, "rejected")}>반려</button></div></td></tr>;
+            return <tr key={user.email}><td><strong>{user.displayName}</strong><small className="table-subtext">{user.email}</small>{user.applicationNote && <small className="table-subtext application-note">신청 사유 · {user.applicationNote}</small>}</td><td><div className="approval-org-fields"><select className="table-select" value={draft.corpId} onChange={(event) => setReviewDrafts((items) => ({ ...items, [user.email]: { ...draft, corpId: event.target.value, deptId: "", department: "" } }))} aria-label={`${user.displayName} 법인`}><option value="">법인 선택</option>{corporations.filter((corporation) => corporation.status !== "archived").map((corporation) => <option key={corporation.id} value={corporation.id}>{corporation.name}</option>)}</select><select className="table-select" value={draft.deptId} onChange={(event) => { const department = departments.find((item) => item.id === event.target.value); setReviewDrafts((items) => ({ ...items, [user.email]: { ...draft, corpId: department?.corpId || draft.corpId, deptId: event.target.value, department: department?.name || "" } })); }} aria-label={`${user.displayName} 부서`} disabled={!draft.corpId}><option value="">부서 선택</option>{departments.filter((department) => department.status !== "archived" && department.corpId === draft.corpId).map((department) => <option key={department.id} value={department.id}>{department.path}</option>)}</select></div></td><td><select className="table-select" value={draft.role} onChange={(event) => setReviewDrafts((items) => ({ ...items, [user.email]: { ...draft, role: event.target.value as "user" | "manager" } }))} aria-label={`${user.displayName} 역할`}><option value="user">사용자</option><option value="manager">매니저</option></select></td><td><span className={`status-pill status-access-${user.status}`}>{user.status === "pending" ? "승인 대기" : user.status === "approved" ? "승인 완료" : "반려"}</span></td><td><div className="review-actions"><button className="button button-primary" type="button" disabled={busy || !draft.deptId} onClick={() => reviewAccess(user, "approved")}>{busy ? "처리 중" : "가입 승인"}</button><button className="button button-secondary" type="button" disabled={busy} onClick={() => reviewAccess(user, "rejected")}>반려</button></div></td></tr>;
           })}
         </tbody></table></div>
       </section>}
