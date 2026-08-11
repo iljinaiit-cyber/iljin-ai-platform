@@ -62,12 +62,15 @@ export function AgentTasksView() {
   );
 
   return (
-    <div className="view-stack agent-ops">
-      <section className="panel">
-        <div className="panel-title">
-          <div><span className="section-kicker">DATABASE RUN HISTORY</span><h2>업무 실행 이력</h2></div>
-          <span>{items.length}건</span>
+    <div className="view-stack agent-ops agent-ops-page">
+      <div className="page-heading agent-ops-heading">
+        <div>
+          <span className="section-kicker">AGENT RUNS</span>
+          <p>최근 실행된 업무와 현재 상태를 한 곳에서 확인하세요.</p>
         </div>
+        <span className="agent-ops-count">{items.length}건</span>
+      </div>
+      <section className="panel agent-ops-panel" aria-label="Agent 실행 목록">
 
         {loading ? <p className="agent-ops-note">불러오는 중…</p>
           : error ? <p className="agent-ops-error" role="alert">{error}</p>
@@ -131,12 +134,15 @@ export function ToolApprovalsView({ currentUser }: { currentUser: { email: strin
   };
 
   return (
-    <div className="view-stack agent-ops">
-      <section className="panel">
-        <div className="panel-title">
-          <div><span className="section-kicker">TOOL APPROVALS</span><h2>업무 Tool 승인</h2></div>
-          <span>{items.filter((a) => a.status === "pending").length}건 대기</span>
+    <div className="view-stack agent-ops agent-ops-page">
+      <div className="page-heading agent-ops-heading">
+        <div>
+          <span className="section-kicker">TOOL APPROVALS</span>
+          <p>실행 전 검토가 필요한 Tool 요청을 확인하고 처리하세요.</p>
         </div>
+        <span className="agent-ops-count">{items.filter((a) => a.status === "pending").length}건 대기</span>
+      </div>
+      <section className="panel agent-ops-panel" aria-label="Tool 승인 요청 목록">
 
         {!canDecide ? <p className="agent-ops-note">승인 처리는 관리자 또는 매니저만 가능합니다. 목록은 조회만 됩니다.</p> : null}
         <div aria-live="polite">

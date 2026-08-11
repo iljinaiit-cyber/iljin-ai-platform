@@ -1843,7 +1843,7 @@ h3 {
 
 .admin-section-nav {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -1907,6 +1907,11 @@ h3 {
   min-width: 0;
   gap: 18px;
   scroll-margin-top: 84px;
+}
+
+.admin-management-tab {
+  display: grid;
+  gap: 18px;
 }
 .admin-view {
   --admin-accent: var(--brand-700);
@@ -7639,6 +7644,25 @@ td {
 .schedule-subtitle {
   margin: 0;
   color: var(--muted);
+  line-height: 1.6;
+}
+
+.activity-page-heading {
+  align-items: flex-end;
+  margin: 0;
+  padding: 0 2px;
+}
+
+.activity-page {
+  width: 100%;
+  max-width: 1540px;
+  gap: 16px;
+}
+
+.activity-page-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
   line-height: 1.6;
 }
 

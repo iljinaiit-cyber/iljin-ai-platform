@@ -2,6 +2,36 @@
 .agent-ops-note { font-size: 13.5px; color: var(--muted, #5b6b85); margin: 10px 0 0; }
 .agent-ops-error { font-size: 13.5px; color: var(--danger); margin: 10px 0 0; }
 
+.agent-ops-page {
+  width: 100%;
+  max-width: 1540px;
+  gap: 16px;
+}
+
+.agent-ops-heading {
+  align-items: flex-end;
+  margin: 0;
+  padding: 0 2px;
+}
+
+.agent-ops-heading p {
+  margin: 0;
+  color: var(--muted, #5b6b85);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.agent-ops-count {
+  flex: 0 0 auto;
+  color: var(--muted, #5b6b85);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.agent-ops-panel {
+  min-width: 0;
+}
+
 .agent-run-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .agent-run { border: 1px solid var(--line, #e3eaf5); border-radius: 10px; padding: 12px 14px; }
 .agent-run--failed { border-color: var(--danger); background: color-mix(in srgb, var(--danger-soft) 72%, transparent); }

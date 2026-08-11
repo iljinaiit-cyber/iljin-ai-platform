@@ -2552,8 +2552,8 @@ function ActivityView({ onNavigate, onOpenConversation }: { onNavigate: (view: V
     else onNavigate(item.target === "documents" ? "search" : item.target);
   };
 
-  return <div className="view-stack">
-    <div className="page-heading"><div><h1 className="sr-only">내 활동</h1><p>최근 대화, 검색, Agent 실행과 승인 이력을 확인합니다.</p></div><a className="button button-secondary" href="/api/v1/activity?format=csv">활동 CSV 내보내기</a></div>
+  return <div className="view-stack activity-page">
+    <div className="page-heading activity-page-heading"><div><span className="section-kicker">ACTIVITY</span><h1 className="sr-only">내 활동</h1><p>최근 대화, 검색, Agent 실행과 승인 이력을 한 곳에서 확인하세요.</p></div><a className="button button-secondary" href="/api/v1/activity?format=csv">활동 CSV 내보내기</a></div>
     {error && <p className="form-error" role="alert">{error}</p>}
     <section className="panel table-wrap"><table><caption className="sr-only">최근 활동 목록</caption><thead><tr><th>유형</th><th>활동</th><th>일시</th><th>상태</th><th><span className="sr-only">작업</span></th></tr></thead><tbody>
       {!loading && items.length === 0 && <tr><td colSpan={5}>저장된 활동이 없습니다.</td></tr>}
@@ -2587,7 +2587,7 @@ function AdminIssueSummary({ items, onSelect }: {
   );
 }
 
-type AdminSection = "overview" | "access" | "organization" | "governance" | "knowledge";
+type AdminSection = "overview" | "access" | "management" | "knowledge";
 
 type AdminOverviewData = {
   generatedAt: string;
@@ -2667,7 +2667,7 @@ function AdminOverviewDashboard({
           <div className="admin-overview-dashboard__rows">
             <button type="button" onClick={() => onSelect("access")}><span>가입 승인 대기</span><strong>{value(usage?.users.pending)}</strong><small>{usage?.users.pending ? "가입 신청 검토가 필요합니다" : "대기 신청 없음"}</small></button>
             <button type="button" onClick={() => onSelect("knowledge")}><span>인덱싱 실패</span><strong>{value(management?.failedIndexJobs)}</strong><small>{management?.failedIndexJobs ? "재처리가 필요합니다" : "실패 작업 없음"}</small></button>
-            <button type="button" onClick={() => onSelect("governance")}><span>Tool 승인 대기</span><strong>{value(management?.pendingApprovals)}</strong><small>{management?.pendingApprovals ? "승인 검토가 필요합니다" : "대기 승인 없음"}</small></button>
+            <button type="button" onClick={() => onSelect("management")}><span>Tool 승인 대기</span><strong>{value(management?.pendingApprovals)}</strong><small>{management?.pendingApprovals ? "승인 검토가 필요합니다" : "대기 승인 없음"}</small></button>
             <div><span>서비스·품질 준비도</span><strong>{readyServices}/5 · {passedGates}/{qualityGates.length || 0}</strong><small>연결 서비스 / 통과 Quality Gate</small></div>
           </div>
         </section>
@@ -2683,8 +2683,7 @@ function AdminSectionNav({ activeSection, onSelect }: { activeSection: AdminSect
   const sections = [
     ["overview", "운영 개요"],
     ["access", "가입 승인"],
-    ["organization", "조직·사용량"],
-    ["governance", "권한·기능"],
+    ["management", "조직·권한 관리"],
     ["knowledge", "지식베이스"],
   ] as const;
 
@@ -2739,6 +2738,7 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
   const [assetActionId, setAssetActionId] = useState("");
   const [jobActionId, setJobActionId] = useState("");
   const [assetQuery, setAssetQuery] = useState("");
+  const [vectorQuery, setVectorQuery] = useState("");
   const [assetStatus, setAssetStatus] = useState("all");
   const [assetSort, setAssetSort] = useState<AssetSort>("updated");
   const [lastSyncedAt, setLastSyncedAt] = useState<Date>();
@@ -2861,7 +2861,12 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
   const assetStatusLabel: Record<string, string> = { indexed: "색인 완료", queued: "색인 대기", processing: "처리 중", failed: "색인 오류" };
   const classificationLabel: Record<string, string> = { public: "공개", internal: "사내", confidential: "기밀" };
   const sourceLabel: Record<string, string> = { upload: "직접 업로드", image: "이미지", "requirements-seed": "기본 문서", "file-link": "파일 링크", "r2-folder": "R2 폴더" };
-  const vectorDbFiles = assets.filter((asset) => asset.status === "indexed" && Boolean(asset.embedding_model && asset.embedding_dimensions && asset.segment_count > 0));
+  const vectorDbFiles = assets.filter((asset) => {
+    const query = vectorQuery.trim().toLocaleLowerCase("ko-KR");
+    return asset.status === "indexed"
+      && Boolean(asset.embedding_model && asset.embedding_dimensions && asset.segment_count > 0)
+      && (!query || `${asset.title} ${asset.source_type} ${asset.embedding_model}`.toLocaleLowerCase("ko-KR").includes(query));
+  });
   const formatAssetDate = (value: string) => {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? "시간 정보 없음" : date.toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -2926,11 +2931,11 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
           })}
         </tbody></table></div>
       </section>}
-      {activeSection === "organization" && <div id="admin-organization"><OrgConsole currentEmail={currentEmail} /></div>}
-      {activeSection === "governance" && <div id="admin-governance"><AdminGovernance currentEmail={currentEmail} /></div>}
+      {activeSection === "management" && <div className="admin-management-tab" id="admin-management"><div id="admin-organization"><OrgConsole currentEmail={currentEmail} /></div><div id="admin-governance"><AdminGovernance currentEmail={currentEmail} /></div></div>}
       {activeSection === "knowledge" && <>
       <div id="admin-ingestion"><IngestionSources /><InternetSearchOperations /></div>
       <RequirementsChecklist />
+      <div className="vector-db-search"><label htmlFor="vector-db-search-input">Vector DB 파일 검색</label><input id="vector-db-search-input" className="table-input" value={vectorQuery} onChange={(event) => setVectorQuery(event.target.value)} placeholder="파일명·출처·모델 검색" /></div>
       <div className="admin-grid" id="admin-assets">
         <section className="panel"><div className="panel-title"><div><span className="section-kicker">SERVICE HEALTH</span><h2>RAG 구성요소</h2></div><span className={`status-pill ${services.every(([, ready]) => ready) ? "status-완료" : "status-부분-완료"}`}>{services.every(([, ready]) => ready) ? "준비" : "확인 필요"}</span></div><div className="service-list">{services.map(([name, ready, detail]) => <div key={name}><span className={`status-dot ${ready ? "" : "status-dot-warning"}`} /><strong>{name}</strong><span>{ready ? "연결" : "미설정"}</span><small>{detail}</small></div>)}</div></section>
         <section className="panel"><div className="panel-title"><div><span className="section-kicker">QUALITY GATE</span><h2>실시간 검증 상태</h2></div><span className={`status-pill ${qualityGates.length > 0 && qualityGates.every((gate) => gate.passed) ? "status-완료" : "status-부분-완료"}`}>{qualityGates.filter((gate) => gate.passed).length}/{qualityGates.length || 6} 통과</span></div><div className="quality-list">{qualityGates.map((gate) => <div key={gate.id}><div><strong>{gate.label}</strong><span>{gate.evidence}</span></div><progress value={gate.passed ? 100 : 0} max="100">{gate.passed ? "100%" : "0%"}</progress><small>{gate.value} {gate.unit}</small></div>)}</div></section>

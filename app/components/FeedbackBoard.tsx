@@ -161,7 +161,7 @@ export function FeedbackBoard() {
   };
 
   return <div className="view-stack feedback-board">
-    <div className="page-heading feedback-page-heading"><div><span className="section-kicker">USER VOICE</span><h1>{"\uC0AC\uC6A9\uC790 \uC758\uACAC"}</h1><p>{"\uC11C\uBE44\uC2A4\uC5D0 \uB300\uD55C \uC81C\uC548\uACFC \uC758\uACAC\uC744 \uB0A8\uACA8 \uC8FC\uC138\uC694."}</p></div><span className="feedback-count">{text.all} {pagination.total}{"\uAC74"}</span></div>
+    <div className="page-heading feedback-page-heading"><div><span className="section-kicker">USER VOICE</span><p>{"\uC11C\uBE44\uC2A4\uC5D0 \uB300\uD55C \uC81C\uC548\uACFC \uC758\uACAC\uC744 \uB0A8\uACA8 \uC8FC\uC138\uC694."}</p></div><span className="feedback-count">{text.all} {pagination.total}{"\uAC74"}</span></div>
     <div className="feedback-layout">
       <section className="panel feedback-list-panel" aria-labelledby="feedback-list-title">
         <div className="panel-title"><div><h2 id="feedback-list-title">{"\uAC8C\uC2DC\uAE00 \uBAA9\uB85D"}</h2><p className="panel-description">{"\uACF5\uC9C0\uB294 \uC0C1\uB2E8\uC5D0 \uACE0\uC815\uB418\uBA70, \uAC8C\uC2DC\uAE00\uC740 10\uAC1C\uC529 \uD45C\uC2DC\uB429\uB2C8\uB2E4."}</p></div><button className="button button-secondary feedback-refresh" type="button" onClick={() => void loadPosts(pagination.page, filter)} disabled={loading}>{"\uC0C8\uB85C\uACE0\CE68"}</button></div>
