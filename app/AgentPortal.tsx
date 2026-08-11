@@ -930,6 +930,7 @@ export function AgentPortal() {
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const navigationRef = useRef<HTMLElement>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
+  const chatStreamCancelRef = useRef<(() => void) | null>(null);
   const authenticatedEmail = access.state === "approved" ? access.user.email : "";
 
   useEffect(() => {
@@ -1258,6 +1259,7 @@ export function AgentPortal() {
         if (!response.ok || !response.body) throw new Error("Streaming 응답을 시작하지 못했습니다.");
         const provider = response.headers.get("X-LLM-Provider") || undefined;
         const reader = response.body.getReader();
+        chatStreamCancelRef.current = () => { void reader.cancel(); };
         const decoder = new TextDecoder();
         let buffer = "";
         let streamedContent = "";
@@ -1361,6 +1363,7 @@ export function AgentPortal() {
 
         while (true) {
           const { done: readerDone, value } = await reader.read();
+          if (controller.signal.aborted) throw new DOMException("답변 생성이 중단되었습니다.", "AbortError");
           buffer += decoder.decode(value || new Uint8Array(), { stream: !readerDone });
           const blocks = buffer.split(/\r?\n\r?\n/);
           buffer = blocks.pop() || "";
@@ -1447,6 +1450,7 @@ export function AgentPortal() {
     } catch (error) {
       cancelTypewriter?.();
       if (error instanceof DOMException && error.name === "AbortError") {
+        if (chatAbortRef.current !== controller) return;
         setChatMessages((messages) => {
           const withoutStream = messages.filter((message) => !message.streamingResponse);
           return withoutStream.at(-1)?.role === "user" ? withoutStream.slice(0, -1) : withoutStream;
@@ -1472,13 +1476,32 @@ export function AgentPortal() {
       ]);
       setNotice("LLM Gateway 연결을 확인해 주세요.");
     } finally {
-      if (chatAbortRef.current === controller) chatAbortRef.current = null;
-      setStreaming(false);
+      if (chatAbortRef.current === controller) {
+        chatAbortRef.current = null;
+        chatStreamCancelRef.current = null;
+        setStreaming(false);
+      }
     }
   };
 
   const stopChat = () => {
-    chatAbortRef.current?.abort();
+    const controller = chatAbortRef.current;
+    if (!controller || controller.signal.aborted) return;
+    chatAbortRef.current = null;
+    chatStreamCancelRef.current?.();
+    chatStreamCancelRef.current = null;
+    controller.abort();
+    setChatMessages((messages) => messages.map((message) => message.streamingResponse
+      ? {
+          ...message,
+          body: message.body || message.streamingSummary || "답변 생성을 중단했습니다.",
+          streamingResponse: false,
+          streamingStage: undefined,
+          streamingSummary: undefined,
+        }
+      : message));
+    setStreaming(false);
+    setNotice("AI 답변 생성을 중단했습니다.");
   };
 
   const cleanupTemporaryAttachments = async (id?: string) => {

@@ -7595,6 +7595,15 @@ td {
   }
 }
 
+/* The top navigation is the single source of truth for page titles. */
+.workspace-heading h1,
+.knowledge-hero-heading h1,
+.page-heading > div:first-child > h1,
+.admin-page-title h1,
+.schedule-header h1 {
+  display: none !important;
+}
+
 /* Schedule follows the same page rhythm as the portal's search, activity, and admin views. */
 .view-stack.schedule-view {
   width: 100%;
