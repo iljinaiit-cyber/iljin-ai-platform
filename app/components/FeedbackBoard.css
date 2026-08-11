@@ -171,42 +171,6 @@
   font-size: 11px;
 }
 
-.feedback-notice-form {
-  display: grid;
-  gap: 12px;
-  margin-top: 24px;
-  border-top: 1px solid var(--line);
-  padding-top: 20px;
-}
-
-.feedback-notice-form h2 {
-  margin: 4px 0;
-  font-size: 18px;
-}
-
-.feedback-notice-form label {
-  display: grid;
-  gap: 6px;
-  color: var(--ink-soft);
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.feedback-notice-form input,
-.feedback-notice-form textarea {
-  width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #fff;
-  color: var(--ink);
-  padding: 10px 11px;
-  font-size: 13px;
-}
-
-.feedback-notice-form textarea {
-  resize: vertical;
-}
-
 @media (max-width: 560px) {
   .feedback-moderation-actions {
     width: 100%;
@@ -256,4 +220,39 @@
 .feedback-edit-actions {
   display: flex;
   gap: 8px;
+}
+
+.feedback-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.feedback-page-button {
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 0 12px;
+}
+
+.feedback-page-button:hover:not(:disabled) {
+  border-color: var(--brand-200);
+  color: var(--brand-700);
+}
+
+.feedback-page-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }

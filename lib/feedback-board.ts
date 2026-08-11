@@ -140,7 +140,7 @@ function mapPost(row: FeedbackRow, email: string, comments: FeedbackComment[]): 
   };
 }
 
-export async function listFeedbackPosts(principal: Principal, category?: string, requestedPage = 1, pageSize = 10) {
+export async function listFeedbackPosts(principal: Principal, category?: string, requestedPage = 1) {
   await ensureFeedbackSchema();
   const db = getD1();
   const categoryFilter = category && ["feature", "bug", "question", "other", "notice"].includes(category)
