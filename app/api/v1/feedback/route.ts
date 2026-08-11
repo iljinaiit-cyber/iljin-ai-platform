@@ -8,9 +8,14 @@ export async function GET(request: Request) {
   try {
     const principal = await resolvePrincipal(request);
     const searchParams = new URL(request.url).searchParams;
-    const category = searchParams.get("category") || undefined;
-    const page = Number(searchParams.get("page") || "1");
-    const result = await listFeedbackPosts(principal, category, page);
+    const result = await listFeedbackPosts(principal, {
+      category: searchParams.get("category") || undefined,
+      status: searchParams.get("status") || undefined,
+      query: searchParams.get("query") || undefined,
+      sort: searchParams.get("sort") || undefined,
+      mine: searchParams.get("mine") === "true",
+      page: Number(searchParams.get("page") || "1"),
+    });
     return ok({
       items: result.items,
       pagination: {
@@ -19,6 +24,7 @@ export async function GET(request: Request) {
         total: result.total,
         totalPages: result.totalPages,
       },
+      summary: result.summary,
       capabilities: {
         canModerate: principal.role === "admin" || principal.role === "manager",
         canNotice: principal.role === "admin",

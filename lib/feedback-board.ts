@@ -140,24 +140,51 @@ function mapPost(row: FeedbackRow, email: string, comments: FeedbackComment[]): 
   };
 }
 
-export async function listFeedbackPosts(principal: Principal, category?: string, requestedPage = 1) {
+export type FeedbackListOptions = {
+  category?: string;
+  status?: string;
+  query?: string;
+  sort?: string;
+  mine?: boolean;
+  page?: number;
+};
+
+function escapeLike(value: string) {
+  return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+}
+
+export async function listFeedbackPosts(principal: Principal, options: FeedbackListOptions = {}) {
   await ensureFeedbackSchema();
   const db = getD1();
-  const categoryFilter = category && ["feature", "bug", "question", "other", "notice"].includes(category)
-    ? category
+  const categoryFilter = options.category && ["feature", "bug", "question", "other", "notice"].includes(options.category)
+    ? options.category
     : undefined;
-  const whereCategory = categoryFilter ? " AND f.category = ?" : "";
+  const statusFilter = options.status && ["received", "reviewing", "resolved"].includes(options.status)
+    ? options.status
+    : undefined;
+  const query = String(options.query || "").trim().slice(0, 100);
+  const where: string[] = ["f.tenant_id = ?"];
   const countParams: unknown[] = [principal.tenantId];
-  if (categoryFilter) countParams.push(categoryFilter);
+  if (categoryFilter) { where.push("f.category = ?"); countParams.push(categoryFilter); }
+  if (statusFilter) { where.push("f.status = ?"); countParams.push(statusFilter); }
+  if (options.mine) { where.push("f.author_email = ?"); countParams.push(principal.email); }
+  if (query) {
+    const pattern = `%${escapeLike(query)}%`;
+    where.push("(f.title LIKE ? ESCAPE '\\' OR f.content LIKE ? ESCAPE '\\')");
+    countParams.push(pattern, pattern);
+  }
+  const whereSql = where.join(" AND ");
   const totalRow = await db.prepare(`SELECT COUNT(*) AS count FROM feedback_posts f
-    WHERE f.tenant_id = ?${whereCategory}`).bind(...countParams).first<{ count: number | string }>();
+    WHERE ${whereSql}`).bind(...countParams).first<{ count: number | string }>();
   const total = Number(totalRow?.count || 0);
   const safePageSize = 10;
   const totalPages = Math.max(1, Math.ceil(total / safePageSize));
-  const page = Math.min(Math.max(1, Math.floor(Number(requestedPage) || 1)), totalPages);
-  const params: unknown[] = [principal.email, principal.tenantId];
-  if (categoryFilter) params.push(categoryFilter);
+  const page = Math.min(Math.max(1, Math.floor(Number(options.page) || 1)), totalPages);
+  const params: unknown[] = [principal.email, ...countParams];
   params.push(safePageSize, (page - 1) * safePageSize);
+  const orderBy = options.sort === "popular"
+    ? "f.is_notice DESC, like_count DESC, comment_count DESC, f.created_at DESC"
+    : "f.is_notice DESC, f.created_at DESC";
   const rows = await db.prepare(`SELECT f.id, f.category, f.title, f.content, f.is_notice, f.status,
       f.author_email, f.author_display_name, COALESCE(u.department, '') AS author_department, f.created_at,
       (SELECT COUNT(*) FROM feedback_likes l WHERE l.post_id = f.id AND l.tenant_id = f.tenant_id) AS like_count,
@@ -165,10 +192,23 @@ export async function listFeedbackPosts(principal: Principal, category?: string,
       (SELECT COUNT(*) FROM feedback_comments c WHERE c.post_id = f.id AND c.tenant_id = f.tenant_id) AS comment_count
     FROM feedback_posts f
     LEFT JOIN user_profiles u ON u.tenant_id = f.tenant_id AND u.email = f.author_email
-    WHERE f.tenant_id = ?${whereCategory}
-    ORDER BY f.is_notice DESC, f.created_at DESC LIMIT ? OFFSET ?`).bind(...params).all<FeedbackRow>();
+    WHERE ${whereSql}
+    ORDER BY ${orderBy} LIMIT ? OFFSET ?`).bind(...params).all<FeedbackRow>();
+  const summary = await db.prepare(`SELECT COUNT(*) AS total,
+      SUM(CASE WHEN status = 'received' THEN 1 ELSE 0 END) AS received,
+      SUM(CASE WHEN status = 'reviewing' THEN 1 ELSE 0 END) AS reviewing,
+      SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) AS resolved
+    FROM feedback_posts WHERE tenant_id = ?`).bind(principal.tenantId).first<{
+      total: number | string; received: number | string; reviewing: number | string; resolved: number | string;
+    }>();
+  const counts = {
+    total: Number(summary?.total || 0),
+    received: Number(summary?.received || 0),
+    reviewing: Number(summary?.reviewing || 0),
+    resolved: Number(summary?.resolved || 0),
+  };
   const postRows = rows.results || [];
-  if (postRows.length === 0) return { items: [], page, pageSize: safePageSize, total, totalPages };
+  if (postRows.length === 0) return { items: [], page, pageSize: safePageSize, total, totalPages, summary: counts };
   const placeholders = postRows.map(() => "?").join(",");
   const comments = await db.prepare(`SELECT id, post_id, content, author_email, author_display_name, author_department, created_at
     FROM feedback_comments WHERE tenant_id = ? AND post_id IN (${placeholders}) ORDER BY created_at ASC`)
@@ -185,6 +225,7 @@ export async function listFeedbackPosts(principal: Principal, category?: string,
     pageSize: safePageSize,
     total,
     totalPages,
+    summary: counts,
   };
 }
 
