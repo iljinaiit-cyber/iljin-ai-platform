@@ -1944,6 +1944,33 @@ h3 {
   color: var(--muted);
 }
 
+.admin-console-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.admin-console-brand > img {
+  width: 112px;
+  height: 26px;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
+.admin-console-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.admin-console-copy strong {
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 760;
+  letter-spacing: -0.025em;
+}
+
 .admin-view > .page-heading > div:first-child,
 .admin-legacy-metrics {
   display: none;

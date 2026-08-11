@@ -2906,7 +2906,7 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
 
   return (
     <div className="view-stack admin-view">
-      <div className="admin-page-title"><div><span className="section-kicker">ADMINISTRATION</span><h1 className="sr-only">관리자 페이지</h1><p>전체 플랫폼 사용 현황과 운영·권한·데이터 관리 상태를 확인합니다.</p></div></div>
+      <div className="admin-page-title"><div className="admin-console-brand"><Image src="/iljin-logo.png" alt="ILJIN" width={112} height={26} priority unoptimized /><div className="admin-console-copy"><span className="section-kicker">ADMINISTRATION</span><strong>관리자 콘솔</strong><h1 className="sr-only">관리자 페이지</h1><p>전체 플랫폼 사용 현황과 운영·권한·데이터 관리 상태를 확인합니다.</p></div></div></div>
       <AdminSectionNav activeSection={activeSection} onSelect={selectSection} />
       <div className="admin-tab-screen" id="admin-tab-screen" tabIndex={-1}>
       {activeSection === "overview" && <>
