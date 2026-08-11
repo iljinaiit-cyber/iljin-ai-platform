@@ -2635,6 +2635,13 @@ a.answer-citation:hover {
   font-size: 11px;
 }
 
+.answer-usage {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: -4px;
+}
+
 .loading-line {
   display: block;
   width: 280px;
