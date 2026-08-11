@@ -1,6 +1,17 @@
 export type AnswerLength = "brief" | "standard" | "detailed";
 export type AnswerFormat = "paragraph" | "bullets" | "table";
 
+export function inferAnswerFormat(query: string): AnswerFormat {
+  const normalized = query.trim().toLowerCase();
+  if (/(비교|차이|장단점|대안|선택|vs\.?|versus|compare|difference|trade-?off)/i.test(normalized)) {
+    return "table";
+  }
+  if (/(방법|절차|단계|체크리스트|실행|계획|정리해|how to|step|checklist|plan)/i.test(normalized)) {
+    return "bullets";
+  }
+  return "paragraph";
+}
+
 export function answerLengthInstruction(length: AnswerLength | undefined) {
   if (length === "brief") {
     return "핵심 결론을 첫 문장에 제시하고, 필수 근거와 다음 행동만 3~5문장 또는 3~5개 항목 이내로 압축하세요. 배경·반복·부가 설명은 생략하세요.";

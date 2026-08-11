@@ -9,7 +9,7 @@ import {
 import { buildFeedbackLearningContext, loadUserPreferences, updateUserPreferencesFromRequest } from "../../../../../lib/user-memory";
 import { getConversationSensitivity, recordLlmInvocation } from "../../../../../lib/llm-telemetry";
 import { searchInternet, type InternetSearchResponse } from "../../../../../lib/internet-search";
-import { answerOutputTokenBudget, answerPreferenceInstruction, answerReasoningTier } from "../../../../../lib/answer-format";
+import { answerOutputTokenBudget, answerPreferenceInstruction, answerReasoningTier, inferAnswerFormat } from "../../../../../lib/answer-format";
 import { extractRelatedQuestions, RELATED_QUESTION_INSTRUCTION, type FollowUpQuestion } from "../../../../../lib/question-rewriter";
 import { resolvePrincipal } from "../../../../../lib/identity";
 import { authorizeFeature } from "../../../../../lib/admin-governance";
@@ -156,15 +156,15 @@ export async function POST(request: Request) {
     const storedPreferences = await loadUserPreferences(principal).catch(
       () => ({} as Awaited<ReturnType<typeof loadUserPreferences>>),
     );
+    const userContent = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
     const answerLength = body.summary_only ? "brief" : body.answer_length ?? storedPreferences.answerLength ?? "standard";
-    const answerFormat = body.answer_format ?? storedPreferences.answerFormat ?? "paragraph";
+    const answerFormat = body.answer_format ?? inferAnswerFormat(userContent);
     const feedbackLearningContext = buildFeedbackLearningContext(storedPreferences);
     const reasoningTier = body.reasoning_tier === "swift" || body.reasoning_tier === "expert" || body.reasoning_tier === "deep"
       ? body.reasoning_tier
       : answerReasoningTier(answerLength);
     const preference = `${responsePreferenceInstruction(answerLength, answerFormat)}${body.summary_only ? "\n첫 줄에 질문에 대한 한 문장 요약만 작성하고, 추가 설명은 작성하지 마세요." : ""}`;
     const preferenceWithLearning = `${preference}${feedbackLearningContext}`;
-    const userContent = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
     const contextMessages = body.conversation_id
       ? [
           ...(await conversationContext(principal, body.conversation_id)),
