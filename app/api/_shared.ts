@@ -6,6 +6,7 @@ import { identityError } from "../../lib/identity";
 import { guardrailResponse } from "../../lib/guardrails";
 import { RagError } from "../../lib/rag";
 import { GatewayError } from "../../lib/llm-gateway";
+import { RuntimeBindingError } from "../../db";
 
 export const newTraceId = () => `trc_${crypto.randomUUID().replaceAll("-", "")}`;
 
@@ -31,6 +32,19 @@ export function ok(body: unknown, traceId: string, init: ResponseInit = {}) {
 export function fail(error: unknown, traceId: string) {
   const known = identityError(error, traceId) ?? guardrailResponse(error, traceId);
   if (known) return known;
+  if (error instanceof RuntimeBindingError) {
+    return Response.json(
+      {
+        error: {
+          code: "RUNTIME_CONFIGURATION_REQUIRED",
+          message: "서비스 연결 설정을 확인 중입니다. 잠시 후 다시 시도해 주세요.",
+          trace_id: traceId,
+          retryable: true,
+        },
+      },
+      { status: 503, headers: { ...noStore(traceId), "Retry-After": "30" } },
+    );
+  }
   if (error instanceof RagError) {
     return Response.json(
       { error: { code: error.code, message: error.message, trace_id: traceId } },

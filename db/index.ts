@@ -2,12 +2,17 @@ import { drizzle } from "drizzle-orm/d1";
 import { getRuntimeEnv } from "../lib/runtime-env";
 import * as schema from "./schema";
 
+export class RuntimeBindingError extends Error {
+  constructor(readonly binding: "DB" | "BUCKET") {
+    super(`Required runtime binding ${binding} is unavailable.`);
+    this.name = "RuntimeBindingError";
+  }
+}
+
 export function getDb() {
   const binding = getRuntimeEnv().DB;
   if (!binding) {
-    throw new Error(
-      "Cloudflare D1 binding `DB` is unavailable. Set the `d1` field in .openai/hosting.json to `DB` or let your control plane inject the real binding values before using the database."
-    );
+    throw new RuntimeBindingError("DB");
   }
 
   return drizzle(binding, { schema });
@@ -15,12 +20,12 @@ export function getDb() {
 
 export function getD1() {
   const binding = getRuntimeEnv().DB;
-  if (!binding) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
+  if (!binding) throw new RuntimeBindingError("DB");
   return binding;
 }
 
 export function getR2() {
   const binding = getRuntimeEnv().BUCKET;
-  if (!binding) throw new Error("Cloudflare R2 binding `BUCKET` is unavailable.");
+  if (!binding) throw new RuntimeBindingError("BUCKET");
   return binding;
 }
