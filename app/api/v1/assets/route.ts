@@ -55,9 +55,8 @@ export async function POST(request: Request) {
         return ok(queued, traceId, { status: queued.status === "indexed" ? 200 : 202 });
       }
       const multimodal = isMultimodalFile(file);
-      const analysis = multimodal
-        ? await analyzeMultimodalFile(file, originalData)
-        : { markdown: new TextDecoder().decode(originalData), regions: [] };
+      const multimodalAnalysis = multimodal ? await analyzeMultimodalFile(file, originalData) : null;
+      const analysis = multimodalAnalysis || { markdown: new TextDecoder().decode(originalData), regions: [] };
       const result = await ingestDocument({
         title: String(form.get("title") || file.name),
         content: analysis.markdown,
@@ -77,7 +76,7 @@ export async function POST(request: Request) {
       return ok({
         ...result,
         regionCount: analysis.regions?.length || 0,
-        ...(multimodal ? { multimodal: { modality: analysis.modality, parser: analysis.parser } } : {}),
+        ...(multimodalAnalysis ? { multimodal: { modality: multimodalAnalysis.modality, parser: multimodalAnalysis.parser } } : {}),
       }, traceId, { status: 201 });
     }
     const body = await request.json() as {

@@ -604,6 +604,7 @@ export async function resolveAccessIdentity(request: Request): Promise<AccessIde
         .bind("system:configured-admin", now, now, email).run();
       row = await findProfile(email);
     }
+    if (!row) throw new Error("사용자 프로필을 불러오지 못했습니다.");
     if (usingDevelopmentIdentity && (row.status !== "approved" || row.role !== developmentRole)) {
       const role: UserRole = developmentRole;
       if (row.status !== "approved" || row.role !== role) {
@@ -775,7 +776,7 @@ export async function reviewAccessRequest(input: {
   const now = new Date().toISOString();
   const organizationSelection = input.decision === "approved" && (input.corpId !== undefined || input.deptId !== undefined);
   let corpId = organizationSelection ? input.corpId || null : existing.corp_id;
-  let deptId = organizationSelection ? input.deptId || null : existing.dept_id;
+  const deptId = organizationSelection ? input.deptId || null : existing.dept_id;
   let department = (input.department || existing.department).trim().slice(0, 120) || existing.department;
   if (organizationSelection && deptId) {
     const selectedDepartment = await getD1().prepare("SELECT corp_id, name FROM departments WHERE id = ? AND tenant_id = ? AND status = 'active'")
