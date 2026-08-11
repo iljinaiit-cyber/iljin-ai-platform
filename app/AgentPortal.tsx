@@ -1855,13 +1855,11 @@ function HomeView({ scope, setScope, cases, user, activity, onNavigate, onOpenCo
   onPrompt: (prompt: string) => void;
 }) {
   const [draft, setDraft] = useState("");
-  const todayLabel = new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "long" }).format(new Date());
 
   return (
     <div className="view-stack">
       <section className="hero-panel">
         <div className="hero-copy">
-          <span className="hero-kicker">{todayLabel}</span>
           <h1>좋은 하루예요, {user.displayName}님. <em>업무를 어디서부터 시작할까요?</em></h1>
           <p>내 권한과 {user.department} 업무 Context를 반영해 안전하게 답변합니다.</p>
         </div>
