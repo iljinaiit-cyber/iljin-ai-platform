@@ -256,3 +256,214 @@
   cursor: not-allowed;
   opacity: 0.45;
 }
+
+/* Keep the feedback surface readable when the global compact-density rules load later. */
+.feedback-board .feedback-page-heading {
+  align-items: flex-end;
+  gap: 18px;
+}
+
+.feedback-board .feedback-page-heading > div {
+  min-width: 0;
+}
+
+.feedback-board .feedback-page-heading h1 {
+  margin: 5px 0 6px;
+  color: var(--ink);
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 1.12;
+}
+
+.feedback-board .feedback-page-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.feedback-board .feedback-layout {
+  grid-template-columns: minmax(0, 1.65fr) minmax(290px, 0.8fr);
+  gap: 20px;
+}
+
+.feedback-board .feedback-list-panel,
+.feedback-board .feedback-form-panel {
+  min-width: 0;
+  padding: 20px;
+}
+
+.feedback-board .panel-title {
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.feedback-board .panel-title > div {
+  min-width: 0;
+}
+
+.feedback-board .panel-title h2 {
+  margin: 0 0 5px;
+  line-height: 1.25;
+}
+
+.feedback-board .panel-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.feedback-board .feedback-filters {
+  margin: 18px 0 4px;
+  padding-bottom: 9px;
+}
+
+.feedback-board .feedback-post-summary {
+  grid-template-columns: minmax(68px, auto) minmax(0, 1fr) auto;
+  min-height: 72px;
+  padding: 14px 0;
+}
+
+.feedback-board .feedback-post-main {
+  gap: 7px;
+}
+
+.feedback-board .feedback-post-main strong {
+  overflow: visible;
+  white-space: normal;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.feedback-board .feedback-author {
+  align-items: flex-start;
+}
+
+.feedback-board .feedback-author > span:last-child {
+  gap: 3px;
+}
+
+.feedback-board .feedback-author b,
+.feedback-board .feedback-author small {
+  overflow: visible;
+  white-space: normal;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.feedback-board .feedback-post-summary > .status-pill {
+  align-self: start;
+  margin-top: 1px;
+  white-space: nowrap;
+}
+
+.feedback-board .feedback-post-content {
+  margin: 0 0 16px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--brand-300);
+  border-radius: 0 7px 7px 0;
+  background: var(--surface-soft);
+  padding: 16px;
+}
+
+.feedback-board .feedback-post-content > p {
+  overflow-wrap: anywhere;
+  line-height: 1.75;
+}
+
+.feedback-board .feedback-post-toolbar {
+  align-items: center;
+  gap: 7px;
+  margin-top: 16px;
+  padding-top: 12px;
+}
+
+.feedback-board .feedback-moderation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.feedback-board .feedback-comments {
+  margin-top: 16px;
+  padding-top: 14px;
+}
+
+.feedback-board .feedback-comment {
+  align-items: flex-start;
+}
+
+.feedback-board .feedback-comment p {
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+
+.feedback-board .feedback-form-panel {
+  align-self: start;
+}
+
+.feedback-board .feedback-form {
+  margin-top: 18px;
+  gap: 13px;
+}
+
+.feedback-board .feedback-form input,
+.feedback-board .feedback-form textarea,
+.feedback-board .feedback-form select {
+  box-sizing: border-box;
+}
+
+.feedback-board .feedback-form-foot {
+  align-items: flex-end;
+}
+
+@media (max-width: 900px) {
+  .feedback-board .feedback-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .feedback-board .feedback-page-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .feedback-board .feedback-list-panel,
+  .feedback-board .feedback-form-panel {
+    padding: 16px;
+  }
+
+  .feedback-board .panel-title {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .feedback-board .feedback-refresh {
+    align-self: flex-start;
+  }
+
+  .feedback-board .feedback-post-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 9px;
+  }
+
+  .feedback-board .feedback-post-summary > .status-pill {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: -2px;
+  }
+
+  .feedback-board .feedback-post-toolbar {
+    align-items: stretch;
+  }
+
+  .feedback-board .feedback-moderation-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+}
