@@ -513,7 +513,7 @@ test("tracks the complete development checklist and applies new common chat and 
   assert.match(requirementsRoute, /requirePermission\(principal, "admin\.operations"\)/);
   assert.match(requirementsRoute, /items: OUTSTANDING_DEVELOPMENT_REQUIREMENTS/);
   assert.match(portal, /answer_length: chatAnswerLength/);
-  assert.match(portal, /answer_format: chatAnswerFormat/);
+  assert.doesNotMatch(portal, /chat-answer-format/);
   assert.match(portal, /stream: true/);
   assert.match(portal, /text\/event-stream/);
   assert.match(portal, /eventName === "delta"/);

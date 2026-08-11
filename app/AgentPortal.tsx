@@ -29,7 +29,6 @@ type Scope = "personal" | "department";
 type ChatSensitivity = "public" | "internal" | "confidential";
 type SearchScope = "internal" | "internet";
 type ChatAnswerLength = "brief" | "standard" | "detailed";
-type ChatAnswerFormat = "paragraph" | "bullets" | "table";
 type ChatReasoningTier = "swift" | "expert" | "deep";
 
 function formatSearchDate(value?: string) {
@@ -897,7 +896,6 @@ export function AgentPortal() {
   const [chatSensitivity, setChatSensitivity] = useState<ChatSensitivity>("public");
   const [chatSearchScope, setChatSearchScope] = useState<SearchScope>("internet");
   const [chatAnswerLength, setChatAnswerLength] = useState<ChatAnswerLength>("standard");
-  const [chatAnswerFormat, setChatAnswerFormat] = useState<ChatAnswerFormat>("paragraph");
   const [streaming, setStreaming] = useState(false);
   const [generationStage, setGenerationStage] = useState("질문 분석 중");
   const [providerAvailability, setProviderAvailability] = useState({
@@ -1248,7 +1246,6 @@ export function AgentPortal() {
           rag: chatSearchScope === "internal",
           search_mode: chatSearchScope,
           answer_length: chatAnswerLength,
-          answer_format: chatAnswerFormat,
           reasoning_tier: chatAnswerLength === "brief" ? "swift" : chatAnswerLength === "detailed" ? "deep" : "expert",
           stream: true,
           conversation_id: activeConversationId,
@@ -1745,7 +1742,7 @@ export function AgentPortal() {
             <HomeView scope={scope} setScope={setScope} cases={visibleUseCases} user={currentUser} activity={activityDashboard} onNavigate={navigate} onOpenConversation={openConversation} onPrompt={(prompt) => { setQuery(prompt); navigate("chat"); }} />
           )}
           {view === "chat" && (
-            <ChatView messages={chatMessages} query={query} setQuery={setQuery} sensitivity={chatSensitivity} setSensitivity={changeChatSensitivity} searchScope={chatSearchScope} setSearchScope={changeChatSearchScope} answerLength={chatAnswerLength} setAnswerLength={setChatAnswerLength} answerFormat={chatAnswerFormat} setAnswerFormat={setChatAnswerFormat} providerAvailability={providerAvailability} streaming={streaming} generationStage={generationStage} currentUser={currentUser} conversationId={conversationId} suggestedQuestions={activityDashboard.suggestedQuestions} canUpload={canUse("documents.manage", "documents.upload")} onEnsureConversation={ensureConversationForAttachment} onNewConversation={startNewConversation} onOpenConversation={openConversation} onFeedback={submitFeedback} onSubmit={submitChat} onStop={stopChat} onKeyDown={handleComposerKey} onOpenAgent={() => navigate("tasks")} onFollowUpClick={submitChatWithText} onClarificationSubmit={submitClarification} />
+            <ChatView messages={chatMessages} query={query} setQuery={setQuery} sensitivity={chatSensitivity} setSensitivity={changeChatSensitivity} searchScope={chatSearchScope} setSearchScope={changeChatSearchScope} answerLength={chatAnswerLength} setAnswerLength={setChatAnswerLength} providerAvailability={providerAvailability} streaming={streaming} generationStage={generationStage} currentUser={currentUser} conversationId={conversationId} suggestedQuestions={activityDashboard.suggestedQuestions} canUpload={canUse("documents.manage", "documents.upload")} onEnsureConversation={ensureConversationForAttachment} onNewConversation={startNewConversation} onOpenConversation={openConversation} onFeedback={submitFeedback} onSubmit={submitChat} onStop={stopChat} onKeyDown={handleComposerKey} onOpenAgent={() => navigate("tasks")} onFollowUpClick={submitChatWithText} onClarificationSubmit={submitClarification} />
           )}
           {view === "search" && <SearchView type={searchType} setType={setSearchType} canUpload={canUse("documents.manage", "documents.upload")} onChat={(prompt, nextScope) => { changeChatSearchScope(nextScope); setQuery(prompt); navigate("chat"); }} />}
           {view === "tasks" && <AgentTasksView />}
@@ -1922,7 +1919,7 @@ function ClarificationForm({
   );
 }
 
-function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, searchScope, setSearchScope, answerLength, setAnswerLength, answerFormat, setAnswerFormat, providerAvailability, streaming, generationStage, currentUser, conversationId, suggestedQuestions, canUpload, onEnsureConversation, onNewConversation, onOpenConversation, onFeedback, onSubmit, onStop, onKeyDown, onOpenAgent, onFollowUpClick, onClarificationSubmit }: {
+function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, searchScope, setSearchScope, answerLength, setAnswerLength, providerAvailability, streaming, generationStage, currentUser, conversationId, suggestedQuestions, canUpload, onEnsureConversation, onNewConversation, onOpenConversation, onFeedback, onSubmit, onStop, onKeyDown, onOpenAgent, onFollowUpClick, onClarificationSubmit }: {
   messages: ChatMessage[];
   query: string;
   setQuery: (value: string) => void;
@@ -1932,8 +1929,6 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
   setSearchScope: (value: SearchScope) => void;
   answerLength: ChatAnswerLength;
   setAnswerLength: (value: ChatAnswerLength) => void;
-  answerFormat: ChatAnswerFormat;
-  setAnswerFormat: (value: ChatAnswerFormat) => void;
   providerAvailability: { cloudflare: boolean; local: boolean; rag: boolean; internalSearch: boolean };
   streaming: boolean;
   generationStage: string;
@@ -2183,7 +2178,6 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
             </div>
             <select id="chat-sensitivity" value={sensitivity} disabled={streaming || searchScope === "internet"} onChange={(event) => setSensitivity(event.target.value as ChatSensitivity)}>{searchScope === "internet" ? <option value="public">공개 · 인터넷</option> : <><option value="internal">내부 · Cloudflare</option><option value="confidential" disabled={!providerAvailability.local}>기밀 · 로컬</option></>}</select>
             <label className="control-inline"><span>답변 분량</span><select id="chat-answer-length" value={answerLength} disabled={streaming} onChange={(event) => setAnswerLength(event.target.value as ChatAnswerLength)}><option value="brief">핵심 · 빠른 답</option><option value="standard">표준 · 균형</option><option value="detailed">심층 · 의사결정</option></select></label>
-            <label className="control-inline"><span>답변 형식</span><select id="chat-answer-format" value={answerFormat} disabled={streaming} onChange={(event) => setAnswerFormat(event.target.value as ChatAnswerFormat)}><option value="paragraph">문단형 · 해설</option><option value="bullets">목록형 · 실행</option><option value="table">표형 · 비교</option></select></label>
           </div>
           <div className="composer-input-row">
             <div className="composer-attach-slot">{canUpload && <><input ref={fileInputRef} className="sr-only" type="file" accept=".txt,.md,.csv,.json,.pdf,.jpg,.jpeg,.png,.webp,.svg,.gif,.bmp,text/plain,text/markdown,text/csv,application/json,application/pdf,image/*" onChange={(event) => void attachDocument(event.target.files?.[0])} /><button type="button" className="quiet-button composer-attach-btn" aria-label="멀티모달 첨부" disabled={!providerAvailability.rag} onClick={() => fileInputRef.current?.click()}>+</button></>}</div>
