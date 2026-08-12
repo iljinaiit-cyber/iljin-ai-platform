@@ -73,6 +73,23 @@ const SOURCE_BADGE: Record<RagResultItem["sourceType"], string> = {
 const scoreLabel = (score?: number) =>
   typeof score === "number" && Number.isFinite(score) ? `${Math.round(score * 100)}%` : undefined;
 
+function sourceHref(value?: string) {
+  const raw = value?.trim().replace(/^<|>$/g, "");
+  if (!raw) return undefined;
+  if (raw.startsWith("/")) return raw;
+  const candidate = raw.startsWith("//")
+    ? `https:${raw}`
+    : /^[a-z][a-z\d+.-]*:/i.test(raw)
+      ? raw
+      : `https://${raw}`;
+  try {
+    const url = new URL(candidate);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function RagResults({
   results, query, totalCount, elapsedMs, traceId, retrievalLabel, accessLabel,
   loading, error, emptyTitle, emptyDescription, onUseInChat,
@@ -132,8 +149,8 @@ export function RagResults({
                   {SOURCE_BADGE[result.sourceType] ?? result.sourceType}
                 </span>
                 <h3>
-                  {result.sourceUrl
-                    ? <a href={result.sourceUrl} target={result.sourceUrl.startsWith("http") ? "_blank" : undefined} rel="noreferrer">{result.title}</a>
+                  {sourceHref(result.sourceUrl)
+                    ? <a href={sourceHref(result.sourceUrl)} target={sourceHref(result.sourceUrl)?.startsWith("http") ? "_blank" : undefined} rel="noopener noreferrer">{result.title}</a>
                     : result.title}
                 </h3>
                 {score ? <span className="rag-score" title="검색 관련도">{score}</span> : null}

@@ -31,6 +31,47 @@ type SearchScope = "internal" | "internet";
 type ChatAnswerLength = "brief" | "standard" | "detailed";
 type ChatReasoningTier = "swift" | "expert" | "deep";
 
+const GENERATION_STAGES: Record<SearchScope, string[]> = {
+  internet: ["질문·의도 분석 중", "대화 맥락 확인 중", "웹 검색 중", "검색 결과 교차 검토 중", "근거 기반 답변 작성 중"],
+  internal: ["질문·의도 분석 중", "대화 맥락 확인 중", "사내 문서 검색 중", "근거 확인 중", "근거 기반 답변 작성 중"],
+};
+
+function generationStageIndex(scope: SearchScope, stage: string) {
+  const stages = GENERATION_STAGES[scope];
+  const exactIndex = stages.indexOf(stage);
+  if (exactIndex >= 0) return exactIndex;
+  if (/검색 결과|근거 확인|요약|상세 답변|작성/.test(stage)) return stages.length - 1;
+  if (/맥락|기억/.test(stage)) return 1;
+  if (/검색/.test(stage)) return 2;
+  return 0;
+}
+
+function formatElapsed(ms: number) {
+  return ms >= 1_000 ? `${(ms / 1_000).toFixed(1)}초` : `${ms}ms`;
+}
+
+function sourceDomain(url?: string) {
+  if (!url) return "출처 링크";
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return "출처 링크"; }
+}
+
+function citationHref(value?: string) {
+  const raw = value?.trim().replace(/^<|>$/g, "");
+  if (!raw) return undefined;
+  if (raw.startsWith("/")) return raw;
+  const candidate = raw.startsWith("//")
+    ? `https:${raw}`
+    : /^[a-z][a-z\d+.-]*:/i.test(raw)
+      ? raw
+      : `https://${raw}`;
+  try {
+    const url = new URL(candidate);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function formatSearchDate(value?: string) {
   if (!value) return undefined;
   const timestamp = Date.parse(value);
@@ -60,12 +101,12 @@ type CitationLookup = Map<string, { url?: string; title: string }>;
 
 function buildCitationLookup(citations?: RagResultItem[]): CitationLookup {
   if (!citations?.length) return new Map();
-  return new Map(citations.map((c) => [`[${c.citationId || c.id}]`, { url: c.sourceUrl, title: c.title }]));
+  return new Map(citations.map((c) => [`[${c.citationId || c.id}]`, { url: citationHref(c.sourceUrl), title: c.title }]));
 }
 
 function inlineAnswerContent(text: string, keyPrefix: string, citations?: CitationLookup): ReactNode[] {
   return text
-    .split(/(\*\*[^*]+\*\*|`[^`]+`|\[(?:W|S)\d+\]|\[([^\]]+)\]\(([^)]+)\)|---)/g)
+    .split(/(\*\*[^*]+\*\*|`[^`]+`|\[(?:W|S)\d+\]|\[[^\]]+\]\([^)]+\)|---)/g)
     .filter(Boolean)
     .map((part, index) => {
       const key = `${keyPrefix}-${index}`;
@@ -91,8 +132,10 @@ function inlineAnswerContent(text: string, keyPrefix: string, citations?: Citati
       }
       const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
       if (linkMatch) {
+        const href = citationHref(linkMatch[2]);
+        if (!href) return part;
         return (
-          <a key={key} href={linkMatch[2]} target="_blank" rel="noreferrer">
+          <a key={key} href={href} target="_blank" rel="noopener noreferrer">
             {linkMatch[1]}
           </a>
         );
@@ -328,6 +371,7 @@ type ChatMessage = {
   error?: boolean;
   streamingResponse?: boolean;
   streamingStage?: string;
+  streamingDetail?: string;
   streamingSummary?: string;
   tokenCount?: number;
   citations?: RagResultItem[];
@@ -336,6 +380,53 @@ type ChatMessage = {
   clarificationRequired?: boolean;
   clarificationOriginalQuestion?: string;
 };
+
+function GenerationProgress({ scope, stage, detail, elapsedMs = 0, tokenCount, sources = [] }: { scope: SearchScope; stage: string; detail?: string; elapsedMs?: number; tokenCount?: number; sources?: RagResultItem[] }) {
+  const stages = GENERATION_STAGES[scope];
+  const activeIndex = generationStageIndex(scope, stage);
+  const progress = ((activeIndex + 1) / stages.length) * 100;
+  return (
+    <section className="generation-progress" aria-label="답변 생성 진행 단계" aria-live="polite">
+      <div className="generation-progress__heading">
+        <div>
+          <span className="generation-progress__eyebrow">답변 생성 진행</span>
+          <strong>{stage}</strong>
+        </div>
+        <div className="generation-progress__metrics">
+          <span className="generation-progress__live"><i aria-hidden="true" />실시간 처리</span>
+          <span>{tokenCount?.toLocaleString() ?? "토큰 계산 중"} · {formatElapsed(elapsedMs)}</span>
+          <b>{activeIndex + 1}/{stages.length}</b>
+        </div>
+      </div>
+      {detail && <p className="generation-progress__detail" aria-live="polite">{detail}</p>}
+      <div className="generation-progress__bar" aria-hidden="true"><span style={{ width: `${progress}%` }} /></div>
+      <ol className="generation-progress__steps">
+        {stages.map((label, index) => (
+          <li key={label} className={index < activeIndex ? "is-complete" : index === activeIndex ? "is-active" : "is-pending"}>
+            <span className="generation-progress__marker" aria-hidden="true" />
+            <span>{label.replace(/ 중$/, "")}</span>
+          </li>
+        ))}
+      </ol>
+      {sources.length > 0 && (
+        <div className="generation-sources">
+          <div className="generation-sources__heading">
+            <span>검색 결과 교차 검토</span>
+            <strong>{sources.length}개 출처</strong>
+          </div>
+          <div className="generation-sources__list">
+            {sources.slice(0, 6).map((source) => (
+              <a key={source.id} href={citationHref(source.sourceUrl)} target="_blank" rel="noopener noreferrer" className="generation-source-card">
+                <span className="generation-source-card__domain">{sourceDomain(source.sourceUrl)}</span>
+                <strong>{source.title}</strong>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
 
 type ActivityItem = {
   id: string;
@@ -506,7 +597,7 @@ const adminNavigationItem: NavigationItem = {
 const navItems: NavigationItem[] = [
   { id: "home", label: "홈", mark: "HM", req: "U-01", permission: "workspace.home", feature: "workspace.home", icon: '<path d="M3 12L12 3l9 9v9a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1v-9z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/>' },
   { id: "chat", label: "AI Chat Agent", mark: "AI", req: "U-02", permission: "ai.chat", feature: "ai.chat", icon: '<path d="M21 11.5a8.38 8.38 0 0 1-9 8.5 8.5 8.5 0 0 1-3.6-.8L3 21l1.9-4.4A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3a8.38 8.38 0 0 1 8.5 8.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><circle cx="9" cy="11.5" r="1" fill="currentColor"/><circle cx="12.5" cy="11.5" r="1" fill="currentColor"/><circle cx="16" cy="11.5" r="1" fill="currentColor"/>' },
-  { id: "search", label: "ILJIN Knowledge Data Base", mark: "KDB", req: "U-03", permission: "rag.search", feature: "rag.search", icon: '<circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="m21 21-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' },
+  { id: "search", label: "Knowledge Data Base", mark: "KDB", req: "U-03", permission: "rag.search", feature: "rag.search", icon: '<circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="m21 21-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' },
   { id: "tasks", label: "작업", mark: "TK", req: "U-05", permission: "agent.run", feature: "agent", icon: '<path d="M9 11l3 3L22 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' },
   { id: "approvals", label: "승인", mark: "AP", req: "U-06", permission: "tools.review", feature: "tool.approvals", icon: '<path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" fill="none"/>' },
   { id: "activity", label: "내 활동", mark: "MY", req: "U-07", permission: "activity.read", feature: "activity", icon: '<path d="M3 3v18h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M7 14l3-4 3 2 5-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' },
@@ -917,7 +1008,7 @@ export function AgentPortal() {
   const [chatAnswerLength, setChatAnswerLength] = useState<ChatAnswerLength>("standard");
   const [streaming, setStreaming] = useState(false);
   const [generationElapsedMs, setGenerationElapsedMs] = useState(0);
-  const [generationStage, setGenerationStage] = useState("질문 분석 중");
+  const [generationStage, setGenerationStage] = useState("질문·의도 분석 중");
   const [providerAvailability, setProviderAvailability] = useState({
     cloudflare: false,
     local: false,
@@ -965,20 +1056,6 @@ export function AgentPortal() {
     const timer = setTimeout(() => setSidebarCollapsed(storedSidebar === "collapsed"), 0);
     return () => clearTimeout(timer);
   }, [authenticatedEmail]);
-
-  useEffect(() => {
-    if (!streaming) return;
-    const stages = chatSearchScope === "internet"
-      ? ["질문 분석 중", "인터넷 검색 중", "검색 결과 정리 중", "답변 준비 중"]
-      : ["질문 분석 중", "사내 문서 검색 중", "근거 확인 중", "답변 준비 중"];
-    const timer = window.setInterval(() => {
-      setGenerationStage((currentStage) => {
-        const currentIndex = stages.indexOf(currentStage);
-        return stages[Math.min(Math.max(currentIndex, 0) + 1, stages.length - 1)];
-      });
-    }, 900);
-    return () => window.clearInterval(timer);
-  }, [streaming, chatSearchScope]);
 
   useEffect(() => {
     const updateClock = () => setCurrentTime(new Date());
@@ -1202,7 +1279,7 @@ export function AgentPortal() {
     setChatMessages(nextMessages);
     setQuery("");
     setGenerationElapsedMs(0);
-    setGenerationStage("질문 분석 중");
+    setGenerationStage(GENERATION_STAGES[chatSearchScope][0]);
     setStreaming(true);
     setNotice("LLM Gateway가 보안 정책에 맞는 Provider를 선택하고 있습니다.");
     const controller = new AbortController();
@@ -1255,7 +1332,7 @@ export function AgentPortal() {
               body: "",
               provider: summaryPayload.provider,
               streamingResponse: true,
-              streamingStage: "상세 답변 준비 중",
+              streamingStage: GENERATION_STAGES[chatSearchScope][0],
               streamingSummary: previewSummary,
             }]);
             setNotice("빠른 요약을 먼저 표시했습니다. 상세 답변을 정리하고 있습니다.");
@@ -1340,10 +1417,10 @@ export function AgentPortal() {
               resolveTypewriter = undefined;
               return;
             }
-            displayedContent += typewriterQueue.slice(0, 3);
-            typewriterQueue = typewriterQueue.slice(3);
+            displayedContent += typewriterQueue.slice(0, 2);
+            typewriterQueue = typewriterQueue.slice(2);
             updateDisplayedContent();
-          }, 14);
+          }, 18);
         };
         cancelTypewriter = () => {
           if (typewriterTimer) clearInterval(typewriterTimer);
@@ -1360,9 +1437,16 @@ export function AgentPortal() {
           if (!eventName || !data) return;
           const eventPayload = JSON.parse(data) as Record<string, unknown>;
           if (eventName === "stage" && typeof eventPayload.stage === "string") {
+            setGenerationStage(eventPayload.stage);
+            const sourceCount = typeof eventPayload.sourceCount === "number" ? eventPayload.sourceCount : undefined;
             setChatMessages((messages) => messages.map((message, index) =>
               index === messages.length - 1 && message.streamingResponse
-                ? { ...message, streamingStage: eventPayload.stage as string, tokenCount: typeof eventPayload.tokens === "number" ? eventPayload.tokens as number : message.tokenCount }
+                ? {
+                    ...message,
+                    streamingStage: eventPayload.stage as string,
+                    streamingDetail: sourceCount === undefined ? message.streamingDetail : `${sourceCount}개 검색 결과를 확인하고 있습니다.`,
+                    tokenCount: typeof eventPayload.tokens === "number" ? eventPayload.tokens as number : message.tokenCount,
+                  }
                 : message
             ));
           } else if (eventName === "delta" && typeof eventPayload.text === "string") {
@@ -1383,6 +1467,12 @@ export function AgentPortal() {
             ));
           } else if (eventName === "citation") {
             streamedCitations.push(eventPayload as NonNullable<GatewayResponse["citations"]>[number]);
+            const liveCitation = gatewayCitationToResult(eventPayload as NonNullable<GatewayResponse["citations"]>[number]);
+            setChatMessages((messages) => messages.map((message, index) =>
+              index === messages.length - 1 && message.streamingResponse
+                ? { ...message, citations: [...(message.citations || []).filter((citation) => citation.id !== liveCitation.id), liveCitation] }
+                : message
+            ));
           } else if (eventName === "error" && typeof eventPayload.message === "string") {
             throw new Error(eventPayload.message as string);
           } else if (eventName === "done") {
@@ -1410,6 +1500,7 @@ export function AgentPortal() {
                 body: [streamedSummary, displayedContent.trim()].filter(Boolean).join("\n\n"),
                 streamingResponse: false,
                 streamingStage: undefined,
+                streamingDetail: undefined,
                 streamingSummary: undefined,
                 tokenCount: (done.usage as Record<string, number> | undefined)?.total_tokens || message.tokenCount,
                 messageId: done.message_id,
@@ -2017,6 +2108,7 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
   const attachmentGenerationRef = useRef(0);
 
   useEffect(() => () => { attachmentGenerationRef.current += 1; }, []);
+  const activeStreamingMessage = [...messages].reverse().find((message) => message.streamingResponse);
   const activeCitations = [...messages].reverse().find((message) => message.role === "assistant" && message.citations?.length)?.citations || [];
 
   const loadConversationAttachments = async (id?: string) => {
@@ -2185,7 +2277,6 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
   return (
     <div className="workspace-layout">
       <section className="chat-workspace" aria-label="AI 채팅">
-        <div className="workspace-heading"><button className="button button-secondary workspace-new-button" type="button" onClick={onNewConversation}>새 대화</button></div>
          <section className="chat-smart-suggestions" aria-labelledby="chat-smart-suggestions-title">
           <div className="chat-smart-suggestions-heading">
             <div>
@@ -2195,6 +2286,7 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
             <span>{currentUser.department} 맞춤 · 최근 90일</span>
           </div>
           <div className="chat-smart-suggestion-list">
+            <button className="button button-secondary chat-new-button" type="button" onClick={() => void onNewConversation()}>새 대화</button>
             {suggestedQuestions.map((suggestion) => (
               <button
                 key={suggestion.id}
@@ -2217,14 +2309,14 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
           {messages.map((message, index) => (
             <article className={`message ${message.role}${message.error ? " error" : ""}`} key={`${message.role}-${index}`}>
               <span className="message-avatar" aria-hidden="true">{message.role === "user" ? currentUser.displayName.slice(0, 1) : "AI"}</span>
-              <div><div className={"message-label" + (message.streamingResponse && message.streamingStage ? " streaming-stage" : "")}>{message.role === "user" ? currentUser.displayName : message.streamingResponse && message.streamingStage ? "ILJIN AI · " + message.streamingStage + (message.tokenCount ? " (" + message.tokenCount + " 토큰)" : "") : message.clarificationRequired ? "ILJIN AI · 답변 전 정보 확인" : message.provider === "cloudflare" ? "ILJIN AI · Cloud LLM" : "ILJIN AI · 로컬"}</div>{message.role === "assistant" && !message.error ? <>{message.streamingResponse && message.streamingSummary && <div className="answer-summary" aria-live="polite"><span>빠른 요약</span><p>{message.streamingSummary}</p></div>}<FormattedAnswer content={message.body} citations={message.citations ? buildCitationLookup(message.citations) : undefined} /></> : <p>{message.body}</p>}{message.role === "assistant" && message.clarificationRequired && message.followUpQuestions?.length && message.clarificationOriginalQuestion ? <ClarificationForm questions={message.followUpQuestions} originalQuestion={message.clarificationOriginalQuestion} disabled={streaming || messages.slice(index + 1).some((item) => item.role === "user")} onSubmit={onClarificationSubmit} /> : message.role === "assistant" && message.followUpQuestions && message.followUpQuestions.length > 0 && <div className="follow-up-questions"><span className="follow-up-label">정확한 답변을 위한 보충 질문</span>{message.followUpQuestions.map((fq, fqIndex) => <button key={fqIndex} type="button" className="follow-up-button" disabled={streaming} onClick={() => onFollowUpClick(fq.question)} title={fq.intent}>{fq.question}</button>)}</div>}{message.role === "assistant" && message.relatedQuestions && message.relatedQuestions.length > 0 && <div className="follow-up-questions related-questions"><span className="follow-up-label">연관 질문 추천</span>{message.relatedQuestions.map((rq, rqIndex) => <button key={rqIndex} type="button" className="follow-up-button related-question-button" disabled={streaming} onClick={() => onFollowUpClick(rq.question)} title={rq.intent}>{rq.question}</button>)}</div>}{message.role === "assistant" && !message.clarificationRequired && <div className="answer-actions"><button type="button" onClick={() => void copyAnswer(message, index)}>{copiedMessage === `${index}` ? "복사됨" : "답변 복사"}</button>{message.error && <button type="button" onClick={() => setQuery([...messages].slice(0, index).reverse().find((item) => item.role === "user")?.body || "")}>질문 다시 입력</button>}{message.messageId && <><button type="button" className={`answer-feedback-button ${message.feedback === 1 ? "selected positive" : ""}`} aria-label="답변 좋아요" title="좋아요" disabled={Boolean(message.feedback)} onClick={() => onFeedback(message.messageId!, 1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v10H4a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1h3Zm0 10h9.6a2 2 0 0 0 1.95-1.58l1.2-6A2 2 0 0 0 17.8 10H14l.7-3.5A2 2 0 0 0 12.75 4L8 10v10Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round" /></svg><span>좋아요</span></button><button type="button" className={`answer-feedback-button ${message.feedback === -1 ? "selected negative" : ""}`} aria-label="답변 싫어요" title="싫어요" disabled={Boolean(message.feedback)} onClick={() => onFeedback(message.messageId!, -1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14V4H4a1 1 0 0 1-1 1v8a1 1 0 0 1 1 1h3Zm0-10h9.6a2 2 0 0 1 1.95 1.58l1.2 6A2 2 0 0 1 17.8 14H14l.7 3.5A2 2 0 0 1 12.75 20L8 14V4Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round" /></svg><span>싫어요</span></button></>}<span className="trace">{message.traceId ? `${message.model ?? "@cf/zai-org/glm-4.7-flash"} · ${message.latencyMs ?? 0}ms · ${message.traceId}` : message.error ? "Gateway 연결 오류" : "저장된 응답"}</span></div>}</div>
-              {message.role === "assistant" && (message.streamingResponse || message.traceId) && <div className="answer-usage">{message.tokenCount?.toLocaleString() ?? "토큰 계산 중"} · {(message.streamingResponse ? generationElapsedMs : message.latencyMs ?? 0) >= 1_000 ? `${((message.streamingResponse ? generationElapsedMs : message.latencyMs ?? 0) / 1_000).toFixed(1)}초` : `${message.streamingResponse ? generationElapsedMs : message.latencyMs ?? 0}ms`}</div>}
+              <div><div className={"message-label" + (message.streamingResponse && message.streamingStage ? " streaming-stage" : "")}>{message.role === "user" ? currentUser.displayName : message.streamingResponse && message.streamingStage ? "ILJIN AI · " + message.streamingStage + (message.tokenCount ? " (" + message.tokenCount + " 토큰)" : "") : message.clarificationRequired ? "ILJIN AI · 답변 전 정보 확인" : message.provider === "cloudflare" ? "ILJIN AI · Cloud LLM" : "ILJIN AI · 로컬"}</div>{message.streamingResponse && <GenerationProgress scope={searchScope} stage={message.streamingStage || generationStage} detail={message.streamingDetail} elapsedMs={generationElapsedMs} tokenCount={message.tokenCount} sources={message.citations} />}{message.role === "assistant" && !message.error ? <>{message.streamingResponse && message.streamingSummary && <div className="answer-summary" aria-live="polite"><span>빠른 요약</span><p>{message.streamingSummary}</p></div>}<FormattedAnswer content={message.body} citations={message.citations ? buildCitationLookup(message.citations) : undefined} /></> : <p>{message.body}</p>}{message.role === "assistant" && message.clarificationRequired && message.followUpQuestions?.length && message.clarificationOriginalQuestion ? <ClarificationForm questions={message.followUpQuestions} originalQuestion={message.clarificationOriginalQuestion} disabled={streaming || messages.slice(index + 1).some((item) => item.role === "user")} onSubmit={onClarificationSubmit} /> : message.role === "assistant" && message.followUpQuestions && message.followUpQuestions.length > 0 && <div className="follow-up-questions"><span className="follow-up-label">정확한 답변을 위한 보충 질문</span>{message.followUpQuestions.map((fq, fqIndex) => <button key={fqIndex} type="button" className="follow-up-button" disabled={streaming} onClick={() => onFollowUpClick(fq.question)} title={fq.intent}>{fq.question}</button>)}</div>}{message.role === "assistant" && message.relatedQuestions && message.relatedQuestions.length > 0 && <div className="follow-up-questions related-questions"><span className="follow-up-label">연관 질문 추천</span>{message.relatedQuestions.map((rq, rqIndex) => <button key={rqIndex} type="button" className="follow-up-button related-question-button" disabled={streaming} onClick={() => onFollowUpClick(rq.question)} title={rq.intent}>{rq.question}</button>)}</div>}{message.role === "assistant" && !message.clarificationRequired && <div className="answer-actions"><button type="button" onClick={() => void copyAnswer(message, index)}>{copiedMessage === `${index}` ? "복사됨" : "답변 복사"}</button>{message.error && <button type="button" onClick={() => setQuery([...messages].slice(0, index).reverse().find((item) => item.role === "user")?.body || "")}>질문 다시 입력</button>}{message.messageId && <><button type="button" className={`answer-feedback-button ${message.feedback === 1 ? "selected positive" : ""}`} aria-label="답변 좋아요" title="좋아요" disabled={Boolean(message.feedback)} onClick={() => onFeedback(message.messageId!, 1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v10H4a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1h3Zm0 10h9.6a2 2 0 0 0 1.95-1.58l1.2-6A2 2 0 0 0 17.8 10H14l.7-3.5A2 2 0 0 0 12.75 4L8 10v10Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round" /></svg><span>좋아요</span></button><button type="button" className={`answer-feedback-button ${message.feedback === -1 ? "selected negative" : ""}`} aria-label="답변 싫어요" title="싫어요" disabled={Boolean(message.feedback)} onClick={() => onFeedback(message.messageId!, -1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14V4H4a1 1 0 0 1-1 1v8a1 1 0 0 1 1 1h3Zm0-10h9.6a2 2 0 0 1 1.95 1.58l1.2 6A2 2 0 0 1 17.8 14H14l.7 3.5A2 2 0 0 1 12.75 20L8 14V4Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round" /></svg><span>싫어요</span></button></>}<span className="trace">{message.traceId ? `${message.model ?? "@cf/zai-org/glm-4.7-flash"} · ${message.latencyMs ?? 0}ms · ${message.traceId}` : message.error ? "Gateway 연결 오류" : "저장된 응답"}</span></div>}</div>
+              {message.role === "assistant" && message.traceId && !message.streamingResponse && <div className="answer-usage">{message.tokenCount?.toLocaleString() ?? "토큰 계산 중"} · {(message.latencyMs ?? 0) >= 1_000 ? `${((message.latencyMs ?? 0) / 1_000).toFixed(1)}초` : `${message.latencyMs ?? 0}ms`}</div>}
             </article>
           ))}
-          {streaming && !messages.some((message) => message.streamingResponse) && <article className="message assistant streaming"><span className="message-avatar" aria-hidden="true">AI</span><div><div className="message-label streaming-stage">ILJIN AI · {generationStage}</div><p><span className="loading-line" /><span className="loading-line short" /></p></div></article>}
+          {streaming && !messages.some((message) => message.streamingResponse) && <article className="message assistant streaming"><span className="message-avatar" aria-hidden="true">AI</span><div><div className="message-label">ILJIN AI</div><GenerationProgress scope={searchScope} stage={generationStage} elapsedMs={generationElapsedMs} /></div></article>}
         </div>
         {activeCitations.length > 0 && <div className="evidence-strip" aria-label="실제 답변 근거">
-          {activeCitations.slice(0, 6).map((citation) => <a key={citation.id} href={citation.sourceUrl} target="_blank" rel="noreferrer" aria-label={`${citation.title} 출처 새 창에서 열기`}>{citation.sourceType === "image" && citation.originalUrl && <>
+          {activeCitations.slice(0, 6).map((citation) => <a key={citation.id} href={citationHref(citation.sourceUrl)} target="_blank" rel="noopener noreferrer" aria-label={`${citation.title} 출처 새 창에서 열기`}>{citation.sourceType === "image" && citation.originalUrl && <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={citation.originalUrl} alt="" />
           </>}<span>{citation.sourceLabel}{citation.sourceType === "image" ? " · 이미지 근거" : ""}</span><strong>{citation.title}</strong></a>)}
@@ -2485,7 +2577,7 @@ function SearchView({ type, setType, canUpload, onChat }: { type: string; setTyp
     <div className="view-stack knowledge-base">
       <section className="knowledge-hero">
         <div className="knowledge-hero-heading">
-          <div><span className="knowledge-eyebrow">ILJIN ENTERPRISE KNOWLEDGE DATA</span><h1 className="sr-only">ILJIN Knowledge Data Base</h1><p>{scope === "internal" ? "질의를 재작성하고 Dense·BM25 결과를 RRF로 융합한 뒤 재정렬·근거 검증까지 수행합니다." : "사내 정보와 분리된 공개 웹에서 최신 외부 참고자료를 조사합니다."}</p></div>
+          <div><span className="knowledge-eyebrow">ILJIN ENTERPRISE KNOWLEDGE DATA</span><h1 className="sr-only">Knowledge Data Base</h1><p>{scope === "internal" ? "질의를 재작성하고 Dense·BM25 결과를 RRF로 융합한 뒤 재정렬·근거 검증까지 수행합니다." : "사내 정보와 분리된 공개 웹에서 최신 외부 참고자료를 조사합니다."}</p></div>
           <div className="knowledge-policy"><span>ACL</span><strong>권한 기반 지식 접근</strong><small>{overview?.summary.department || "소속 부서"} Context 적용</small></div>
         </div>
         <div className="search-scope-switch search-scope-switch--hero" role="group" aria-label="지식 검색 범위">

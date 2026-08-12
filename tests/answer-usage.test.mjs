@@ -13,4 +13,11 @@ test("답변 상태 레이블 옆에 총 토큰과 생성 경과 시간을 표�
   assert.match(portal, /토큰 계산 중/);
   assert.match(portal, /message\.latencyMs \?\? 0/);
   assert.match(portal, /message\.streamingResponse \? generationElapsedMs/);
+  assert.match(portal, /typewriterQueue\.slice\(0, 2\)/);
+  assert.match(portal, /typewriterQueue\.slice\(2\)/);
+  assert.match(portal, /function GenerationProgress/);
+  assert.match(portal, /답변 생성 진행 단계/);
+  assert.match(portal, /검색 결과 교차 검토/);
+  assert.match(portal, /GenerationProgress scope=\{searchScope\}/);
+  assert.match(portal, /liveCitation = gatewayCitationToResult/);
 });

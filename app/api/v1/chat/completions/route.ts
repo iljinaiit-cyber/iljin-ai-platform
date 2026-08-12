@@ -10,8 +10,8 @@ import { buildFeedbackLearningContext, loadUserPreferences, updateUserPreference
 import { getEffectiveModel } from "../../../../../lib/llm-model-config";
 import { getConversationSensitivity, recordLlmInvocation } from "../../../../../lib/llm-telemetry";
 import { searchInternet, type InternetSearchResponse } from "../../../../../lib/internet-search";
-import { answerOutputTokenBudget, answerPreferenceInstruction, answerReasoningTier, inferAnswerFormat } from "../../../../../lib/answer-format";
-import { extractFollowUpQuestions, extractRelatedQuestions, RELATED_QUESTION_INSTRUCTION, type FollowUpQuestion } from "../../../../../lib/question-rewriter";
+import { answerOutputTokenBudget, answerPreferenceInstruction, answerReasoningTier, inferAnswerFormat, isResearchQuery } from "../../../../../lib/answer-format";
+import { extractFollowUpQuestions, extractRelatedQuestions, generateInsufficiencyQuestions, RELATED_QUESTION_INSTRUCTION, rewriteQuery, type FollowUpQuestion } from "../../../../../lib/question-rewriter";
 import { resolvePrincipal } from "../../../../../lib/identity";
 import { authorizeFeature } from "../../../../../lib/admin-governance";
 import {
@@ -42,10 +42,29 @@ const sse = (event: string, data: unknown) =>
   new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
 const CLARIFICATION_LEAD_IN = "권한 범위에서 확인 가능한 근거만으로는 답변하기 부족합니다. 최종 답변을 생성하기 전에 확인이 필요한 정보에 아래에서 답해 주세요.";
+const COLD_START_CLARIFICATION_LEAD_IN = "현재 질문과 대화 맥락만으로는 정확한 답변에 필요한 정보가 부족합니다. 임의로 추정하지 않고, 아래 선택 질문으로 범위를 먼저 확인해 주세요.";
 const INTERNET_GROUNDING_MESSAGE_LIMIT = 7_900;
 const INTERNET_GROUNDING_SOURCE_LIMIT = 6;
 const INTERNET_CONVERSATION_CONTEXT_BUDGET = 1_200;
 const MIN_DETAILED_INTERNET_BODY_CHARACTERS = 1_000;
+const INTERNET_LINK_INSTRUCTION = "Only use URLs present in the supplied search evidence. Never invent example, guessed, or generalized URLs; if a source URL is not verified, show the source title without a link.";
+
+function needsColdStartClarification(query: string, previousMessages: Array<{ role: string; content: string }>, webSearch?: InternetSearchResponse) {
+  if (previousMessages.some((message) => message.role === "user" || message.role === "assistant")) return false;
+  const normalized = query.trim().replace(/\s+/g, " ");
+  const tokenCount = normalized.split(/[^\p{L}\p{N}]+/u).filter(Boolean).length;
+  const contextReference = /^(이거|그거|그것|이것|여기|저기|방금|앞서|이전|해당)|\b(이거|그거|그것|이것|여기|저기|방금|앞서|이전|해당)\b/.test(normalized);
+  const lowEvidence = !webSearch || webSearch.results.length < 2 || webSearch.quality.uniqueDomains < 2;
+  return lowEvidence && (contextReference || normalized.length < 12 || tokenCount <= 2);
+}
+
+function defaultClarificationQuestions(): FollowUpQuestion[] {
+  return [
+    { question: "어떤 대상·제품·조직을 말씀하시나요?", intent: "대상 명확화" },
+    { question: "원하시는 범위는 최신 동향, 비교·검토, 실행 방법 중 무엇인가요?", intent: "목적 명확화" },
+    { question: "답변 기준이 되는 기간·지역·조건이 있나요?", intent: "범위와 기준 명확화" },
+  ];
+}
 
 // answer_length and reasoning_tier are independent request fields (AgentPortal
 // derives one from the other, but the API also accepts reasoning_tier on its own).
@@ -56,8 +75,8 @@ function maxOutputTokensFor(length: Body["answer_length"], tier: "swift" | "expe
   return Math.round(answerOutputTokenBudget(length) * tierBoost);
 }
 
-function responsePreferenceInstruction(length: Body["answer_length"], format: Body["answer_format"]) {
-  return answerPreferenceInstruction(length, format);
+function responsePreferenceInstruction(length: Body["answer_length"], format: Body["answer_format"], query = "") {
+  return answerPreferenceInstruction(length, format, query);
 }
 
 function boundedSourceContext(result: InternetSearchResponse, budget: number) {
@@ -68,10 +87,13 @@ function boundedSourceContext(result: InternetSearchResponse, budget: number) {
 
 function buildInternetGroundingPrompt(query: string, webSearch: InternetSearchResponse, preference: string, maxLength = INTERNET_GROUNDING_MESSAGE_LIMIT) {
   const today = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "long" }).format(new Date());
-  const instruction = `현재 날짜(대한민국): ${today}\n검색 결과는 최신 사실을 확인하기 위한 참고 근거입니다. 최종 답변은 LLM이 질문의 의도와 검색 근거를 종합해 직접 작성하세요. 먼저 가능한 범위에서 서로 다른 공급자·도메인의 출처를 여러 개 조사하고, 공식·정부·학술·전문 매체 등 신뢰도 높은 근거를 우선해 교차 검토하세요. 출처의 최신성·직접성·신뢰도를 비교하고, 서로 충돌하는 내용은 양쪽을 구분해 설명하세요. 검색 결과의 문장·제목을 그대로 복사하거나 검색 결과 목록을 답변처럼 나열하지 마세요. 검색 근거로 확인 가능한 사실만 단정하고, 각 핵심 주장 뒤에 [W1] 형식으로 인용하세요. 최신 게시·갱신일을 우선하고 날짜를 확인할 수 없으면 명시하세요. Wikimedia/Wikipedia는 여러 공개 출처 중 하나인 보조 배경자료로만 취급하며, 단일 백과사전 본문에 의존해 결론을 내리지 마세요. 출처가 하나뿐이거나 근거가 부족하면 그 한계를 밝히고 [확인 필요]로 표시하세요.\n${preference}${RELATED_QUESTION_INSTRUCTION}\n\n검색 근거:\n`;
+  const researchFrame = webSearch.plan.intent === "research"
+    ? `\n조사 설계: 이 질문은 단일 사실 조회가 아닌 리서치·벤치마킹 요청입니다. 검색 결과를 글로벌 통계, 국내 정책·도입 현황, 기업별 실행 사례, 제조·산업 유즈케이스, ROI·리스크 근거로 묶어 비교하세요. 한 출처의 주장만으로 시장 전체를 일반화하지 말고, 조사기관·표본·조사시점·수치 정의를 함께 기록하세요. 정부 목표치·기업 발표 자기보고·독립 조사 실측·컨설팅 전망을 서로 다른 증거 등급으로 구분하세요. 기업 사례는 회사명·업무 대상·조직/플랫폼·투자 또는 규모·공개 성과·시점을 빠뜨리지 말고, 수치가 없으면 정량 성과 미공개라고 명시하세요.\n`
+    : "";
+  const instruction = `현재 날짜(대한민국): ${today}\n검색 의도: ${webSearch.plan.intent} · 검색 질의: ${webSearch.plan.searchQuery} · 조사 변형: ${webSearch.plan.queries.join(" | ")}\n검색 결과는 최신 사실을 확인하기 위한 참고 근거입니다. 최종 답변은 LLM이 질문의 의도와 검색 근거를 종합해 직접 작성하세요. 먼저 가능한 범위에서 서로 다른 공급자·도메인의 출처를 여러 개 조사하고, 공식·정부·학술·전문 매체 등 신뢰도 높은 근거를 우선해 교차 검토하세요. 출처의 최신성·직접성·신뢰도를 비교하고, 서로 충돌하는 내용은 양쪽을 구분해 설명하세요. 검색 결과의 문장·제목을 그대로 복사하거나 검색 결과 목록을 답변처럼 나열하지 마세요. 검색 근거로 확인 가능한 사실만 단정하고, 각 핵심 주장 뒤에 [W1] 형식으로 인용하세요. 최신 게시·갱신일을 우선하고 날짜를 확인할 수 없으면 명시하세요. 출처가 하나뿐이거나 근거가 부족하면 그 한계를 밝히고 [확인 필요]로 표시하세요.${researchFrame}\n${preference}${RELATED_QUESTION_INSTRUCTION}\n\n검색 근거:\n`;
   const question = `\n\n질문:\n${query}`;
-  const sourceBudget = maxLength - instruction.length - question.length;
-  return `${instruction}${boundedSourceContext(webSearch, sourceBudget)}${question}`;
+  const sourceBudget = maxLength - instruction.length - INTERNET_LINK_INSTRUCTION.length - question.length;
+  return `${INTERNET_LINK_INSTRUCTION}\n${instruction}${boundedSourceContext(webSearch, sourceBudget)}${question}`;
 }
 
 function buildConversationAwareInternetPrompt(
@@ -86,14 +108,43 @@ function buildConversationAwareInternetPrompt(
   return `${contextPrefix}${basePrompt}`;
 }
 
+function canonicalHttpUrl(value: string) {
+  try {
+    const url = new URL(value.trim().replace(/[.,!?;:]+$/g, ""));
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizeInternetLinks(content: string, citations: WebRagCitation[]) {
+  const trustedUrls = new Map<string, string>();
+  for (const citation of citations) {
+    const canonical = canonicalHttpUrl(citation.url);
+    if (canonical) trustedUrls.set(canonical, citation.url);
+  }
+
+  const linkedContent = content.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_, label: string, rawUrl: string) => {
+    const trustedUrl = trustedUrls.get(canonicalHttpUrl(rawUrl) || "");
+    return trustedUrl ? `[${label}](${trustedUrl})` : label;
+  });
+  return linkedContent.replace(/https?:\/\/[^\s<)]+/g, (rawUrl) => trustedUrls.get(canonicalHttpUrl(rawUrl) || "") || "");
+}
+
 function ensureInternetCitationCoverage(content: string, citations: WebRagCitation[]) {
   if (!citations.length || /\[W\d+\]/.test(content)) return content;
   return `${content}\n\n## 참고 출처\n${citations.map((citation) => `- [${citation.id}] ${citation.title}`).join("\n")}`;
 }
 
 function ensureDeepInternetSourceSection(content: string, citations: WebRagCitation[], length: Body["answer_length"]) {
-  if (length !== "detailed" || !citations.length || /## 참고한 정보 출처|## 참고 출처/.test(content)) return content;
-  return `${content}\n\n## 참고한 정보 출처 및 링크\n${citations.map((citation) => `- [${citation.id}] [${citation.title}](${citation.url}) · ${citation.source}${citation.publishedAt ? ` · ${citation.publishedAt}` : ""}`).join("\n")}`;
+  const sanitizedContent = sanitizeInternetLinks(content, citations);
+  if (length !== "detailed" || !citations.length) return sanitizedContent;
+  const withoutUnverifiedSourceSection = sanitizedContent
+    .replace(/(?:^|\n)\s*(?:(?:#{1,6}\s*)|(?:\d+[.)]\s+))?(?:참고|출처)[^\n]*\n[\s\S]*$/im, "")
+    .trim();
+  return `${withoutUnverifiedSourceSection}\n\n## 참고한 정보 출처 및 링크\n${citations.map((citation) => `- [${citation.id}] [${citation.title}](${citation.url}) · ${citation.source}${citation.publishedAt ? ` · ${citation.publishedAt}` : ""}`).join("\n")}`;
 }
 
 function needsDetailedInternetExpansion(content: string) {
@@ -182,16 +233,15 @@ async function resolveSensitivity(request: Request, principal: Parameters<typeof
   return requested;
 }
 
-export async function POST(request: Request) {
-  const traceId = newTraceId();
-  try {
+type StageEmitter = (stage: string, details?: Record<string, unknown>) => void;
+
+async function executeChat(request: Request, body: Body, traceId: string, emitStage?: StageEmitter) {
     const principal = await resolvePrincipal(request);
     await authorizeFeature(principal, "ai.chat", "ai.chat");
     assertAiKindEnabled("chat");
     // 순간 폭주(분당)와 누적 소진(일일)은 다른 문제다. 둘 다 건다.
     await enforceRateLimit(principal, "chat.completions", 30);
     await enforceDailyBudget(principal, "chat");
-    const body = await request.json() as Body;
     const rawMessages = body.messages ?? [];
     // 대화 이력 전체가 매 요청 프롬프트로 들어간다. 개수 상한이 없으면 클라이언트가
     // 이력을 부풀리는 것만으로 1회 요청 비용을 무한정 키울 수 있다.
@@ -215,13 +265,24 @@ export async function POST(request: Request) {
       getEffectiveModel(principal.tenantId, "chat_local").catch(() => undefined),
     ]);
     const userContent = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
-    const answerLength = body.summary_only ? "brief" : body.answer_length ?? storedPreferences.answerLength ?? "standard";
+    // A research/landscape request needs enough room for evidence comparison,
+    // company cases, caveats, and a business-plan takeaway. Explicit user
+    // length choices still win; otherwise research questions use the detailed
+    // contract automatically.
+    const requestedAnswerLength = body.summary_only
+      ? "brief"
+      : body.answer_length ?? (isResearchQuery(userContent) ? "detailed" : storedPreferences.answerLength ?? "standard");
+    // The portal sends its default "standard" value explicitly. Treat that
+    // default as a deep research brief for landscape/benchmarking questions;
+    // an explicit brief/summary request remains short.
+    const researchDepth = !body.summary_only && requestedAnswerLength === "standard" && isResearchQuery(userContent);
+    const answerLength = researchDepth ? "detailed" : requestedAnswerLength;
     const answerFormat = body.answer_format ?? inferAnswerFormat(userContent);
     const feedbackLearningContext = buildFeedbackLearningContext(storedPreferences);
     const reasoningTier = body.reasoning_tier === "swift" || body.reasoning_tier === "expert" || body.reasoning_tier === "deep"
       ? body.reasoning_tier
       : answerReasoningTier(answerLength);
-    const preference = `${responsePreferenceInstruction(answerLength, answerFormat)}${body.summary_only ? "\n첫 줄에 질문에 대한 한 문장 요약만 작성하고, 추가 설명은 작성하지 마세요." : ""}`;
+    const preference = `${responsePreferenceInstruction(answerLength, answerFormat, userContent)}${body.summary_only ? "\n첫 줄에 질문에 대한 한 문장 요약만 작성하고, 추가 설명은 작성하지 마세요." : ""}`;
     const preferenceWithLearning = `${preference}${feedbackLearningContext}`;
     const contextMessages = body.conversation_id
       ? [
@@ -238,47 +299,109 @@ export async function POST(request: Request) {
     let relatedQuestions: FollowUpQuestion[] = [];
 
     let internetGrounded = false;
+    let clarificationSuggestionsOnly = false;
     const searchMode = body.search_mode ?? storedPreferences.searchScope;
+    emitStage?.("질문·의도 분석 중");
     if (searchMode === "internet") {
+      const priorInternetMessages = contextMessages
+        .slice(0, -1)
+        .filter((message) => message.role === "user" || message.role === "assistant");
+      const internetContext = priorInternetMessages.map((message) => message.content).slice(-4);
       try {
-        const webSearch = await searchInternet(userContent, { principal, traceId, limit: INTERNET_GROUNDING_SOURCE_LIMIT });
-        const internetPrompt = buildConversationAwareInternetPrompt(userContent, webSearch, preferenceWithLearning, contextMessages.slice(0, -1));
-        completion = await completeWithGateway(
-          [{ role: "user", content: internetPrompt }],
+        // Follow-up questions often omit the subject ("그거 최신 내용은?").
+        // Rewrite only when history exists so a cold-start question does not pay
+        // for an unnecessary extra model call, then give both the standalone
+        // query and the raw context to the multi-provider search planner.
+        emitStage?.("대화 맥락 확인 중");
+        const internetQuery = priorInternetMessages.length
+          ? await rewriteQuery(userContent, priorInternetMessages, traceId)
+          : userContent;
+        emitStage?.("웹 검색 중");
+        const webSearch = await searchInternet(internetQuery, {
+          principal,
           traceId,
-          { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength, reasoningTier), cloudflareModelOverride, localModelOverride },
-          reasoningTier,
-        );
-        if (answerLength === "detailed") {
-          completion = await expandShallowDetailedInternetAnswer(completion, internetPrompt, traceId, sensitivity, reasoningTier, cloudflareModelOverride);
+          limit: INTERNET_GROUNDING_SOURCE_LIMIT,
+          context: internetContext,
+        });
+        emitStage?.("검색 결과 교차 검토 중", {
+          sourceCount: webSearch.results.length,
+          providers: webSearch.providersUsed,
+        });
+        if (needsColdStartClarification(userContent, priorInternetMessages, webSearch)) {
+          followUpQuestions = await generateInsufficiencyQuestions(userContent, contextMessages, traceId);
+          if (!followUpQuestions.length) followUpQuestions = defaultClarificationQuestions();
+          completion = {
+            id: `internet-clarification-${traceId}`,
+            provider: "cloudflare" as const,
+            model: "question-rewriter",
+            content: COLD_START_CLARIFICATION_LEAD_IN,
+            finishReason: "insufficient_evidence" as const,
+            traceId,
+            latencyMs: 0,
+            usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+          };
+          citations = [];
+          clarificationSuggestionsOnly = true;
+          console.info(JSON.stringify({ event: "internet-clarification-needed", traceId, reason: "cold_start_or_ambiguous_query" }));
+        } else {
+          const internetPrompt = buildConversationAwareInternetPrompt(userContent, webSearch, preferenceWithLearning, contextMessages.slice(0, -1));
+          emitStage?.("근거 기반 답변 작성 중");
+          completion = await completeWithGateway(
+            [{ role: "user", content: internetPrompt }],
+            traceId,
+            { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength, reasoningTier), cloudflareModelOverride, localModelOverride },
+            reasoningTier,
+          );
+          if (answerLength === "detailed" || researchDepth) {
+            completion = await expandShallowDetailedInternetAnswer(completion, internetPrompt, traceId, sensitivity, reasoningTier, cloudflareModelOverride);
+          }
+          const related = extractRelatedQuestions(completion.content);
+          relatedQuestions = related.relatedQuestions.length
+            ? related.relatedQuestions.slice(0, 3)
+            : buildFallbackRelatedQuestions(userContent, webSearch);
+          completion.content = related.content;
+          citations = webSearch.results.slice(0, INTERNET_GROUNDING_SOURCE_LIMIT).map((item, index) => ({
+            id: `W${index + 1}`, assetId: item.url, segmentId: item.id, title: item.title, version: 1,
+            updatedAt: item.publishedAt, excerpt: item.snippet, score: item.score, lexicalScore: item.score,
+            denseScore: item.score, url: item.url, sourceType: "web" as const, source: item.source,
+            publishedAt: item.publishedAt,
+          }));
+          completion.content = ensureDeepInternetSourceSection(ensureInternetCitationCoverage(completion.content, citations), citations, researchDepth ? "detailed" : answerLength);
+          internetGrounded = true;
+          console.info(JSON.stringify({ event: "internet-grounded", traceId, providersUsed: webSearch.providersUsed, providerPath: webSearch.providerPath }));
         }
-        const related = extractRelatedQuestions(completion.content);
-        relatedQuestions = related.relatedQuestions.length
-          ? related.relatedQuestions.slice(0, 3)
-          : buildFallbackRelatedQuestions(userContent, webSearch);
-        completion.content = related.content;
-        citations = webSearch.results.slice(0, INTERNET_GROUNDING_SOURCE_LIMIT).map((item, index) => ({
-          id: `W${index + 1}`, assetId: item.url, segmentId: item.id, title: item.title, version: 1,
-          updatedAt: item.publishedAt, excerpt: item.snippet, score: item.score, lexicalScore: item.score,
-          denseScore: item.score, url: item.url, sourceType: "web" as const, source: item.source,
-          publishedAt: item.publishedAt,
-        }));
-        completion.content = ensureDeepInternetSourceSection(ensureInternetCitationCoverage(completion.content, citations), citations, answerLength);
-        internetGrounded = true;
-        console.info(JSON.stringify({ event: "internet-grounded", traceId, providersUsed: webSearch.providersUsed, providerPath: webSearch.providerPath }));
       } catch (error) {
         if (!(error instanceof RagError) || !["INTERNET_SEARCH_UNAVAILABLE", "INTERNET_SEARCH_NO_RESULTS"].includes(error.code)) throw error;
-        completion = await completeWithGateway(
-          [...contextMessages, {
-            role: "user",
-            content: `${userContent}\n\n${preferenceWithLearning}\n\n실시간 웹 검색 결과를 가져올 수 없습니다. 최신 사실이라고 단정하지 말고, 일반 지식 범위에서 답변한 뒤 필요한 경우 사용자가 재검색할 수 있도록 안내하세요.`,
-          }],
-          traceId,
-          { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength, reasoningTier), cloudflareModelOverride, localModelOverride },
-          reasoningTier,
-        );
-        citations = [];
-        console.warn(JSON.stringify({ event: "internet-search-fallback", traceId, code: error.code }));
+        if (needsColdStartClarification(userContent, priorInternetMessages)) {
+          followUpQuestions = await generateInsufficiencyQuestions(userContent, contextMessages, traceId);
+          if (!followUpQuestions.length) followUpQuestions = defaultClarificationQuestions();
+          completion = {
+            id: `internet-clarification-${traceId}`,
+            provider: "cloudflare" as const,
+            model: "question-rewriter",
+            content: COLD_START_CLARIFICATION_LEAD_IN,
+            finishReason: "insufficient_evidence" as const,
+            traceId,
+            latencyMs: 0,
+            usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+          };
+          citations = [];
+          clarificationSuggestionsOnly = true;
+          console.info(JSON.stringify({ event: "internet-clarification-needed", traceId, reason: "cold_start_without_search_results" }));
+        } else {
+          emitStage?.("근거 기반 답변 작성 중");
+          completion = await completeWithGateway(
+            [...contextMessages, {
+              role: "user",
+              content: `${userContent}\n\n${preferenceWithLearning}\n\n실시간 웹 검색 결과를 가져올 수 없습니다. 최신 사실이라고 단정하지 말고, 일반 지식 범위에서 답변한 뒤 필요한 경우 사용자가 재검색할 수 있도록 안내하세요.`,
+            }],
+            traceId,
+            { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength, reasoningTier), cloudflareModelOverride, localModelOverride },
+            reasoningTier,
+          );
+          citations = [];
+          console.warn(JSON.stringify({ event: "internet-search-fallback", traceId, code: error.code }));
+        }
       }
     } else {
       const ragResult = await completeWithRag({
@@ -289,6 +412,7 @@ export async function POST(request: Request) {
         responsePreferences: { length: answerLength, format: answerFormat, learningContext: feedbackLearningContext },
         reasoningTier,
         assetIds: attachmentAssetIds.length ? attachmentAssetIds : undefined,
+        onStage: emitStage,
       });
       completion = ragResult.completion;
       citations = ragResult.search.citations;
@@ -306,7 +430,7 @@ export async function POST(request: Request) {
     // 아니라 "근거가 없어 아직 답하지 않았다"는 뜻이다. AgentPortal 은 이 신호로
     // ClarificationForm(정보 제출 후 최종 답변 재요청)을 띄우고, 그 외에는 보충 질문을
     // 클릭 가능한 버튼으로만 보여준다.
-    const clarificationRequired = completion.finishReason === "insufficient_evidence" && allFollowUps.length > 0;
+    const clarificationRequired = !clarificationSuggestionsOnly && completion.finishReason === "insufficient_evidence" && allFollowUps.length > 0;
     if (clarificationRequired) completion = { ...completion, content: CLARIFICATION_LEAD_IN };
     if (internetGrounded) completion.content = ensureReferenceDateHeader(completion.content);
     await recordLlmInvocation({ principal, conversationId: body.conversation_id || "", completion, sensitivity })
@@ -364,28 +488,51 @@ export async function POST(request: Request) {
       clarification_required: clarificationRequired,
     };
 
+    return { done, content: completion.content, citations, provider: completion.provider };
+}
+
+export async function POST(request: Request) {
+  const traceId = newTraceId();
+  try {
+    const body = await request.json() as Body;
     if (!body.stream) {
+      const result = await executeChat(request, body, traceId);
+      const done = result.done;
+      const completion = { content: result.content };
+      const citations = result.citations;
       return ok({ ...done, content: completion.content, citations }, traceId);
     }
 
-    // completeWithRag 는 완성된 답변을 돌려준다. 실시간 토큰 스트림이 아니라
-    // 사후 분할 전송이다(06 GAP-04). 프런트 계약(stage/delta/citation/done)은
-    // 동일하므로 Provider 실시간 스트림으로 바꿔도 이 라우트만 고치면 된다.
-    // ponytail: 사후 분할, 상한 = 첫 토큰까지 전체 생성 대기. passthrough 로 이관 예정.
+    // Keep the connection open while retrieval, verification, and answer generation
+    // run so the client receives the real stage instead of a timer-driven guess.
     const stream = new ReadableStream({
-      async start(controller) {
-        const { summary, remainder } = splitStreamingAnswer(completion.content ?? "");
-        controller.enqueue(sse("stage", { stage: "답변 요약 준비 중", tokens: completion.usage?.completion_tokens }));
-        if (summary) controller.enqueue(sse("summary", { text: summary }));
-        if (summary) await new Promise((resolve) => setTimeout(resolve, 120));
-        controller.enqueue(sse("stage", { stage: "상세 답변 생성 중", tokens: completion.usage?.completion_tokens }));
-        for (const citation of citations) controller.enqueue(sse("citation", citation));
-        const text = summary ? remainder : completion.content ?? "";
-        for (let i = 0; i < text.length; i += 48) {
-          controller.enqueue(sse("delta", { text: text.slice(i, i + 48) }));
-        }
-        controller.enqueue(sse("done", done));
-        controller.close();
+      start(controller) {
+        void (async () => {
+          try {
+            const result = await executeChat(request, body, traceId, (stage, details) => {
+              controller.enqueue(sse("stage", { stage, ...details }));
+            });
+            const done = result.done;
+            const { summary, remainder } = splitStreamingAnswer(result.content ?? "");
+            if (summary) controller.enqueue(sse("summary", { text: summary }));
+            controller.enqueue(sse("stage", { stage: "상세 답변 생성 중", tokens: result.done.usage?.completion_tokens }));
+            for (const citation of result.citations) controller.enqueue(sse("citation", citation));
+            const text = summary ? remainder : result.content ?? "";
+            for (let i = 0; i < text.length; i += 48) {
+              controller.enqueue(sse("delta", { text: text.slice(i, i + 48) }));
+            }
+            controller.enqueue(sse("done", done));
+          } catch (error) {
+            const errorResponse = fail(error, traceId);
+            const payload = await errorResponse.json().catch(() => ({})) as { error?: { message?: string } };
+            controller.enqueue(sse("error", {
+              message: payload.error?.message || "요청을 처리하지 못했습니다.",
+              trace_id: traceId,
+            }));
+          } finally {
+            controller.close();
+          }
+        })();
       },
     });
 
@@ -394,7 +541,6 @@ export async function POST(request: Request) {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-store",
         "X-Trace-Id": traceId,
-        "X-LLM-Provider": completion.provider,
       },
     });
   } catch (error) {

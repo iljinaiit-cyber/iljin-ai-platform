@@ -44,7 +44,25 @@ test("rag.ts prompt includes follow-up question instruction", async () => {
 test("chat route imports extractFollowUpQuestions", async () => {
   const source = await readFile(new URL("app/api/v1/chat/completions/route.ts", root), "utf8");
   assert.match(source, /extractFollowUpQuestions/);
+  assert.match(source, /needsColdStartClarification/);
+  assert.match(source, /defaultClarificationQuestions/);
+  assert.match(source, /clarificationSuggestionsOnly/);
+  assert.match(source, /COLD_START_CLARIFICATION_LEAD_IN/);
+  assert.match(source, /rewriteQuery/);
+  assert.match(source, /const internetQuery/);
+  assert.match(source, /context: internetContext/);
   assert.match(source, /follow_up_questions/);
+});
+
+test("internet search plan separates intent from freshness", async () => {
+  const source = await readFile(new URL("lib/internet-search.ts", root), "utf8");
+  assert.match(source, /intent: InternetSearchIntent/);
+  assert.match(source, /COMPARISON_PATTERN\.test\(searchQuery\)/);
+  assert.match(source, /HOW_TO_PATTERN\.test\(searchQuery\)/);
+  assert.match(source, /RESEARCH_PATTERN\.test\(searchQuery\)/);
+  assert.match(source, /intent === "research"/);
+  assert.match(source, /intent === "comparison"/);
+  assert.match(source, /intent === "how-to"/);
 });
 
 test("chat route shares one done object with follow_up_questions across streaming and non-streaming responses", async () => {

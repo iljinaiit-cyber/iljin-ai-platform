@@ -457,9 +457,9 @@ test("separates internal and internet search and supports queued document drag-a
   assert.match(internetSearch, /api\.tavily\.com\/search/);
   assert.match(internetSearch, /customsearch\.googleapis\.com/);
   assert.match(internetSearch, /WEBPILOT_API_URL/);
-  assert.match(internetSearch, /wikipedia\.org/);
-  assert.match(internetSearch, /"User-Agent": WIKIMEDIA_USER_AGENT/);
-  assert.match(internetSearch, /"Api-User-Agent": WIKIMEDIA_USER_AGENT/);
+  assert.match(internetSearch, /Wikimedia\/Wikipedia is intentionally excluded|Wikimedia\/Wikipedia.*excluded|Wikimedia\/Wikipedia/);
+  assert.match(internetSearch, /item !== "wikimedia"/);
+  assert.match(internetSearch, /Wikimedia\/Wikipedia/);
   assert.match(internetSearch, /extra_snippets/);
   assert.match(internetSearch, /freshnessForQuery/);
   assert.match(internetSearch, /generator/);
@@ -601,7 +601,7 @@ test("uses the latest available dates and document versions as the default answe
   assert.match(portal, /updatedAt: formatSearchDate\(citation\.updatedAt/);
 });
 
-test("upgrades integrated search into an ACL-aware ILJIN Knowledge Data Base", async () => {
+test("upgrades integrated search into an ACL-aware Knowledge Data Base", async () => {
   const [portal, route, governance, ragResults, css] = await Promise.all([
     readFile(new URL("app/AgentPortal.tsx", root), "utf8"),
     readFile(new URL("app/api/v1/knowledge-base/route.ts", root), "utf8"),
@@ -609,7 +609,7 @@ test("upgrades integrated search into an ACL-aware ILJIN Knowledge Data Base", a
     readFile(new URL("app/components/RagResults.tsx", root), "utf8"),
     readFile(new URL("app/globals.css", root), "utf8"),
   ]);
-  assert.match(portal, /ILJIN Knowledge Data Base/);
+  assert.match(portal, /Knowledge Data Base/);
   assert.match(portal, /\/api\/v1\/knowledge-base/);
   assert.match(portal, /최근 업데이트 지식/);
   assert.match(portal, /AI에게 질문/);
@@ -629,7 +629,7 @@ test("upgrades integrated search into an ACL-aware ILJIN Knowledge Data Base", a
   assert.match(route, /indexedDocuments/);
   assert.match(route, /failedDocuments/);
   assert.match(route, /latestUpdatedAt/);
-  assert.match(governance, /label: "ILJIN Knowledge Data Base"/);
+  assert.match(governance, /label: "Knowledge Data Base"/);
   assert.match(ragResults, /지식 검색 결과/);
   assert.match(css, /\.knowledge-hero/);
   assert.match(css, /\.knowledge-stats/);

@@ -5,7 +5,7 @@ import { getRuntimeEnv, type RuntimeEnv } from "./runtime-env";
 
 export type InternetSearchProvider = "tavily" | "exa" | "google" | "naver" | "youtube" | "brave" | "webpilot" | "duckduckgo" | "jina" | "wikimedia";
 export type InternetSourceCategory = "government" | "academic" | "reference" | "web";
-export type InternetSearchIntent = "current" | "comparison" | "how-to" | "fact";
+export type InternetSearchIntent = "current" | "comparison" | "how-to" | "research" | "fact";
 
 export type InternetSearchResult = {
   id: string;
@@ -72,7 +72,7 @@ export type InternetSearchProviderStatus = {
 export type InternetSearchStatus = {
   configured: boolean;
   preferredProvider: InternetSearchProvider;
-  fallbackProvider: "wikimedia";
+  fallbackProvider?: InternetSearchProvider;
   activeProvider: InternetSearchProvider;
   status: "ready" | "fallback";
   detail: string;
@@ -97,11 +97,12 @@ type ProviderAdapter = {
 };
 
 const WIKIMEDIA_USER_AGENT = "ILJIN-AI-Portal/1.0 (https://iljin-ai-works.pages.dev)";
-const DEFAULT_PROVIDER_ORDER: InternetSearchProvider[] = ["google", "naver", "youtube", "tavily", "exa", "brave", "webpilot", "duckduckgo", "jina", "wikimedia"];
+const DEFAULT_PROVIDER_ORDER: InternetSearchProvider[] = ["google", "naver", "youtube", "tavily", "exa", "brave", "webpilot", "duckduckgo", "jina"];
 const FRESHNESS_PATTERN = /\b(today|latest|current|recent|news|update|release|price)\b|오늘|최신|현재|최근|뉴스|동향|출시|업데이트|가격|시세|이번\s*(주|달|분기|해)/i;
 const HISTORICAL_PATTERN = /\b(history|historical|formerly|past|archive)\b|역사|과거|당시|연혁|예전|아카이브/i;
 const COMPARISON_PATTERN = /\b(compare|comparison|versus|vs\.?|difference|best)\b|비교|차이|장단점|추천|순위/i;
 const HOW_TO_PATTERN = /\b(how|guide|tutorial|steps?)\b|방법|절차|사용법|설정|구축|가이드/i;
+const RESEARCH_PATTERN = /(리서치|조사|현황|동향|벤치마킹|사업계획서|경쟁사|업계|기업들|research|landscape|benchmark)/i;
 const CONTEXT_REFERENCE_PATTERN = /^(그|그것|그거|이것|저것|해당|앞에서|그러면|그래서|그럼|비교|장단점|어떻게|언제|어디|왜)\b|그\s*(내용|제품|회사|기술|모델|정책|사건)/i;
 const SEARCH_FILLERS = new Set([
   "무엇", "뭐야", "알려줘", "알려주세요", "설명", "설명해줘", "설명해주세요",
@@ -265,24 +266,32 @@ function buildSearchPlan(query: string, context: string[] = []): InternetSearchP
   const latestRequired = Boolean(requestedFreshness) || !isExplicitHistoricalQuery(searchQuery);
   const freshness = requestedFreshness || (latestRequired ? "py" as const : undefined);
   const locale = searchLanguage(searchQuery);
-  const intent: InternetSearchIntent = latestRequired
-    ? "current"
+  // Classify the user's purpose before applying the default freshness policy.
+  // Most ordinary questions are searched with a recent-year filter, but that
+  // does not make a comparison or how-to request a "current"-intent query.
+  const intent: InternetSearchIntent = RESEARCH_PATTERN.test(searchQuery)
+    ? "research"
     : COMPARISON_PATTERN.test(searchQuery)
-      ? "comparison"
-      : HOW_TO_PATTERN.test(searchQuery)
-        ? "how-to"
+    ? "comparison"
+    : HOW_TO_PATTERN.test(searchQuery)
+      ? "how-to"
+      : latestRequired
+        ? "current"
         : "fact";
   const currentYear = new Date().getUTCFullYear();
   const variants: string[] = [];
-  if (latestRequired && !new RegExp(`\\b${currentYear}\\b`).test(searchQuery)) {
+  if (intent === "research") {
     variants.push(searchQuery);
-    variants.push(`${searchQuery} ${currentYear}`);
+    variants.push(`${searchQuery} ${locale.language === "ko" ? "글로벌 국내 기업 사례 정책 ROI" : "global enterprise cases policy ROI"}`);
   } else if (intent === "comparison") {
     variants.push(searchQuery);
     variants.push(`${searchQuery} ${locale.language === "ko" ? "공식 자료 사양" : "official specifications"}`);
   } else if (intent === "how-to") {
     variants.push(searchQuery);
     variants.push(`${searchQuery} ${locale.language === "ko" ? "공식 가이드" : "official guide"}`);
+  } else if (latestRequired && !new RegExp(`\\b${currentYear}\\b`).test(searchQuery)) {
+    variants.push(searchQuery);
+    variants.push(`${searchQuery} ${currentYear}`);
   } else {
     variants.push(searchQuery);
   }
@@ -397,6 +406,9 @@ function makeResult(
   const title = stripMarkup(item.title || "");
   if (!resultUrl || !title) return undefined;
   const source = new URL(resultUrl).hostname.replace(/^www\./, "");
+  // Wikimedia/Wikipedia is intentionally excluded from every provider's
+  // normalized result set, not only from the legacy fallback path.
+  if (source.endsWith("wikipedia.org") || source.endsWith("wikimedia.org")) return undefined;
   return {
     id: `web_${provider}_${index + 1}`,
     title,
@@ -955,8 +967,8 @@ function providerOrder(runtime: RuntimeEnv) {
   const configuredOrder = (runtime.INTERNET_SEARCH_PROVIDER_ORDER || "")
     .split(",")
     .map((item) => item.trim().toLowerCase())
-    .filter((item): item is InternetSearchProvider => item in PROVIDER_ADAPTERS);
-  return [...new Set([...configuredOrder, ...DEFAULT_PROVIDER_ORDER])];
+    .filter((item): item is InternetSearchProvider => item in PROVIDER_ADAPTERS && item !== "wikimedia");
+  return [...new Set([...configuredOrder, ...DEFAULT_PROVIDER_ORDER])].filter((providerId) => providerId !== "wikimedia");
 }
 
 /**
@@ -969,7 +981,6 @@ function providerOrder(runtime: RuntimeEnv) {
  * 배치 크기를 상한으로 묶어 두 극단 사이에서 다양성과 비용을 함께 잡는다.
  */
 const MAX_PARALLEL_PROVIDERS = 3;
-const REFERENCE_FALLBACK_PROVIDER: InternetSearchProvider = "wikimedia";
 
 async function runProviderBatch(
   providerIds: InternetSearchProvider[],
@@ -1021,11 +1032,7 @@ async function executeInternetSearch(plan: InternetSearchPlan, limit: number) {
   const successfulProviders: InternetSearchProvider[] = [];
   const minimumResults = Math.min(4, limit);
 
-  // Wikimedia is a reference-only safety net. Running it in the same batch as
-  // web providers lets its high-scoring encyclopedia extracts crowd out live
-  // sources before the final rerank.
   const configuredOrder = providerOrder(runtime).filter((providerId) => {
-    if (providerId === REFERENCE_FALLBACK_PROVIDER) return false;
     const configured = PROVIDER_ADAPTERS[providerId].configured(runtime);
     if (!configured) {
       attempts.push({
@@ -1053,35 +1060,16 @@ async function executeInternetSearch(plan: InternetSearchPlan, limit: number) {
   }
 
   let results = rerankResults(plan.searchQuery, collected, limit);
-  if (!results.length) {
-    const fallbackStartedAt = Date.now();
-    const fallback = await runProviderBatch(
-      [REFERENCE_FALLBACK_PROVIDER],
-      plan,
-      limit,
-      runtime,
-    );
-    const fallbackResult = fallback[0];
-    attempts.push({
-      ...fallbackResult.attempt,
-      latencyMs: Date.now() - fallbackStartedAt,
-      detail: `${fallbackResult.attempt.detail} (reference fallback)`,
-    });
-    collected.push(...fallbackResult.results);
-    if (fallbackResult.results.length) successfulProviders.push(REFERENCE_FALLBACK_PROVIDER);
-    results = rerankResults(plan.searchQuery, collected, limit);
-  }
   // 실제로 최종 결과에 살아남은 출처만 "사용됨"으로 센다 — 응답은 왔지만
   // 중복·저관련으로 rerankResults 에서 전부 걸러진 Provider 는 제외한다.
   const providersUsed = [...new Set(results.map(providerOfResult).filter((id): id is InternetSearchProvider => Boolean(id)))];
-  const provider = providersUsed[0] || successfulProviders[0] || "wikimedia";
+  const provider = providersUsed[0] || successfulProviders[0] || "duckduckgo";
   return {
     provider,
     providersUsed: providersUsed.length ? providersUsed : successfulProviders,
     results,
     providerPath: attempts,
-    fallbackUsed: provider === "wikimedia"
-      || Boolean(firstConfigured && provider !== firstConfigured)
+    fallbackUsed: Boolean(firstConfigured && provider !== firstConfigured)
       || attempts.some((attempt) => attempt.status === "failed"),
   };
 }
@@ -1128,17 +1116,17 @@ export function getInternetSearchStatus(): InternetSearchStatus {
     order: index + 1,
     configured: PROVIDER_ADAPTERS[id].configured(runtime),
   }));
-  const activeProvider = providers.find((item) => item.configured)?.id || "wikimedia";
-  const fullWebConfigured = providers.some((item) => item.id !== "wikimedia" && item.configured);
+  const activeProvider = providers.find((item) => item.configured)?.id || order[0];
+  const fullWebConfigured = providers.some((item) => item.configured);
   return {
     configured: fullWebConfigured,
     preferredProvider: order[0],
-    fallbackProvider: "wikimedia",
+    fallbackProvider: undefined,
     activeProvider,
     status: fullWebConfigured ? "ready" : "fallback",
     detail: fullWebConfigured
       ? `${PROVIDER_META[activeProvider].name}부터 최대 ${MAX_PARALLEL_PROVIDERS}개 공급자를 배치로 병렬 조회해 결과를 종합하고, 그래도 부족하면 다음 배치로 확장합니다.`
-      : "API 키가 없어도 DuckDuckGo·Jina 공개 웹 검색을 우선 시도하고, 결과가 부족할 때만 Wikimedia를 보조 출처로 사용합니다. Google·NAVER·YouTube·Tavily·Exa·Brave를 구성하면 더 다양한 출처를 병렬로 조회하고 교차 검토합니다.",
+      : "구성된 공개 웹 검색 공급자가 없어 검색을 수행할 수 없습니다. Google·NAVER·YouTube·Tavily·Exa·Brave·DuckDuckGo·Jina를 구성하면 다양한 출처를 병렬로 조회하고 교차 검토합니다.",
     providers,
   };
 }
@@ -1171,10 +1159,10 @@ export async function probeInternetSearch(): Promise<InternetSearchProbe> {
   } catch (error) {
     return {
       status: "failed",
-      provider: "wikimedia",
+      provider: "duckduckgo",
       latencyMs: Date.now() - startedAt,
       resultCount: 0,
-      fallbackUsed: true,
+      fallbackUsed: false,
       providerPath: [],
       detail: error instanceof Error ? error.message : "인터넷 검색 연결에 실패했습니다.",
       checkedAt: new Date().toISOString(),
@@ -1236,7 +1224,7 @@ export async function searchInternet(
     plan,
     providerPath: execution.providerPath,
     quality: {
-      mode: execution.provider === "wikimedia" ? "reference-fallback" : "full-web",
+      mode: "full-web",
       uniqueDomains: new Set(execution.results.map((result) => result.source)).size,
       enrichedResults: execution.results.filter((result) => result.snippet.length >= 240).length,
       freshnessApplied: Boolean(plan.freshness),

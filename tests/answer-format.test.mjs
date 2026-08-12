@@ -15,8 +15,11 @@ test("answer format instructions define distinct paragraph, bullet, and table co
   assert.match(source, /answerOutputTokenBudget/);
   assert.match(source, /answerReasoningTier/);
   assert.match(source, /inferAnswerFormat/);
+  assert.match(source, /export function isResearchQuery/);
+  assert.match(source, /리서치 브리프 규칙/);
+  assert.match(source, /사업계획서에 인용할 수 있도록/);
   assert.match(source, /5~7개의 짧은 섹션/);
-  assert.match(source, /3_600 : 1_800/);
+  assert.match(source, /4_800 : 1_800/);
   assert.match(source, /15년 차 수석 시장 분석가/);
   assert.match(source, /## 개요 및 핵심 요약/);
   assert.match(source, /## 주요 데이터 및 인사이트/);
@@ -32,8 +35,14 @@ test("chat routes share the same answer format contract", async () => {
 
   assert.match(route, /answerPreferenceInstruction/);
   assert.match(route, /서로 다른 공급자·도메인의 출처를 여러 개 조사하고/);
-  assert.match(route, /단일 백과사전 본문에 의존해 결론을 내리지 마세요/);
+  assert.match(route, /검색 결과는 최신 사실을 확인하기 위한 참고 근거입니다/);
   assert.match(route, /inferAnswerFormat/);
+  assert.match(route, /isResearchQuery\(userContent\)/);
+  assert.match(route, /body\.answer_length \?\? \(isResearchQuery/);
+  assert.match(route, /const researchDepth/);
+  assert.match(route, /researchDepth \? "detailed" : answerLength/);
+  assert.match(route, /responsePreferenceInstruction\(answerLength, answerFormat, userContent\)/);
+  assert.match(route, /검색 의도: \$\{webSearch\.plan\.intent\}/);
   assert.match(rag, /answerPreferenceInstruction/);
   assert.match(gateway, /지정된 형식을 끝까지 일관되게 유지/);
 });

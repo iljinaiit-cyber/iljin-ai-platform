@@ -114,6 +114,14 @@ function requireBundle(t) {
   return false;
 }
 
+test("검색 공급자 상태에 Wikimedia가 노출되지 않는다", async (t) => {
+  if (!requireBundle(t)) return;
+  globalThis.__ILJIN_RUNTIME_ENV__ = {};
+  const status = internetSearch.getInternetSearchStatus();
+  assert.ok(status.providers.every((provider) => provider.id !== "wikimedia"));
+  assert.equal(status.fallbackProvider, undefined);
+});
+
 test("Tavily 와 Exa 를 병렬로 불러 결과를 합친다", async (t) => {
   if (!requireBundle(t)) return;
   globalThis.__ILJIN_RUNTIME_ENV__ = { TAVILY_API_KEY: "k1", EXA_API_KEY: "k2" };
@@ -174,7 +182,7 @@ test("첫 배치가 전부 실패해도 다음 배치(무료 폴백)로 계속 �
   assert.equal(response.provider, "duckduckgo");
 });
 
-test("Wikimedia는 실시간 출처가 없을 때만 reference fallback으로 사용한다", async (t) => {
+test("Wikimedia는 검색 공급자와 폴백에서 모두 비활성화된다", async (t) => {
   if (!requireBundle(t)) return;
   globalThis.__ILJIN_RUNTIME_ENV__ = {};
   const ddgHtml = '<a class="result__a" href="https://live-source.example/x">실시간 출처</a>'
@@ -188,5 +196,20 @@ test("Wikimedia는 실시간 출처가 없을 때만 reference fallback으로 �
 
   assert.equal(response.provider, "duckduckgo");
   assert.ok(response.results.every((result) => result.source !== "ko.wikipedia.org"));
+  assert.ok(!calls.some((url) => url.includes("wikipedia.org/w/api.php")));
+});
+
+test("검색 결과가 없을 때 Wikimedia로 재시도하지 않는다", async (t) => {
+  if (!requireBundle(t)) return;
+  globalThis.__ILJIN_RUNTIME_ENV__ = {};
+  const calls = stubFetch([
+    ["html.duckduckgo.com", () => ({ ok: true, headers: { get: () => "text/html" }, text: async () => "" })],
+    ["wikipedia.org/w/api.php", () => jsonResponse({ query: { pages: [] } })],
+  ]);
+
+  await assert.rejects(
+    () => internetSearch.searchInternet("검색 결과가 없는 테스트 질의", { principal, traceId: "TRC-NO-WIKI", limit: 6 }),
+    /검증 가능한 웹 검색 결과를 찾지 못했습니다/,
+  );
   assert.ok(!calls.some((url) => url.includes("wikipedia.org/w/api.php")));
 });

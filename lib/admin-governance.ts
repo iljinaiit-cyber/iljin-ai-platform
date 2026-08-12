@@ -39,7 +39,7 @@ export const PERMISSION_CATALOG: Array<{
 }> = [
   { key: "workspace.home", category: "사용자 Portal", label: "홈", description: "개인·부서 업무 홈과 활용 예시 조회" },
   { key: "ai.chat", category: "사용자 Portal", label: "AI Chat Agent", description: "AI Chat Agent와 대화 이력 생성" },
-  { key: "rag.search", category: "사용자 Portal", label: "ILJIN Knowledge Data Base", description: "사내 지식 카탈로그, RAG 검색, 최신 버전과 인용 근거 조회" },
+  { key: "rag.search", category: "사용자 Portal", label: "Knowledge Data Base", description: "사내 지식 카탈로그, RAG 검색, 최신 버전과 인용 근거 조회" },
   { key: "documents.read", category: "문서/RAG", label: "문서 조회", description: "접근 가능한 문서와 인덱스 조회" },
   { key: "documents.manage", category: "문서/RAG", label: "문서 관리", description: "문서 등록·수정·삭제·재색인" },
   { key: "agent.run", category: "Agent", label: "Agent 실행", description: "Agent 작업 생성과 실행 이력 조회" },
@@ -61,7 +61,7 @@ export const FEATURE_CATALOG: Array<{
 }> = [
   { key: "workspace.home", category: "Portal", label: "업무 홈", description: "개인·부서별 업무 홈을 제공합니다.", defaultEnabled: true },
   { key: "ai.chat", category: "AI", label: "AI Chat Agent", description: "AI Chat Agent 기능을 전체 사용자에게 제공합니다.", defaultEnabled: true },
-  { key: "rag.search", category: "RAG", label: "ILJIN Knowledge Data Base", description: "권한 기반 지식 탐색, 최신 문서 검색과 근거 인용 기능을 제공합니다.", defaultEnabled: true },
+  { key: "rag.search", category: "RAG", label: "Knowledge Data Base", description: "권한 기반 지식 탐색, 최신 문서 검색과 근거 인용 기능을 제공합니다.", defaultEnabled: true },
   { key: "documents", category: "RAG", label: "문서 조회", description: "문서 자산과 인덱스 조회를 허용합니다.", defaultEnabled: true },
   { key: "documents.upload", category: "RAG", label: "문서 등록", description: "문서 업로드와 재색인을 허용합니다.", defaultEnabled: true },
   { key: "agent", category: "Agent", label: "Agent 실행", description: "업무 Agent 실행 기능을 제공합니다.", defaultEnabled: true },

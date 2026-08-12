@@ -1912,12 +1912,15 @@ export async function completeWithRag(input: {
   reasoningTier?: ReasoningTier;
   contextFileBlock?: string;
   assetIds?: string[];
+  onStage?: (stage: string, details?: Record<string, unknown>) => void;
 }) {
   const allMessages = input.messages;
   const latestUserMessage = [...allMessages].reverse().find((message) => message.role === "user")?.content;
   if (!latestUserMessage) throw new RagError("RAG 질의에 사용자 메시지가 필요합니다.", 400, "MISSING_USER_QUERY");
 
   const reasoningTier = input.reasoningTier || "expert";
+  input.onStage?.("질문·의도 분석 중");
+  input.onStage?.("대화 맥락 확인 중");
 
   // Use LLM-based query rewriting for multi-turn conversations to resolve pronouns and context
   const conversationHistory = allMessages
@@ -1936,12 +1939,14 @@ export async function completeWithRag(input: {
     }
   }
 
+  input.onStage?.("사내 문서 검색 중");
   const search = await searchRag(retrievalQuery, {
     principal: input.principal,
     traceId: input.traceId,
     limit: reasoningTier === "deep" ? 8 : 6,
     assetIds: input.assetIds,
   });
+  input.onStage?.("검색 결과 교차 검토 중", { sourceCount: search.citations.length });
   if (!search.grounded) {
     let followUpQuestions: FollowUpQuestion[] = [];
     try {
@@ -1971,6 +1976,7 @@ export async function completeWithRag(input: {
         followUpQuestions,
       };
     }
+    input.onStage?.("근거 기반 답변 작성 중");
     const fallbackCompletion = await completeWithGateway(
       input.messages,
       input.traceId,
@@ -2010,12 +2016,13 @@ export async function completeWithRag(input: {
   const promptHistory = allMessages
     .filter((m) => m.role === "user" || m.role === "assistant")
     .slice(-7, -1); // Exclude the current question, keep up to 6 prior messages
+  const currentQuestion = [...allMessages].reverse().find((m) => m.role === "user")?.content || "";
   const historyBlock = promptHistory.length > 0
     ? `\n이전 대화:\n${promptHistory.map((m) => `${m.role === "user" ? "사용자" : "AI"}: ${m.content.slice(0, 400)}`).join("\n")}\n`
     : "";
 
   const preference = input.responsePreferences
-    ? `${answerPreferenceInstruction(input.responsePreferences.length, input.responsePreferences.format)}${input.responsePreferences.learningContext || ""}\n`
+    ? `${answerPreferenceInstruction(input.responsePreferences.length, input.responsePreferences.format, currentQuestion)}${input.responsePreferences.learningContext || ""}\n`
     : "";
 
   // Tier-specific reasoning instructions
@@ -2065,6 +2072,7 @@ ${historyBlock}
 ${latestUserMessage}`;
 
   // Pass reasoningTier to the gateway
+  input.onStage?.("근거 기반 답변 작성 중");
   const completion = await completeWithGateway(
     [{ role: "user", content: prompt }],
     input.traceId,

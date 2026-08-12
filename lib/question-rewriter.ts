@@ -6,8 +6,7 @@ export type FollowUpQuestion = {
   intent: string;
 };
 
-const FOLLOW_UP_MARKER = "## 보충 질문";
-const FOLLOW_UP_PATTERN = /##\s*보충\s*질문/i;
+const FOLLOW_UP_PATTERN = /(?:^|\n)\s*(?:#{1,3}\s*)?(?:\[)?\s*보충\s*질문\s*(?:\])?\s*(?=\n|$)/i;
 const RELATED_PATTERN = /##\s*연관\s*질문/i;
 
 /**
@@ -35,7 +34,9 @@ export function extractFollowUpQuestions(content: string): {
   for (const line of section.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    const item = trimmed.match(/^\d+[.)]\s+(.+)$/);
+    const item = trimmed.match(/^\d+[.)]\s+(.+)$/)
+      || trimmed.match(/^[-*•]\s+(.+)$/)
+      || trimmed.match(/^(.+[?？])$/);
     if (item) {
       const text = item[1].trim();
       const intentMatch = text.match(/\(([^)]+)\)$/);
@@ -145,7 +146,7 @@ export async function generateInsufficiencyQuestions(
     ? recent.map((m) => `${m.role === "user" ? "사용자" : "AI"}: ${m.content.slice(0, 300)}`).join("\n")
     : "(이전 대화 없음)";
 
-  const prompt = `사용자가 사내 지식 베이스에 질문했지만 접근 가능한 근거 문서를 찾지 못했습니다. 사용자의 질문 의도를 파악하고, 답변에 필요한 정보를 얻기 위해 1~3개의 보충 질문을 작성하세요.
+  const prompt = `사용자의 질문이 모호하거나 검색·대화 맥락만으로는 답변에 필요한 근거가 부족합니다. 임의로 추정하지 말고, 사용자의 의도와 답변 범위를 좁히기 위해 1~3개의 보충 질문을 작성하세요.
 
 각 질문은 사용자가 직접 답할 수 있고, 질문의 목적이 명확해야 합니다. 형식: "1. 질문 내용 (질문 목적)"
 
