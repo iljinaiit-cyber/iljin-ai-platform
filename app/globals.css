@@ -10509,3 +10509,66 @@ td strong {
     padding: var(--content-gutter);
   }
 }
+
+/* Final alignment contract: every page frame and primary surface shares the same inset. */
+.main-content > .view-stack,
+.main-content > .workspace-layout {
+  width: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
+  padding: 0;
+}
+
+.main-content > .view-stack > .page-heading,
+.main-content > .view-stack > .schedule-header,
+.main-content > .view-stack > .activity-page-heading,
+.main-content > .view-stack > .feedback-page-heading {
+  padding-inline: 0;
+}
+
+.hero-panel,
+.knowledge-hero,
+.search-hero,
+.section-block,
+.panel,
+.filter-panel,
+.result-panel,
+.knowledge-catalog,
+.feedback-list-panel,
+.feedback-form-panel,
+.admin-issue-summary,
+.admin-overview-dashboard,
+.schedule-calendar-panel,
+.schedule-side-panel,
+.platform-console,
+.chat-workspace,
+.context-rail {
+  padding: var(--content-inset);
+}
+
+.feedback-board .feedback-list-panel,
+.feedback-board .feedback-form-panel {
+  padding: var(--content-inset);
+}
+
+@media (max-width: 700px) {
+  .hero-panel,
+  .knowledge-hero,
+  .search-hero,
+  .section-block,
+  .panel,
+  .filter-panel,
+  .result-panel,
+  .knowledge-catalog,
+  .feedback-list-panel,
+  .feedback-form-panel,
+  .admin-issue-summary,
+  .admin-overview-dashboard,
+  .schedule-calendar-panel,
+  .schedule-side-panel,
+  .platform-console,
+  .chat-workspace,
+  .context-rail {
+    padding: var(--content-inset);
+  }
+}
