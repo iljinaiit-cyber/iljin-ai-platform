@@ -31,6 +31,8 @@ test("chat routes share the same answer format contract", async () => {
   ]);
 
   assert.match(route, /answerPreferenceInstruction/);
+  assert.match(route, /서로 다른 공급자·도메인의 출처를 여러 개 조사하고/);
+  assert.match(route, /단일 백과사전 본문에 의존해 결론을 내리지 마세요/);
   assert.match(route, /inferAnswerFormat/);
   assert.match(rag, /answerPreferenceInstruction/);
   assert.match(gateway, /지정된 형식을 끝까지 일관되게 유지/);

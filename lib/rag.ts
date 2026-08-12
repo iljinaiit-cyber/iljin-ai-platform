@@ -1,6 +1,13 @@
 import { getD1, getR2 } from "../db";
 import { isCloudflareAiConfigured, runCloudflareWorkersAiModel } from "./cloudflare-ai";
-import { completeWithGateway, type GatewayMessage } from "./llm-gateway";
+import { completeWithGateway, mergeCompletionUsage, type GatewayCompletion, type GatewayMessage, type GatewayPolicy } from "./llm-gateway";
+import {
+  annotateCitationIssues,
+  isCitationReportBetter,
+  needsCitationRepair,
+  verifyCitations,
+  type CitationReport,
+} from "./citation-guard";
 import { getRuntimeEnv, type RuntimeEnv } from "./runtime-env";
 import type { Principal } from "./identity";
 import { loadContextFiles } from "./context-files";
@@ -31,6 +38,8 @@ export type RagCitation = {
   regionType?: "image" | "page" | "table" | "chart";
   region?: [number, number, number, number];
   originalUrl?: string;
+  timeStartMs?: number;
+  timeEndMs?: number;
 };
 
 export type WebRagCitation = Omit<RagCitation, "sourceType"> & {
@@ -102,6 +111,8 @@ type SegmentRow = {
   heading: string | null;
   content: string;
   page_number: number | null;
+  time_start_ms: number | null;
+  time_end_ms: number | null;
   embedding: string | null;
   embedding_model: string | null;
   vector_indexed_at: string | null;
@@ -1524,7 +1535,8 @@ export async function searchRag(query: string, options: {
   const queryPlan = planRagQuery(cleanQuery);
   const rows = await db.prepare(`SELECT
       s.id, s.asset_id, a.title, a.version, a.source_type, a.updated_at,
-      s.heading, s.content, s.page_number, s.embedding, s.embedding_model, s.vector_indexed_at, s.ordinal,
+      s.heading, s.content, s.page_number, s.time_start_ms, s.time_end_ms,
+      s.embedding, s.embedding_model, s.vector_indexed_at, s.ordinal,
       (SELECT vr.id FROM visual_regions vr WHERE vr.segment_id = s.id ORDER BY vr.ordinal LIMIT 1) AS visual_region_id,
       (SELECT vr.region_type FROM visual_regions vr WHERE vr.segment_id = s.id ORDER BY vr.ordinal LIMIT 1) AS region_type,
       (SELECT vr.bbox_json FROM visual_regions vr WHERE vr.segment_id = s.id ORDER BY vr.ordinal LIMIT 1) AS bbox_json,
@@ -1738,6 +1750,8 @@ export async function searchRag(query: string, options: {
     regionType: item.region_type || undefined,
     region: item.bbox_json ? JSON.parse(item.bbox_json) as [number, number, number, number] : undefined,
     originalUrl: `/api/v1/assets/${encodeURIComponent(item.asset_id)}/original`,
+    timeStartMs: item.time_start_ms ?? undefined,
+    timeEndMs: item.time_end_ms ?? undefined,
   }));
   const latencyMs = Date.now() - startedAt;
   const queryHash = await digest(cleanQuery);
@@ -1803,18 +1817,93 @@ export async function searchRag(query: string, options: {
   };
 }
 
+// 재작성본이 지적을 줄이는 가장 쉬운 방법은 내용을 지우는 것이다. 원본보다 이만큼도
+// 남지 않았다면 '고쳐진 답변'이 아니라 잘려나간 답변으로 보고 원본을 유지한다.
+const CITATION_REPAIR_MIN_LENGTH_RATIO = 0.6;
+
+function citationIssueBriefing(report: CitationReport) {
+  const lines: string[] = [];
+  const phantoms = [...new Set(report.issues.filter((i) => i.kind === "phantom_citation").map((i) => i.citation_id))];
+  if (phantoms.length) {
+    lines.push(`- 제공되지 않은 근거 ID를 인용했습니다: ${phantoms.join(", ")}. 아래 '근거'에 실제로 있는 ID만 사용하세요.`);
+  }
+  for (const issue of report.issues.filter((i) => i.kind === "unsupported_claim").slice(0, 5)) {
+    lines.push(`- ${issue.citation_id}의 내용과 일치하지 않는 서술입니다: "${issue.sentence.slice(0, 120)}"`);
+  }
+  for (const issue of report.issues.filter((i) => i.kind === "uncited_claim").slice(0, 5)) {
+    lines.push(`- 근거 표기가 없는 사실 서술입니다: "${issue.sentence.slice(0, 120)}"`);
+  }
+  if (report.citation_coverage < 0.8) {
+    lines.push(`- 사실 서술 중 ${(report.citation_coverage * 100).toFixed(0)}%에만 근거가 표기되어 있습니다(목표 80% 이상).`);
+  }
+  return lines.join("\n");
+}
+
+// 인용 검증에 걸린 답변에 경고 배너만 붙이면 교정은 사용자 몫으로 남는다. 같은 근거로
+// 한 번 더 재작성시키고, 재검증 지표가 실제로 나아졌을 때만 교체한다.
+async function repairCitedAnswer(input: {
+  completion: GatewayCompletion;
+  report: CitationReport;
+  prompt: string;
+  evidence: Array<{ id: string; content: string }>;
+  traceId: string;
+  providerPolicy?: GatewayPolicy;
+  reasoningTier: ReasoningTier;
+}): Promise<{ completion: GatewayCompletion; report: CitationReport }> {
+  const unchanged = { completion: input.completion, report: input.report };
+  try {
+    const repaired = await completeWithGateway(
+      [
+        { role: "user", content: input.prompt },
+        { role: "assistant", content: input.completion.content },
+        {
+          role: "user",
+          content: `방금 답변의 근거 검증에서 다음 문제가 확인되었습니다.
+${citationIssueBriefing(input.report)}
+
+위 문제를 고쳐 답변 전체를 다시 작성하세요. 앞서 제공된 '근거'만 사용하고 새로운 사실을 추가하지 마세요. 근거로 뒷받침할 수 없는 서술은 삭제하거나 근거에서 확인되지 않았다고 명시하세요. 모든 사실 서술 뒤에 실제 제공된 근거 ID를 [S1] 형식으로 붙이세요. 답변의 분량·형식·구조는 그대로 유지하고, 무엇을 고쳤는지 설명하지 말고 고쳐진 답변만 출력하세요.`,
+        },
+      ],
+      `${input.traceId}-citation-repair`,
+      input.providerPolicy,
+      input.reasoningTier,
+    );
+    if (repaired.content.trim().length < input.completion.content.trim().length * CITATION_REPAIR_MIN_LENGTH_RATIO) {
+      return unchanged;
+    }
+    const repairedReport = await verifyCitations(repaired.content, input.evidence, embedTexts);
+    if (!isCitationReportBetter(repairedReport, input.report)) return unchanged;
+    console.info(JSON.stringify({
+      event: "rag-citation-repaired",
+      traceId: input.traceId,
+      beforeIssues: input.report.issues.length,
+      afterIssues: repairedReport.issues.length,
+      beforeCoverage: Number(input.report.citation_coverage.toFixed(2)),
+      afterCoverage: Number(repairedReport.citation_coverage.toFixed(2)),
+    }));
+    return {
+      completion: {
+        ...repaired,
+        traceId: input.completion.traceId,
+        latencyMs: input.completion.latencyMs + repaired.latencyMs,
+        usage: mergeCompletionUsage(input.completion, repaired),
+      },
+      report: repairedReport,
+    };
+  } catch (error) {
+    console.warn("[rag] citation repair failed", {
+      traceId: input.traceId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return unchanged;
+  }
+}
+
 export async function completeWithRag(input: {
   messages: GatewayMessage[];
   principal: Pick<Principal, "tenantId" | "department" | "email" | "role">;
   traceId: string;
-  providerPolicy?: {
-    localEnabled?: boolean;
-    cloudflareEnabled?: boolean;
-    sensitivity?: "public" | "internal" | "confidential";
-    maxOutputTokens?: number;
-    localModelOverride?: string;
-    cloudflareModelOverride?: string;
-  };
+  providerPolicy?: GatewayPolicy;
   responsePreferences?: {
     length: "brief" | "standard" | "detailed";
     format: "paragraph" | "bullets" | "table";
@@ -1943,6 +2032,15 @@ export async function completeWithRag(input: {
 7. 마지막에는 가장 중요한 시작점과 다음 산출물을 명확히 제안합니다.`,
   };
 
+  // planRagQuery가 분류한 질의 유형은 검색 가중치만이 아니라 답변 골격도 결정한다.
+  // 비교 질문에 절차형 답을, 절차 질문에 서술형 답을 내놓는 구조 불일치를 막는다.
+  const queryTypeInstructions: Record<RagQueryPlan["type"], string> = {
+    lookup: `질의 유형(단순 조회): 확인된 사실과 그것이 적용되는 조건·예외·유효 기간을 먼저 확정합니다. 근거에서 확인되지 않은 항목은 '없다'고 단정하지 말고 미확인으로 표시합니다.`,
+    procedural: `질의 유형(절차): '선행 조건 → 순서가 있는 단계 → 단계별 담당 주체와 산출물 → 완료·검증 기준' 순으로 정리합니다. 근거에 순서가 명시되지 않은 부분은 추정한 순서임을 밝히고, 단계마다 근거 ID를 붙입니다.`,
+    comparative: `질의 유형(비교): 먼저 비교 기준(축)을 명시한 뒤 모든 대상에 같은 기준을 적용해 비교합니다. 근거로 확인되지 않는 축은 비교하지 말고 '근거 없음'으로 남기며, 어느 쪽이 유리한 조건과 그 판단이 뒤집히는 조건을 함께 제시합니다.`,
+    multi_hop: `질의 유형(복합): 서로 다른 근거를 연결해야 답할 수 있는 질문입니다. 어느 근거에서 어떤 사실을 가져와 어떻게 연결했는지 추론 경로를 밝히고, 연결 고리 자체가 근거로 뒷받침되지 않으면 그 지점을 추정으로 명시합니다.`,
+  };
+
   const prompt = `기준 일시(대한민국): ${currentKoreanReferenceTime()} KST
 아래 '근거'에 제공된 사내 문서만 답변 근거로 사용하세요. 근거 외의 사전 지식·추론·일반론은 사용하지 마세요. 각 핵심 주장 뒤에 [S1] 형식으로 근거 ID를 표시하세요. 숫자·코드·날짜·조건은 근거 원문에서 그대로 인용하고 임의로 변형하지 마세요. 사용자 질문의 전제가 근거와 다르면 그 점을 먼저 명시하세요.
 ${preference}
@@ -1959,6 +2057,7 @@ ${input.contextFileBlock || ""}
 9. 답변에 필요한 핵심 정보가 근거에서 확인되지 않으면 추측하지 말고, 답변 마지막에 '## 보충 질문' 섹션으로 1~3개의 보충 질문을 작성하세요. 형식: "1. 질문 (질문 목적)". 근거가 충분하면 보충 질문을 생략합니다.
 
 ${tierInstructions[reasoningTier]}
+${queryTypeInstructions[search.retrieval.queryType]}
 근거:
 ${context}
 ${historyBlock}
@@ -1973,16 +2072,27 @@ ${latestUserMessage}`;
     reasoningTier,
   );
 
-  // Post-hoc citation verification
+  // Post-hoc citation verification, then one repair pass if the answer cited
+  // evidence that does not exist or does not say what the answer claims.
   const evidenceForGuard = search.citations.map((c) => ({ id: c.id, content: c.excerpt }));
-  const { verifyCitations, annotateCitationIssues } = await import("./citation-guard");
-  const citationReport = verifyCitations(completion.content, evidenceForGuard);
-  const annotatedContent = maskPii(annotateCitationIssues(completion.content, citationReport));
+  const initialReport = await verifyCitations(completion.content, evidenceForGuard, embedTexts);
+  const verified = needsCitationRepair(initialReport)
+    ? await repairCitedAnswer({
+        completion,
+        report: initialReport,
+        prompt,
+        evidence: evidenceForGuard,
+        traceId: input.traceId,
+        providerPolicy: input.providerPolicy,
+        reasoningTier,
+      })
+    : { completion, report: initialReport };
+  const annotatedContent = maskPii(annotateCitationIssues(verified.completion.content, verified.report));
 
   return {
-    completion: { ...completion, content: annotatedContent },
+    completion: { ...verified.completion, content: annotatedContent },
     search,
-    citationReport,
+    citationReport: verified.report,
     followUpQuestions: [] as FollowUpQuestion[],
   };
 }

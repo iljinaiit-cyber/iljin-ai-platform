@@ -1,5 +1,5 @@
 import { completeWithRag, RagError, type WebRagCitation } from "../../../../../lib/rag";
-import { completeWithGateway, type GatewayCompletion, type GatewaySensitivity } from "../../../../../lib/llm-gateway";
+import { completeWithGateway, mergeCompletionUsage, type GatewayCompletion, type GatewaySensitivity } from "../../../../../lib/llm-gateway";
 import {
   conversationContext,
   getConversationAttachmentAssetIds,
@@ -7,10 +7,11 @@ import {
   recordExchange,
 } from "../../../../../lib/conversations";
 import { buildFeedbackLearningContext, loadUserPreferences, updateUserPreferencesFromRequest } from "../../../../../lib/user-memory";
+import { getEffectiveModel } from "../../../../../lib/llm-model-config";
 import { getConversationSensitivity, recordLlmInvocation } from "../../../../../lib/llm-telemetry";
 import { searchInternet, type InternetSearchResponse } from "../../../../../lib/internet-search";
 import { answerOutputTokenBudget, answerPreferenceInstruction, answerReasoningTier, inferAnswerFormat } from "../../../../../lib/answer-format";
-import { extractRelatedQuestions, RELATED_QUESTION_INSTRUCTION, type FollowUpQuestion } from "../../../../../lib/question-rewriter";
+import { extractFollowUpQuestions, extractRelatedQuestions, RELATED_QUESTION_INSTRUCTION, type FollowUpQuestion } from "../../../../../lib/question-rewriter";
 import { resolvePrincipal } from "../../../../../lib/identity";
 import { authorizeFeature } from "../../../../../lib/admin-governance";
 import {
@@ -40,13 +41,19 @@ type Body = {
 const sse = (event: string, data: unknown) =>
   new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
+const CLARIFICATION_LEAD_IN = "권한 범위에서 확인 가능한 근거만으로는 답변하기 부족합니다. 최종 답변을 생성하기 전에 확인이 필요한 정보에 아래에서 답해 주세요.";
 const INTERNET_GROUNDING_MESSAGE_LIMIT = 7_900;
 const INTERNET_GROUNDING_SOURCE_LIMIT = 6;
 const INTERNET_CONVERSATION_CONTEXT_BUDGET = 1_200;
 const MIN_DETAILED_INTERNET_BODY_CHARACTERS = 1_000;
 
-function maxOutputTokensFor(length: Body["answer_length"]) {
-  return answerOutputTokenBudget(length);
+// answer_length and reasoning_tier are independent request fields (AgentPortal
+// derives one from the other, but the API also accepts reasoning_tier on its own).
+// A deep tier explicitly requested on top of a shorter length still needs room for
+// its 8-section structure, so the length budget alone isn't enough.
+function maxOutputTokensFor(length: Body["answer_length"], tier: "swift" | "expert" | "deep" = "expert") {
+  const tierBoost = tier === "deep" ? 1.5 : tier === "swift" ? 0.5 : 1;
+  return Math.round(answerOutputTokenBudget(length) * tierBoost);
 }
 
 function responsePreferenceInstruction(length: Body["answer_length"], format: Body["answer_format"]) {
@@ -61,7 +68,7 @@ function boundedSourceContext(result: InternetSearchResponse, budget: number) {
 
 function buildInternetGroundingPrompt(query: string, webSearch: InternetSearchResponse, preference: string, maxLength = INTERNET_GROUNDING_MESSAGE_LIMIT) {
   const today = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "long" }).format(new Date());
-  const instruction = `현재 날짜(대한민국): ${today}\n검색 결과는 최신 사실을 확인하기 위한 참고 근거입니다. 최종 답변은 LLM이 질문의 의도와 검색 근거를 종합해 직접 작성하세요. 검색 결과의 문장·제목을 그대로 복사하거나 검색 결과 목록을 답변처럼 나열하지 마세요. 검색 근거로 확인 가능한 사실만 단정하고, 각 핵심 주장 뒤에 [W1] 형식으로 인용하세요. 최신 게시·갱신일을 우선하고 날짜를 확인할 수 없으면 명시하세요. Wikimedia/Wikipedia는 다른 출처가 없을 때만 보조 배경지식으로 사용하고, 그 한계를 밝혀야 합니다.\n${preference}${RELATED_QUESTION_INSTRUCTION}\n\n검색 근거:\n`;
+  const instruction = `현재 날짜(대한민국): ${today}\n검색 결과는 최신 사실을 확인하기 위한 참고 근거입니다. 최종 답변은 LLM이 질문의 의도와 검색 근거를 종합해 직접 작성하세요. 먼저 가능한 범위에서 서로 다른 공급자·도메인의 출처를 여러 개 조사하고, 공식·정부·학술·전문 매체 등 신뢰도 높은 근거를 우선해 교차 검토하세요. 출처의 최신성·직접성·신뢰도를 비교하고, 서로 충돌하는 내용은 양쪽을 구분해 설명하세요. 검색 결과의 문장·제목을 그대로 복사하거나 검색 결과 목록을 답변처럼 나열하지 마세요. 검색 근거로 확인 가능한 사실만 단정하고, 각 핵심 주장 뒤에 [W1] 형식으로 인용하세요. 최신 게시·갱신일을 우선하고 날짜를 확인할 수 없으면 명시하세요. Wikimedia/Wikipedia는 여러 공개 출처 중 하나인 보조 배경자료로만 취급하며, 단일 백과사전 본문에 의존해 결론을 내리지 마세요. 출처가 하나뿐이거나 근거가 부족하면 그 한계를 밝히고 [확인 필요]로 표시하세요.\n${preference}${RELATED_QUESTION_INSTRUCTION}\n\n검색 근거:\n`;
   const question = `\n\n질문:\n${query}`;
   const sourceBudget = maxLength - instruction.length - question.length;
   return `${instruction}${boundedSourceContext(webSearch, sourceBudget)}${question}`;
@@ -95,21 +102,13 @@ function needsDetailedInternetExpansion(content: string) {
   return answerOnly.length < MIN_DETAILED_INTERNET_BODY_CHARACTERS || sectionCount < 3;
 }
 
-function mergeCompletionUsage(first: GatewayCompletion, second: GatewayCompletion): GatewayCompletion["usage"] {
-  if (!first.usage && !second.usage) return undefined;
-  return {
-    prompt_tokens: Number(first.usage?.prompt_tokens || 0) + Number(second.usage?.prompt_tokens || 0),
-    completion_tokens: Number(first.usage?.completion_tokens || 0) + Number(second.usage?.completion_tokens || 0),
-    total_tokens: Number(first.usage?.total_tokens || 0) + Number(second.usage?.total_tokens || 0),
-  };
-}
-
 async function expandShallowDetailedInternetAnswer(
   completion: GatewayCompletion,
   prompt: string,
   traceId: string,
   sensitivity: GatewaySensitivity,
   reasoningTier: "swift" | "expert" | "deep",
+  cloudflareModelOverride?: string,
 ) {
   if (!needsDetailedInternetExpansion(completion.content)) return completion;
 
@@ -121,7 +120,7 @@ async function expandShallowDetailedInternetAnswer(
         { role: "user", content: "방금 답변은 심층 요청에 비해 너무 짧거나 구조가 부족합니다. 이전 답변을 요약·반복하지 말고, 제공된 검색 근거만 사용해 전체 답변을 다시 작성하세요. '## 개요 및 핵심 요약', '## 상세 분석 내용', '## 주요 데이터 및 인사이트', '## 참고한 정보 출처 및 링크'를 포함하고, 핵심 주장에는 [W1] 형식의 인용을 붙이세요. 근거가 부족한 항목은 [확인 필요]로 표시하세요." },
       ],
       `${traceId}-depth-repair`,
-      { sensitivity, maxOutputTokens: maxOutputTokensFor("detailed") },
+      { sensitivity, maxOutputTokens: maxOutputTokensFor("detailed", reasoningTier), cloudflareModelOverride },
       reasoningTier,
     );
     if (expanded.content.trim().length <= completion.content.trim().length) return completion;
@@ -208,9 +207,13 @@ export async function POST(request: Request) {
     // 민감도는 헤더가 아니라 본문·기본값을 정본으로 쓴다. 헤더는 클라이언트가
     // 임의로 낮출 수 있으므로 신뢰 경계 밖이다 — 미상이면 internal 로 잠근다.
     const sensitivity = await resolveSensitivity(request, principal, body);
-    const storedPreferences = await loadUserPreferences(principal).catch(
-      () => ({} as Awaited<ReturnType<typeof loadUserPreferences>>),
-    );
+    const [storedPreferences, cloudflareModelOverride, localModelOverride] = await Promise.all([
+      loadUserPreferences(principal).catch(() => ({} as Awaited<ReturnType<typeof loadUserPreferences>>)),
+      // 관리자가 /admin/llm-models 에서 저장한 테넌트별 모델을 실제 호출에 반영한다.
+      // 미설정이면 getEffectiveModel 이 카탈로그 기본값을 그대로 돌려주므로 항상 안전하다.
+      getEffectiveModel(principal.tenantId, "chat").catch(() => undefined),
+      getEffectiveModel(principal.tenantId, "chat_local").catch(() => undefined),
+    ]);
     const userContent = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
     const answerLength = body.summary_only ? "brief" : body.answer_length ?? storedPreferences.answerLength ?? "standard";
     const answerFormat = body.answer_format ?? inferAnswerFormat(userContent);
@@ -243,11 +246,11 @@ export async function POST(request: Request) {
         completion = await completeWithGateway(
           [{ role: "user", content: internetPrompt }],
           traceId,
-          { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength) },
+          { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength, reasoningTier), cloudflareModelOverride, localModelOverride },
           reasoningTier,
         );
         if (answerLength === "detailed") {
-          completion = await expandShallowDetailedInternetAnswer(completion, internetPrompt, traceId, sensitivity, reasoningTier);
+          completion = await expandShallowDetailedInternetAnswer(completion, internetPrompt, traceId, sensitivity, reasoningTier, cloudflareModelOverride);
         }
         const related = extractRelatedQuestions(completion.content);
         relatedQuestions = related.relatedQuestions.length
@@ -271,7 +274,7 @@ export async function POST(request: Request) {
             content: `${userContent}\n\n${preferenceWithLearning}\n\n실시간 웹 검색 결과를 가져올 수 없습니다. 최신 사실이라고 단정하지 말고, 일반 지식 범위에서 답변한 뒤 필요한 경우 사용자가 재검색할 수 있도록 안내하세요.`,
           }],
           traceId,
-          { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength) },
+          { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength, reasoningTier), cloudflareModelOverride, localModelOverride },
           reasoningTier,
         );
         citations = [];
@@ -282,15 +285,29 @@ export async function POST(request: Request) {
         messages: contextMessages,
         principal,
         traceId,
-        providerPolicy: { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength) },
+        providerPolicy: { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength, reasoningTier), cloudflareModelOverride, localModelOverride },
         responsePreferences: { length: answerLength, format: answerFormat, learningContext: feedbackLearningContext },
-          reasoningTier,
+        reasoningTier,
         assetIds: attachmentAssetIds.length ? attachmentAssetIds : undefined,
       });
       completion = ragResult.completion;
       citations = ragResult.search.citations;
       followUpQuestions = ragResult.followUpQuestions;
     }
+    // 근거 부족(rag.ts) 뿐 아니라 정상 답변에도 프롬프트 지침에 따라 LLM이
+    // 스스로 '## 보충 질문' 절을 붙일 수 있다(FOLLOW_UP_INSTRUCTION). 답변 본문에
+    // 마크다운으로 남기지 않고 항상 이 지점에서 뽑아 follow_up_questions 로 합친다.
+    const extractedFollowUps = extractFollowUpQuestions(completion.content);
+    completion = { ...completion, content: extractedFollowUps.content };
+    const allFollowUps = [...followUpQuestions, ...extractedFollowUps.followUpQuestions]
+      .filter((question, index, all) => all.findIndex((other) => other.question === question.question) === index)
+      .slice(0, 5);
+    // rag.ts 가 finishReason: "insufficient_evidence" 로 표시하는 경우는 부분 답변이
+    // 아니라 "근거가 없어 아직 답하지 않았다"는 뜻이다. AgentPortal 은 이 신호로
+    // ClarificationForm(정보 제출 후 최종 답변 재요청)을 띄우고, 그 외에는 보충 질문을
+    // 클릭 가능한 버튼으로만 보여준다.
+    const clarificationRequired = completion.finishReason === "insufficient_evidence" && allFollowUps.length > 0;
+    if (clarificationRequired) completion = { ...completion, content: CLARIFICATION_LEAD_IN };
     if (internetGrounded) completion.content = ensureReferenceDateHeader(completion.content);
     await recordLlmInvocation({ principal, conversationId: body.conversation_id || "", completion, sensitivity })
       .catch((error) => console.error(`[${traceId}] recordLlmInvocation`, error));
@@ -342,8 +359,9 @@ export async function POST(request: Request) {
       latency_ms: completion.latencyMs,
       finish_reason: completion.finishReason,
       usage: completion.usage,
-      follow_up_questions: followUpQuestions,
+      follow_up_questions: allFollowUps,
       related_questions: relatedQuestions,
+      clarification_required: clarificationRequired,
     };
 
     if (!body.stream) {

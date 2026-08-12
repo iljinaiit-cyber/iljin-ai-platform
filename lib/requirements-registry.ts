@@ -82,7 +82,7 @@ export const DEVELOPMENT_REQUIREMENTS: DevelopmentRequirement[] = [
   requirement("NFR-AVL-001", "가용성", "월 가용성 99.9%", "external_required", "SLO 목표와 Readiness는 구현", "30일 운영 측정·SLA 보고서 필요", "target"),
   requirement("NFR-AVL-002", "가용성", "핵심 API·Agent 다중 인스턴스", "partial", "Edge Runtime Stateless 배포", "사내 Agent/Kubernetes Replica 검증", "target"),
   requirement("NFR-AVL-003", "가용성", "DB·Search·Vector HA", "external_required", "Managed Database·Object Storage 사용", "사내 Search·Vector 복제 구성 증빙", "target"),
-  requirement("NFR-AVL-004", "가용성", "외부 모델 장애 대체·제한모드", "implemented", "로컬→Cloudflare GLM 5.2 Failover와 별도 RAG 폴백"),
+  requirement("NFR-AVL-004", "가용성", "외부 모델 장애 대체·제한모드", "implemented", "로컬→Cloudflare GLM 4.7 Flash Failover와 별도 RAG 폴백"),
   requirement("NFR-AVL-005", "가용성", "비동기 인덱싱 재시작·재처리", "implemented", "Index Job 상태·Retry·수동 재색인"),
   requirement("NFR-PER-001", "성능", "검색 API P95 2초", "partial", "Retrieval Trace P95 계측", "운영 150명 부하 결과 목표 충족 필요", "target"),
   requirement("NFR-PER-002", "성능", "RAG 답변 P95 8초", "partial", "LLM Latency 계측", "운영 부하 결과 목표 충족 필요", "target"),

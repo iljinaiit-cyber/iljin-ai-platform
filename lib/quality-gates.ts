@@ -66,7 +66,7 @@ export async function getQualityGates(principal: Principal) {
       value: Number(Boolean(local?.configured)) + Number(Boolean(cloudflare?.configured)),
       unit: "/2 providers",
       evidence: local?.configured && cloudflare?.configured
-        ? "로컬 Primary와 Cloudflare GLM-5.2 Fallback이 모두 구성되었습니다."
+        ? "로컬 Primary와 Cloudflare GLM-4.7 Flash Fallback이 모두 구성되었습니다."
         : "로컬 Endpoint와 Cloudflare AI binding 또는 REST 인증 설정이 필요합니다.",
     },
     {

@@ -1,4 +1,4 @@
-import { getModelConfigs, updateModelConfig } from "../../../../lib/llm-model-config";
+import { getModelConfigDashboard, updateModelConfig } from "../../../../lib/llm-model-config";
 import { resolvePrincipal, requireRole } from "../../../../lib/identity";
 import { fail, newTraceId, ok } from "../../_shared";
 
@@ -6,7 +6,7 @@ export async function GET(request: Request) {
   const traceId = newTraceId();
   try {
     const p = await resolvePrincipal(request); requireRole(p, ["admin"]);
-    return ok({ models: await getModelConfigs(p.tenantId) }, traceId);
+    return ok(await getModelConfigDashboard(p), traceId);
   } catch (error) { return fail(error, traceId); }
 }
 

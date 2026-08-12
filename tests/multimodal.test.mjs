@@ -100,12 +100,12 @@ test("DocumentIngest accepts audio and video files", async () => {
   assert.match(source, /video\/\*/);
 });
 
-test("DocumentIngest strips audio/video extensions from title", async () => {
+test("DocumentIngest strips any extension from title, including audio/video", async () => {
   const source = await readFile(new URL("app/components/DocumentIngest.tsx", root), "utf8");
-  const regexMatch = source.match(/\.replace\(\/\\\.\(.*?\)\$\/i/);
-  assert.ok(regexMatch, "title strip regex not found");
-  assert.ok(regexMatch[0].includes("wav"), "regex missing wav extension");
-  assert.ok(regexMatch[0].includes("mp4"), "regex missing mp4 extension");
+  // 확장자를 나열하는 대신 마지막 .확장자를 통째로 잘라내는 일반형 정규식을 쓴다 —
+  // wav/mp4 뿐 아니라 새 포맷이 추가돼도 목록을 매번 늘릴 필요가 없다.
+  const regexMatch = source.match(/\.replace\(\/\\\.\[\^\.\]\+\$\//);
+  assert.ok(regexMatch, "generic title strip regex not found");
 });
 
 test("RagResults renders audio and video players", async () => {

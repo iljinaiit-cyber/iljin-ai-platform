@@ -42,7 +42,7 @@
 ## 외부 구축 없이는 완료할 수 없는 주요 항목
 
 - 기업 SSO용 OIDC/SAML IdP Metadata, Client ID, Redirect URI 등록
-- Cloudflare AI binding과 GLM 5.2·Embedding·Reranker 모델 설정
+- Cloudflare AI binding과 GLM 4.7 Flash·Embedding·Reranker 모델 설정
 - Search Engine·Vector DB 복제 또는 HA Cluster
 - PDF/OCR/VLM/STT/Video Scene용 GPU Serving
 - OpenTelemetry Collector와 OTLP 수집 Endpoint

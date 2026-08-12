@@ -71,7 +71,7 @@ Cloudflare Dashboard에서 R2를 활성화한 다음 버킷을 생성하고 `wra
 - `LOCAL_LLM_ACCESS_CLIENT_SECRET`
 - `ADMIN_EMAILS`
 
-Cloudflare GLM 5.2는 Pages Function의 `AI` binding으로 연결하며 모델 ID는 `@cf/zai-org/glm-5.2`를 사용한다. GLM 5.2는 Cloudflare 통합 AI 카탈로그의 제3자 모델이므로 계정의 통합 AI 과금 및 사용 권한도 확인한다.
+Cloudflare GLM 4.7 Flash는 Pages Function의 `AI` binding으로 연결하며 모델 ID는 `@cf/zai-org/glm-4.7-flash`를 사용한다. GLM 4.7 Flash는 Cloudflare 통합 AI 카탈로그의 제3자 모델이므로 계정의 통합 AI 과금 및 사용 권한도 확인한다.
 
 로컬 PC의 `127.0.0.1` 주소는 Cloudflare에서 접근할 수 없으므로 운영 값으로 등록하지 않는다. 로컬 LLM 호스트는 Cloudflare Access 서비스 토큰으로 보호해야 한다.
 
@@ -82,6 +82,6 @@ Cloudflare GLM 5.2는 Pages Function의 `AI` binding으로 연결하며 모델 I
 - R2 활성화 후 `r2Configured: true`
 - Tunnel/Access 설정 후 `primaryConfigured: true`
 - Workers AI binding 설정 후 `secondaryConfigured: true`
-- GLM 5.2 binding 설정 후 `fallbackConfigured: true`
+- GLM 4.7 Flash binding 설정 후 `fallbackConfigured: true`
 - CSP, HSTS, `X-Content-Type-Options`, `X-Frame-Options` 헤더 확인
 - 이메일 가입 신청과 관리자 승인 데이터가 D1에 저장됨

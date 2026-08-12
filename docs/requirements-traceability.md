@@ -50,7 +50,7 @@
 
 | 검증 ID | 요구사항·Gate 조건 | 상태 | 현재 근거 | 실행 가능한 검증 방법 | 완료 조건 |
 |---|---|---|---|---|---|
-| TC-POC-001 | Cloudflare GLM 5.2 Provider 기술 검증 (§16.4) | 구현 | [`lib/llm-gateway.ts`](../lib/llm-gateway.ts), [`api/v1/chat/completions`](../app/api/v1/chat/completions/route.ts), `/api/health` | AI binding 설정 후 Health 200 및 실제 Chat 200, Provider·Model·Trace ID 확인 | 성공/오류/Timeout/429 시나리오 결과 보존 |
+| TC-POC-001 | Cloudflare GLM 4.7 Flash Provider 기술 검증 (§16.4) | 구현 | [`lib/llm-gateway.ts`](../lib/llm-gateway.ts), [`api/v1/chat/completions`](../app/api/v1/chat/completions/route.ts), `/api/health` | AI binding 설정 후 Health 200 및 실제 Chat 200, Provider·Model·Trace ID 확인 | 성공/오류/Timeout/429 시나리오 결과 보존 |
 | TC-POC-002 | G1: 핵심 데이터 파싱 가능 | 부분 | TXT·Markdown·CSV·JSON 업로드, 정규화·제목 보존 청킹, 임베딩·색인 구현; PDF/DOCX/PPTX/XLSX 파서와 실패 재처리 미구현 | 지원 형식 업로드 성공과 Segment 생성 확인 후 대표 PDF/DOCX/PPTX/XLSX 표본의 성공률·실패 사유 측정 | 사업 핵심 형식 파싱 및 실패 재처리 가능 |
 | TC-POC-003 | G1: 핵심 데이터 검색 가능 | 구현 | `/api/v1/search`가 D1 Segment를 대상으로 BM25-like·Dense 융합과 선택적 재정렬 수행; 실제 검색 성공 확인 | 인덱싱 문서의 고유 문구를 검색해 Asset·Segment ID, Score, Citation 반환 검사 | 실제 인덱스 검색 결과 재현 |
 | TC-POC-004 | G1: 데이터 규모 조사표 확정 | 미구현 | TC-ANL-001과 동일 | 승인 조사표 자동 공란 검사 및 서명 확인 | §5.1 전 항목 확정 |
@@ -81,7 +81,7 @@
 | TC-PLT-012 | NFR-CMP-007 — 최신 2개 브라우저 | 부분 | 1080/700/420px 반응형 CSS와 정적 테스트 존재 | Chrome·Edge·Safari·Firefox 최신 2개에서 핵심 E2E | 브라우저별 Critical 결함 0건 |
 | TC-PLT-013 | NFR-MNT-004 — 자동 테스트 | 부분 | `tests/rendered-html.test.mjs`가 Build·SSR·접근성·Gateway와 RAG Schema·Migration·API·UI 연결 구조를 검사; Retrieval 품질·ACL Property E2E는 미구현 | CI에서 `npm test`, `npm run lint`, 실제 D1/R2 RAG 통합 테스트 실행 | Unit·Integration·Regression·E2E Gate 구성 |
 | TC-PLT-014 | SEC-003 — Tenant 식별자 서버 결정 | 미구현 | Tenant Context와 다중 Tenant 저장소가 없음 | 위조 Tenant Header/Body로 교차 Tenant 접근 시 403 검사 | 인증 정보에서 Tenant를 서버 결정 |
-| TC-PLT-015 | §13.2 — 등급별 Provider 라우팅 | 구현 | 내부 요청은 권한 검증 후 Cloudflare RAG·GLM 5.2를 허용하고 기밀 요청은 로컬 LLM만 사용 | public/internal/confidential별 Provider 선택과 기밀 Cloudflare 차단 테스트 | 등급별 정책·차단·감사 로그 유지 |
+| TC-PLT-015 | §13.2 — 등급별 Provider 라우팅 | 구현 | 내부 요청은 권한 검증 후 Cloudflare RAG·GLM 4.7 Flash를 허용하고 기밀 요청은 로컬 LLM만 사용 | public/internal/confidential별 Provider 선택과 기밀 Cloudflare 차단 테스트 | 등급별 정책·차단·감사 로그 유지 |
 
 ## 3단계 — Document RAG 및 G2
 

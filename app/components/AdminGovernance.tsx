@@ -10,12 +10,38 @@ type Dashboard = {
   audit?: Array<{ id: string; actorEmail?: string; action: string; createdAt?: string }>;
 };
 
+type ModelCatalogEntry = {
+  feature: string;
+  category: string;
+  label: string;
+  description: string;
+  provider: string;
+  defaultModel: string;
+};
+
+type ModelConfigEntry = {
+  feature: string;
+  provider: string;
+  model: string;
+  enabled: boolean;
+  updatedBy?: string;
+  updatedAt?: string;
+};
+
+type ModelConfigDashboard = { catalog: ModelCatalogEntry[]; configs: ModelConfigEntry[] };
+
 export function AdminGovernance({ currentEmail }: { currentEmail: string }) {
+  const [tab, setTab] = useState<"governance" | "llmModels">("governance");
   const [data, setData] = useState<Dashboard>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [userDrafts, setUserDrafts] = useState<Record<string, { displayName: string; department: string; role: "user" | "manager" | "admin"; status: "approved" | "rejected" }>>({});
   const [savingEmail, setSavingEmail] = useState("");
+
+  const [modelConfigs, setModelConfigs] = useState<ModelConfigDashboard>();
+  const [modelConfigRequest, setModelConfigRequest] = useState<{ loading: boolean; error: string }>({ loading: true, error: "" });
+  const [modelDrafts, setModelDrafts] = useState<Record<string, { model: string; enabled: boolean }>>({});
+  const [savingFeature, setSavingFeature] = useState("");
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -29,6 +55,20 @@ export function AdminGovernance({ currentEmail }: { currentEmail: string }) {
     } finally { setLoading(false); }
   }, []);
 
+  const loadModelConfigs = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const response = await fetch("/api/admin/llm-models", { cache: "no-store", signal });
+      const payload = await response.json() as ModelConfigDashboard & { error?: { message?: string } };
+      if (!response.ok) throw new Error(payload.error?.message || "모델 설정을 불러오지 못했습니다.");
+      setModelConfigs(payload);
+      setModelConfigRequest({ loading: false, error: "" });
+    } catch (cause) {
+      if ((cause as Error).name !== "AbortError") {
+        setModelConfigRequest({ loading: false, error: cause instanceof Error ? cause.message : "모델 설정을 불러오지 못했습니다." });
+      }
+    }
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     // load() 를 여기서 바로 부르면 내부 setState 가 effect 와 같은 틱에 돌아
@@ -36,6 +76,13 @@ export function AdminGovernance({ currentEmail }: { currentEmail: string }) {
     void Promise.resolve().then(() => load(controller.signal));
     return () => controller.abort();
   }, [load]);
+
+  useEffect(() => {
+    if (tab !== "llmModels" || modelConfigs) return;
+    const controller = new AbortController();
+    void Promise.resolve().then(() => loadModelConfigs(controller.signal));
+    return () => controller.abort();
+  }, [tab, modelConfigs, loadModelConfigs]);
 
   const on = (v: number | boolean | undefined) => v === true || v === 1;
 
@@ -73,6 +120,33 @@ export function AdminGovernance({ currentEmail }: { currentEmail: string }) {
     } finally { setSavingEmail(""); }
   };
 
+  const modelDraft = (catalog: ModelCatalogEntry) => modelDrafts[catalog.feature] || {
+    model: modelConfigs?.configs.find((entry) => entry.feature === catalog.feature)?.model || catalog.defaultModel,
+    enabled: modelConfigs?.configs.find((entry) => entry.feature === catalog.feature)?.enabled ?? true,
+  };
+
+  const mutateModel = async (catalog: ModelCatalogEntry) => {
+    const draft = modelDraft(catalog);
+    if (!draft.model.trim()) {
+      setModelConfigRequest((state) => ({ ...state, error: "모델명을 입력해 주세요." }));
+      return;
+    }
+    setSavingFeature(catalog.feature);
+    try {
+      const response = await fetch("/api/admin/llm-models", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feature: catalog.feature, model: draft.model.trim(), enabled: draft.enabled }),
+      });
+      const payload = await response.json() as { error?: { message?: string } };
+      if (!response.ok) throw new Error(payload.error?.message || "모델 설정을 저장하지 못했습니다.");
+      setModelDrafts((drafts) => { const next = { ...drafts }; delete next[catalog.feature]; return next; });
+      await loadModelConfigs();
+    } catch (cause) {
+      setModelConfigRequest((state) => ({ ...state, error: cause instanceof Error ? cause.message : "모델 설정을 저장하지 못했습니다." }));
+    } finally { setSavingFeature(""); }
+  };
+
   return (
     <section className="panel governance-panel">
       <div className="panel-title">
@@ -80,7 +154,39 @@ export function AdminGovernance({ currentEmail }: { currentEmail: string }) {
         <span>{currentEmail}</span>
       </div>
 
-      {loading ? <p className="agent-ops-note">불러오는 중…</p>
+      <div className="governance-tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={tab === "governance"} className={`button ${tab === "governance" ? "button-primary" : "button-secondary"}`} onClick={() => setTab("governance")}>거버넌스</button>
+        <button type="button" role="tab" aria-selected={tab === "llmModels"} className={`button ${tab === "llmModels" ? "button-primary" : "button-secondary"}`} onClick={() => setTab("llmModels")}>LLM 모델</button>
+      </div>
+
+      {tab === "llmModels" ? (
+        modelConfigRequest.loading ? <p className="agent-ops-note">불러오는 중…</p>
+          : modelConfigRequest.error ? <p className="agent-ops-error" role="alert">{modelConfigRequest.error}</p>
+          : (
+            <div className="governance-grid model-config-grid">
+              {(modelConfigs?.catalog ?? []).map((catalog) => {
+                const draft = modelDraft(catalog);
+                const saving = savingFeature === catalog.feature;
+                const config = modelConfigs?.configs.find((entry) => entry.feature === catalog.feature);
+                return (
+                  <div key={catalog.feature} className="model-config-card">
+                    <h3>{catalog.label}</h3>
+                    <p className="agent-ops-note">{catalog.description}</p>
+                    <label className="model-config-field">모델
+                      <input className="table-input" value={draft.model} onChange={(event) => setModelDrafts((drafts) => ({ ...drafts, [catalog.feature]: { ...draft, model: event.target.value } }))} aria-label={`${catalog.label} 모델`} placeholder={catalog.defaultModel} />
+                    </label>
+                    <label className="model-config-field-inline">
+                      <input type="checkbox" checked={draft.enabled} onChange={(event) => setModelDrafts((drafts) => ({ ...drafts, [catalog.feature]: { ...draft, enabled: event.target.checked } }))} />
+                      사용
+                    </label>
+                    {config?.updatedBy ? <small className="table-subtext">{config.updatedBy} · {config.updatedAt ? new Date(config.updatedAt).toLocaleString("ko-KR") : ""}</small> : <small className="table-subtext">기본값 사용 중</small>}
+                    <button className="button button-secondary" type="button" disabled={saving} onClick={() => void mutateModel(catalog)}>{saving ? "저장 중" : "모델 설정 저장"}</button>
+                  </div>
+                );
+              })}
+            </div>
+          )
+      ) : loading ? <p className="agent-ops-note">불러오는 중…</p>
         : error ? <p className="agent-ops-error" role="alert">{error}</p>
         : (
           <div className="governance-grid">

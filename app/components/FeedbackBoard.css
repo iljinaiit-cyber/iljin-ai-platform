@@ -272,6 +272,9 @@
 }
 
 .feedback-board .feedback-page-heading > div {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
   min-width: 0;
 }
 
@@ -283,10 +286,13 @@
 }
 
 .feedback-board .feedback-page-heading p {
+  overflow: hidden;
   margin: 0;
   color: var(--muted);
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .feedback-board .feedback-layout {
@@ -326,6 +332,39 @@
   padding-bottom: 9px;
 }
 
+.feedback-board .feedback-summary {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.feedback-board .feedback-discovery {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 4px 0 12px;
+}
+
+.feedback-board .feedback-search {
+  display: flex;
+  gap: 6px;
+}
+
+.feedback-board .feedback-discovery-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.feedback-board .feedback-discovery-field-inline {
+  flex-direction: row-reverse;
+}
+
 .feedback-board .feedback-post-summary {
   grid-template-columns: minmax(68px, auto) minmax(0, 1fr) auto;
   min-height: 72px;
@@ -333,10 +372,15 @@
 }
 
 .feedback-board .feedback-post-main {
-  gap: 7px;
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 14px;
 }
 
 .feedback-board .feedback-post-main strong {
+  min-width: 0;
+  flex: 1 1 auto;
   overflow: visible;
   white-space: normal;
   line-height: 1.35;
@@ -344,18 +388,23 @@
 }
 
 .feedback-board .feedback-author {
-  align-items: flex-start;
+  flex: 0 1 auto;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .feedback-board .feedback-author > span:last-child {
-  gap: 3px;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
 }
 
 .feedback-board .feedback-author b,
 .feedback-board .feedback-author small {
   overflow: visible;
-  white-space: normal;
-  line-height: 1.35;
+  white-space: nowrap;
+  line-height: 1.2;
   overflow-wrap: anywhere;
 }
 
@@ -439,6 +488,18 @@
     gap: 8px;
   }
 
+  .feedback-board .feedback-page-heading > div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .feedback-board .feedback-page-heading p {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
   .feedback-board .feedback-list-panel,
   .feedback-board .feedback-form-panel {
     padding: 16px;
@@ -466,6 +527,22 @@
     margin-top: -2px;
   }
 
+  .feedback-board .feedback-post-main {
+    display: grid;
+    gap: 5px;
+  }
+
+  .feedback-board .feedback-author > span:last-child {
+    display: grid;
+    gap: 3px;
+  }
+
+  .feedback-board .feedback-author b,
+  .feedback-board .feedback-author small {
+    white-space: normal;
+    line-height: 1.35;
+  }
+
   .feedback-board .feedback-post-toolbar {
     align-items: stretch;
   }
@@ -473,5 +550,54 @@
   .feedback-board .feedback-moderation-actions {
     width: 100%;
     margin-left: 0;
+  }
+}
+
+/* Keep the feedback workspace inside the viewport; only dense panels scroll. */
+@media (min-width: 901px) {
+  .main-content-feedback {
+    height: calc(100dvh - 64px);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .main-content-feedback .feedback-board {
+    display: flex;
+    height: 100%;
+    min-height: 0;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .main-content-feedback .feedback-page-heading {
+    flex: 0 0 auto;
+  }
+
+  .main-content-feedback .feedback-layout {
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+
+  .main-content-feedback .feedback-list-panel {
+    display: flex;
+    min-height: 0;
+    height: 100%;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .main-content-feedback .feedback-post-list {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    scrollbar-color: var(--line-strong) transparent;
+    scrollbar-width: thin;
+  }
+
+  .main-content-feedback .feedback-form-panel {
+    max-height: 100%;
+    overflow-y: auto;
+    scrollbar-color: var(--line-strong) transparent;
+    scrollbar-width: thin;
   }
 }

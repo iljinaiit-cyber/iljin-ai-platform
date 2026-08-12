@@ -4,9 +4,9 @@ import test from "node:test";
 
 const root = new URL("../", import.meta.url);
 
-test("default Cloudflare model is GLM 5.2", async () => {
+test("default Cloudflare model is GLM 4.7 Flash", async () => {
   const source = await readFile(new URL("lib/llm-gateway.ts", root), "utf8");
-  assert.match(source, /DEFAULT_CLOUDFLARE_MODEL\s*=\s*"@cf\/zai-org\/glm-5\.2"/);
+  assert.match(source, /DEFAULT_CLOUDFLARE_MODEL\s*=\s*"@cf\/zai-org\/glm-4\.7-flash"/);
 });
 
 test("llm-gateway no longer references Kimi K2.6 as default", async () => {
@@ -54,9 +54,9 @@ test("llm-model-config.ts exists with MODEL_FEATURE_CATALOG", async () => {
   assert.match(source, /"vlm"/);
 });
 
-test("llm-model-config default chat model is GLM 5.2", async () => {
+test("llm-model-config default chat model is GLM 4.7 Flash", async () => {
   const source = await readFile(new URL("lib/llm-model-config.ts", root), "utf8");
-  assert.match(source, /feature:\s*"chat"[\s\S]*?defaultModel:\s*"@cf\/zai-org\/glm-5\.2"/);
+  assert.match(source, /feature:\s*"chat"[\s\S]*?defaultModel:\s*"@cf\/zai-org\/glm-4\.7-flash"/);
 });
 
 test("llm-model-config exports getEffectiveModel and updateModelConfig", async () => {
@@ -79,9 +79,9 @@ test("admin llm-models route exists with GET and PATCH", async () => {
   assert.match(source, /updateModelConfig/);
 });
 
-test("admin-governance feature catalog updated to GLM 5.2", async () => {
+test("admin-governance feature catalog updated to GLM 4.7 Flash", async () => {
   const source = await readFile(new URL("lib/admin-governance.ts", root), "utf8");
-  assert.match(source, /GLM 5\.2/);
+  assert.match(source, /GLM 4\.7 Flash/);
   assert.doesNotMatch(source, /Kimi K2\.6/i, "Kimi K2.6 should be removed from admin-governance");
 });
 
@@ -119,7 +119,14 @@ test("chat completions route resolves model overrides from DB config", async () 
 });
 
 test("rag.ts providerPolicy supports model overrides", async () => {
-  const source = await readFile(new URL("lib/rag.ts", root), "utf8");
-  assert.match(source, /localModelOverride/);
-  assert.match(source, /cloudflareModelOverride/);
+  const [rag, gateway] = await Promise.all([
+    readFile(new URL("lib/rag.ts", root), "utf8"),
+    readFile(new URL("lib/llm-gateway.ts", root), "utf8"),
+  ]);
+  // rag.ts는 GatewayPolicy를 그대로 재사용한다(중복 선언 대신 llm-gateway.ts를 정본으로 삼는다).
+  assert.match(rag, /providerPolicy\?:\s*GatewayPolicy/);
+  assert.match(rag, /import\s*\{[^}]*\bGatewayPolicy\b[^}]*\}\s*from\s*"\.\/llm-gateway"/);
+  assert.match(gateway, /export type GatewayPolicy/);
+  assert.match(gateway, /localModelOverride/);
+  assert.match(gateway, /cloudflareModelOverride/);
 });

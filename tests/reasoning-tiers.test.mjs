@@ -12,7 +12,7 @@ test("llm-gateway exports ReasoningTier type", async () => {
 test("safeMessages is tier-aware with three system prompts", async () => {
   const source = await readFile(new URL("lib/llm-gateway.ts", root), "utf8");
   assert.match(source, /tierAdditions.*Record<ReasoningTier, string>/);
-  assert.match(source, /swift:.*즉시 답합니다/);
+  assert.match(source, /swift:.*핵심만 답합니다/);
   assert.match(source, /expert:[\s\S]*한 줄 요약/);
   assert.match(source, /deep:[\s\S]*교차 검증/);
   assert.match(source, /심층 의사결정 문서/);
@@ -50,12 +50,13 @@ test("completeWithRag runs post-hoc citation verification", async () => {
 
 test("citation-guard.ts exists with verifyCitations and annotateCitationIssues", async () => {
   const source = await readFile(new URL("lib/citation-guard.ts", root), "utf8");
-  assert.match(source, /export function verifyCitations/);
+  assert.match(source, /export async function verifyCitations/);
   assert.match(source, /export function annotateCitationIssues/);
   assert.match(source, /phantom_citation/);
   assert.match(source, /uncited_claim/);
   assert.match(source, /unsupported_claim/);
   assert.match(source, /MIN_OVERLAP_RATIO/);
+  assert.match(source, /MIN_SEMANTIC_SIMILARITY/);
 });
 
 test("chat completions route accepts reasoning_tier", async () => {
@@ -71,15 +72,19 @@ test("maxOutputTokensFor scales with reasoning tier", async () => {
 });
 
 test("deep RAG answers require actionable structure, metrics, governance, and next steps", async () => {
-  const [rag, route] = await Promise.all([
+  const [rag, gateway] = await Promise.all([
     readFile(new URL("lib/rag.ts", root), "utf8"),
-    readFile(new URL("app/api/v1/chat/completions/route.ts", root), "utf8"),
+    readFile(new URL("lib/llm-gateway.ts", root), "utf8"),
   ]);
   assert.match(rag, /목차 골격이나 구조표/);
   assert.match(rag, /단계별 게이트/);
   assert.match(rag, /정량 KPI와 검증 주체/);
-  assert.match(route, /설계 기준 → 전체 구조 또는 비교표/);
-  assert.match(route, /리스크·거버넌스 → 예상 반론 → 다음 행동/);
+  // 이 골격은 원래 route.ts 에 있었지만, 2026-08-04 app/api·app/components 유실
+  // 복구(74b1344) 이후 lib/llm-gateway.ts 의 deep tierAdditions 로 옮겨져 남아 있다.
+  assert.match(gateway, /설계 기준·판단 기준/);
+  assert.match(gateway, /리스크·거버넌스/);
+  assert.match(gateway, /예상 질문·반론 대비/);
+  assert.match(gateway, /다음 행동/);
 });
 
 test("AgentPortal maps answer length to reasoning tier in API request", async () => {

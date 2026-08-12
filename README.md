@@ -2,25 +2,25 @@
 
 ## LLM 라우팅 (2026-07-23)
 
-채팅 답변 생성은 public/internal 요청에서 `Cloudflare AI GLM 5.2 → 로컬 PC vLLM/Ollama` 순서로 호출합니다. Cloudflare가 미구성, 타임아웃, 비정상 응답 또는 회로 차단 상태이면 로컬 모델로 자동 전환합니다. confidential 요청은 외부로 전송하지 않고 로컬 LLM만 사용합니다. RAG 임베딩과 재랭킹도 Cloudflare AI binding으로 처리합니다.
+채팅 답변 생성은 public/internal 요청에서 `Cloudflare AI GLM 4.7 Flash → 로컬 PC vLLM/Ollama` 순서로 호출합니다. Cloudflare가 미구성, 타임아웃, 비정상 응답 또는 회로 차단 상태이면 로컬 모델로 자동 전환합니다. confidential 요청은 외부로 전송하지 않고 로컬 LLM만 사용합니다. RAG 임베딩과 재랭킹도 Cloudflare AI binding으로 처리합니다.
 
 - 로컬 개발: `LOCAL_LLM_BASE_URL=http://127.0.0.1:11434`
 - Cloudflare 운영: `LOCAL_LLM_BASE_URL=https://<보호된-Tunnel-호스트>`
-- Cloudflare 기본 모델: `CLOUDFLARE_AI_MODEL=@cf/zai-org/glm-5.2`
+- Cloudflare 기본 모델: `CLOUDFLARE_AI_MODEL=@cf/zai-org/glm-4.7-flash`
 - 운영 Tunnel은 Cloudflare Access 서비스 토큰으로 반드시 보호합니다.
 - 상세 절차: [`docs/cloudflare-local-llm-runbook.md`](docs/cloudflare-local-llm-runbook.md)
 
 
-ILJIN 임직원용 AI 업무 포털입니다. 같은 vinext 애플리케이션이 로컬 PC와 Cloudflare Sites에서 실행되며, 서버 측 LLM Gateway가 로컬 LLM과 Cloudflare GLM 5.2를 순차 호출합니다.
+ILJIN 임직원용 AI 업무 포털입니다. 같은 vinext 애플리케이션이 로컬 PC와 Cloudflare Sites에서 실행되며, 서버 측 LLM Gateway가 로컬 LLM과 Cloudflare GLM 4.7 Flash를 순차 호출합니다.
 
 ## 구성
 
 ```text
-브라우저 → Cloudflare Worker → D1/R2 Document RAG → 로컬/Cloudflare GLM 5.2 생성
+브라우저 → Cloudflare Worker → D1/R2 Document RAG → 로컬/Cloudflare GLM 4.7 Flash 생성
 ```
 
 - Cloudflare AI는 서버 binding으로만 호출하며 브라우저에 공급자 인증정보를 전달하지 않습니다.
-- 내부 요청은 권한 검증 후 Cloudflare RAG와 GLM 5.2를 사용할 수 있으며, 기밀 요청은 로컬 LLM으로만 라우팅합니다.
+- 내부 요청은 권한 검증 후 Cloudflare RAG와 GLM 4.7 Flash를 사용할 수 있으며, 기밀 요청은 로컬 LLM으로만 라우팅합니다.
 - Provider 원문 오류와 비밀값은 API 응답에 노출하지 않습니다.
 - 로컬과 Cloudflare가 동일한 API 및 보안 경계를 사용합니다.
 - 원문은 R2, 자산·세그먼트·벡터·검색 Trace는 D1에 저장합니다.
@@ -59,7 +59,7 @@ npm run test:agent
 
 ## 환경변수
 
-- `CLOUDFLARE_AI_MODEL`: Cloudflare AI binding 또는 REST API에서 호출할 기본 모델이며 기본값은 `@cf/zai-org/glm-5.2`입니다.
+- `CLOUDFLARE_AI_MODEL`: Cloudflare AI binding 또는 REST API에서 호출할 기본 모델이며 기본값은 `@cf/zai-org/glm-4.7-flash`입니다.
 - `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`: Sites처럼 AI binding이 없는 운영 환경에서 사용하는 Cloudflare AI REST 인증입니다. API Token은 Secret으로 저장합니다.
 - `CLOUDFLARE_AI_GATEWAY_ID`: 선택값이며 별도 Gateway를 지정하지 않으면 계정 기본 Gateway를 사용합니다.
 - `CLOUDFLARE_EMBED_MODEL`: Cloudflare Embedding 모델이며 기본값은 `@cf/google/embeddinggemma-300m`입니다.

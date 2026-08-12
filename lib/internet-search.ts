@@ -1138,7 +1138,7 @@ export function getInternetSearchStatus(): InternetSearchStatus {
     status: fullWebConfigured ? "ready" : "fallback",
     detail: fullWebConfigured
       ? `${PROVIDER_META[activeProvider].name}부터 최대 ${MAX_PARALLEL_PROVIDERS}개 공급자를 배치로 병렬 조회해 결과를 종합하고, 그래도 부족하면 다음 배치로 확장합니다.`
-      : "DuckDuckGo·Jina 무료 웹 검색과 Wikimedia 백과사전을 사용합니다. Google·NAVER·YouTube·Tavily·Exa·Brave 구성 시 더 풍부하고 다양한 출처를 병렬로 조회합니다.",
+      : "API 키가 없어도 DuckDuckGo·Jina 공개 웹 검색을 우선 시도하고, 결과가 부족할 때만 Wikimedia를 보조 출처로 사용합니다. Google·NAVER·YouTube·Tavily·Exa·Brave를 구성하면 더 다양한 출처를 병렬로 조회하고 교차 검토합니다.",
     providers,
   };
 }

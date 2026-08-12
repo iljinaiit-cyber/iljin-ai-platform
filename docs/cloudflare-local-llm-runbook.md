@@ -1,4 +1,4 @@
-# Cloudflare GLM 5.2 → 로컬 LLM 폴백 운영 절차
+# Cloudflare GLM 4.7 Flash → 로컬 LLM 폴백 운영 절차
 
 작성일: 2026-07-23
 
@@ -7,7 +7,7 @@
 ```text
 사용자 브라우저
   → Cloudflare Sites/Worker
-    → 1차: Cloudflare AI → @cf/zai-org/glm-5.2
+    → 1차: Cloudflare AI → @cf/zai-org/glm-4.7-flash
     → public/internal 요청의 장애 시 2차: Cloudflare Access로 보호된 Tunnel → 로컬 vLLM 또는 Ollama
     → confidential 요청: 로컬 vLLM 또는 Ollama 전용
 
@@ -17,7 +17,7 @@ RAG 임베딩/재랭킹
 
 로컬 추론 서버 포트를 공유기나 방화벽에서 직접 공개하지 않습니다. `cloudflared`가 Cloudflare로 만드는 아웃바운드 전용 Tunnel만 사용하고, Tunnel 호스트에는 Access 서비스 토큰 정책을 적용합니다. Gateway는 `/v1/models`와 `/v1/chat/completions`를 사용하므로 vLLM과 Ollama를 설정 변경만으로 교체할 수 있습니다.
 
-Cloudflare 통합 AI 카탈로그의 GLM 5.2 모델 ID는 [`@cf/zai-org/glm-5.2`](https://developers.cloudflare.com/ai/models/@cf/zai-org/glm-5.2/)입니다. API Token을 브라우저에 저장하지 않고 Pages Function의 AI binding으로 호출합니다.
+Cloudflare 통합 AI 카탈로그의 GLM 4.7 Flash 모델 ID는 [`@cf/zai-org/glm-4.7-flash`](https://developers.cloudflare.com/workers-ai/models/glm-4.7-flash/)입니다. API Token을 브라우저에 저장하지 않고 Pages Function의 AI binding으로 호출합니다.
 
 ## 1. 로컬 OpenAI 호환 서버 확인
 
@@ -86,12 +86,12 @@ Zero Trust 대시보드에서 `llm.<회사도메인>`을 Self-hosted application
 
 서비스 토큰의 Client Secret은 생성 시 한 번만 표시되므로 비밀 저장소에 보관하고 Git, 문서, 채팅에 기록하지 않습니다.
 
-## 4. Cloudflare AI GLM 5.2
+## 4. Cloudflare AI GLM 4.7 Flash
 
 Pages Function에 `AI` Workers AI binding을 연결하고 모델 변수는 다음 값으로 유지합니다.
 
 ```dotenv
-CLOUDFLARE_AI_MODEL=@cf/zai-org/glm-5.2
+CLOUDFLARE_AI_MODEL=@cf/zai-org/glm-4.7-flash
 ```
 
 관리자 AI Control Tower의 Cloudflare AI 카드에서 `연결 테스트`를 실행하면 최소 토큰으로 실제 모델 호출을 확인합니다. 일반 Readiness 조회는 비용이 발생하지 않도록 binding 존재 여부만 확인합니다.
@@ -124,7 +124,7 @@ RAG 임베딩·재랭킹은 `CLOUDFLARE_EMBED_MODEL`, `CLOUDFLARE_RERANK_MODEL`�
 
 - 로컬 호출은 최대 1회 재시도합니다.
 - 공급자별 연속 3회 실패 시 30초 동안 회로 차단기가 열립니다.
-- public/internal 요청에서 Cloudflare GLM 5.2 실패 시 로컬 LLM으로 자동 폴백합니다.
+- public/internal 요청에서 Cloudflare GLM 4.7 Flash 실패 시 로컬 LLM으로 자동 폴백합니다.
 - confidential 요청은 Cloudflare로 전송하지 않고 로컬 LLM만 사용합니다.
 - 두 공급자가 모두 실패하면 `ALL_PROVIDERS_UNAVAILABLE`과 Trace ID를 반환합니다.
 - 로그와 API 응답에는 API 키나 Access Client Secret을 포함하지 않습니다.

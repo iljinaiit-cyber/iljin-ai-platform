@@ -47,14 +47,11 @@ test("chat route imports extractFollowUpQuestions", async () => {
   assert.match(source, /follow_up_questions/);
 });
 
-test("chat route includes follow_up_questions in non-streaming response", async () => {
+test("chat route shares one done object with follow_up_questions across streaming and non-streaming responses", async () => {
   const source = await readFile(new URL("app/api/v1/chat/completions/route.ts", root), "utf8");
   assert.match(source, /follow_up_questions: allFollowUps/);
-});
-
-test("chat route includes follow_up_questions in streaming done event", async () => {
-  const source = await readFile(new URL("app/api/v1/chat/completions/route.ts", root), "utf8");
-  assert.match(source, /follow_up_questions: input\.followUpQuestions/);
+  assert.match(source, /sse\("done", done\)/);
+  assert.match(source, /ok\(\{ \.\.\.done, content: completion\.content, citations \}, traceId\)/);
 });
 
 test("llm-gateway imports FOLLOW_UP_INSTRUCTION", async () => {

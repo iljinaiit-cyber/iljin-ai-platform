@@ -15,10 +15,17 @@ export class CloudCostLimitError extends Error {
 
 function billingPeriod() { return new Date().toISOString().slice(0, 7); }
 
+// Published Cloudflare Workers AI prices, USD per million tokens
+// (developers.cloudflare.com/workers-ai/models/<model>/).
+const MODEL_RATES: Record<string, { input: number; output: number }> = {
+  "@cf/zai-org/glm-4.7-flash": { input: 0.06, output: 0.4 },
+};
+// DEFAULT_CLOUDFLARE_MODEL 이 바뀔 때마다 위 표에 실제 가격을 추가해야 한다 — 표에
+// 없는 모델은 이 보수적 상한으로 과금되어 예산 상한에 너무 일찍 도달할 수 있다.
+const UNLISTED_MODEL_RATE = { input: 1.4, output: 6.667 };
+
 function modelRates(model: string) {
-  // Published Cloudflare Workers AI prices, USD per million tokens.
-  if (model === "@cf/zai-org/glm-5.2") return { input: 1.4, output: 4.4 };
-  return { input: 1.4, output: 6.667 };
+  return MODEL_RATES[model] || UNLISTED_MODEL_RATE;
 }
 
 function outputLimit(value?: number) {

@@ -25,6 +25,10 @@ const CLASSIFICATIONS = [
   { value: "public", label: "공개", hint: "전체 공개 가능" },
 ] as const;
 const TEXT_LIKE = /\.(txt|md|markdown|csv|json|ya?ml|html?)$/i;
+// 서버는 이미 PDF·이미지·오디오·비디오를 멀티모달로 처리한다(lib/multimodal.ts,
+// getRagStatus().multimodalFormats). 여기서 막을 이유가 없다 — 텍스트류만 골라
+// 본문 미리보기에 인라인으로 붙이고, 나머지는 그대로 큐에 넣어 서버가 변환한다.
+const UPLOAD_ACCEPT = ".txt,.md,.markdown,.csv,.json,.yaml,.yml,.html,.htm,.pdf,.jpg,.jpeg,.png,.webp,.svg,.gif,.bmp,.wav,.mp3,.flac,.ogg,.m4a,.mp4,.mov,.webm,.mkv,audio/*,video/*,image/*";
 const TERMINAL_STATUSES = new Set(["indexed", "failed"]);
 
 function statusMessage(progress: EmbeddingProgress) {
@@ -219,14 +223,14 @@ export function DocumentIngest({ onIndexed }: Props) {
       {mode !== "local-db" ? <>
         <div className={`document-ingest__dropzone${dragging ? " is-dragging" : ""}`} onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={handleDrop}>
           <strong>{mode === "pc-folder" ? "PC 폴더를 선택하세요" : "여기로 문서를 끌어 놓으세요"}</strong>
-          <span>{mode === "pc-folder" ? "브라우저에서 선택한 폴더의 파일을 일괄 업로드하고 자동 임베딩합니다." : "문서를 Object Storage에 보관한 뒤 Metadata Database와 Vectorize에 임베딩합니다."}</span>
-          {mode === "pc-folder" ? <input type="file" multiple onChange={pickFile} aria-label="개인 PC 폴더 선택" {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} /> : <input type="file" multiple onChange={pickFile} aria-label="지식 데이터베이스 영구 등록 파일 선택" />}
+          <span>{mode === "pc-folder" ? "브라우저에서 선택한 폴더의 파일을 일괄 업로드하고 자동 임베딩합니다." : "문서·PDF·이미지·오디오·비디오를 Object Storage에 보관한 뒤 Metadata Database와 Vectorize에 임베딩합니다."}</span>
+          {mode === "pc-folder" ? <input type="file" multiple onChange={pickFile} aria-label="개인 PC 폴더 선택" {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} /> : <input type="file" multiple accept={UPLOAD_ACCEPT} onChange={pickFile} aria-label="지식 데이터베이스 영구 등록 파일 선택" />}
         </div>
         {queue.length ? <ul className="document-ingest__queue">{queue.map((item) => <li key={item.id}><span>{item.file.name}</span><small data-status={item.status}>{item.status === "embedding" ? "임베딩 대기" : item.status}</small>{item.status === "failed" ? <button type="button" onClick={() => void uploadFile(item)}>다시 시도</button> : null}</li>)}</ul> : null}
-        {mode === "pc-folder" ? <button type="button" className="quiet-button" disabled={busy || !queue.some((item) => item.status === "queued" || item.status === "failed")} onClick={() => void runQueue()}>{busy ? "PC 폴더 업로드 중…" : "선택한 폴더 임베딩 시작"}</button> : null}
+        {queue.some((item) => item.status === "queued" || item.status === "failed") ? <button type="button" className="quiet-button" disabled={busy} onClick={() => void runQueue()}>{busy ? "업로드 중…" : mode === "pc-folder" ? "선택한 폴더 임베딩 시작" : "선택한 파일 업로드"}</button> : null}
       </> : <div className="local-db-card"><strong>로컬 DB 커넥터 연결</strong><p>SQLite·Postgres 등 로컬 DB를 읽는 커넥터의 HTTPS 주소를 입력하세요. Worker가 DB 자격증명을 직접 보관하지 않고 커넥터가 문서 매니페스트를 반환합니다.</p><label className="ingest-field">커넥터 HTTPS 주소<input value={connectorEndpoint} onChange={(event) => setConnectorEndpoint(event.target.value)} placeholder="https://your-connector.example.com/manifest" /></label><label className="ingest-field">DB 경로 또는 연결 이름<input value={databasePath} onChange={(event) => setDatabasePath(event.target.value)} placeholder="C:\\data\\knowledge.sqlite 또는 production-db" /></label><label className="ingest-field">조회문(선택)<textarea value={databaseQuery} onChange={(event) => setDatabaseQuery(event.target.value)} rows={4} placeholder="SELECT title, content FROM documents" /></label><button type="button" className="quiet-button" disabled={busy} onClick={() => void registerLocalDb()}>{busy ? "연결 등록 중…" : "로컬 DB 자동 임베딩 연결"}</button></div>}
 
-      {mode === "upload" ? <><label className="ingest-field">문서 제목<input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} required placeholder="예: 해외출장비 지급기준 v4.2" /></label><label className="ingest-field">파일 선택 <small>(.txt .md .csv .json .yaml .html)</small><input type="file" accept=".txt,.md,.markdown,.csv,.json,.yaml,.yml,.html,.htm" onChange={pickFile} /></label><label className="ingest-field">본문<textarea value={content} onChange={(event) => setContent(event.target.value)} rows={8} required placeholder="파일을 선택하거나 본문을 직접 붙여 넣습니다." /></label></> : null}
+      {mode === "upload" ? <><label className="ingest-field">문서 제목<input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} required placeholder="예: 해외출장비 지급기준 v4.2" /></label><label className="ingest-field">파일 선택 <small>(.txt .md .csv .json .yaml .html .pdf .jpg .png .wav .mp3 .mp4 .mov 등)</small><input type="file" accept={UPLOAD_ACCEPT} onChange={pickFile} /></label><label className="ingest-field">본문<textarea value={content} onChange={(event) => setContent(event.target.value)} rows={8} required placeholder="텍스트류 문서는 파일을 선택하면 자동으로 채워지고, 직접 붙여 넣을 수도 있습니다. PDF·이미지·오디오·비디오는 본문 없이 아래 목록에서 바로 업로드하세요." /></label></> : null}
       <fieldset className="ingest-classification"><legend>문서 등급</legend>{CLASSIFICATIONS.map((item) => <label key={item.value}><input type="radio" name="classification" value={item.value} checked={classification === item.value} onChange={() => setClassification(item.value)} /><strong>{item.label}</strong><small>{item.hint}</small></label>)}</fieldset>
       <label className="ingest-field">열람 부서 <small>(쉼표 구분, 비우면 전체)</small><input value={departmentScope} onChange={(event) => setDepartmentScope(event.target.value)} placeholder="예: 생산기술팀, 재무보증팀" /></label>
       {mode === "pc-folder" ? <p className="ingest-hint">개인 PC 폴더 선택은 현재 등록을 위한 업로드 방식입니다. PC 폴더를 계속 동기화하려면 관리자 수집 소스에서 PC 커넥터를 추가해 주세요.</p> : null}

@@ -68,7 +68,7 @@ export const FEATURE_CATALOG: Array<{
   { key: "tool.approvals", category: "Agent", label: "Tool 승인", description: "고위험 Tool 승인 워크플로를 사용합니다.", defaultEnabled: true },
   { key: "activity", category: "Portal", label: "활동 이력", description: "사용자 활동 조회 화면을 제공합니다.", defaultEnabled: true },
   { key: "llm.local_primary", category: "LLM", label: "로컬 LLM 폴백", description: "Cloudflare 장애 시 로컬 vLLM을 폴백 Provider로 사용합니다.", defaultEnabled: true },
-  { key: "llm.cloudflare_secondary", category: "LLM", label: "Cloudflare GLM 5.2 기본", description: "public/internal 요청의 기본 Provider로 Cloudflare GLM 5.2를 사용합니다.", defaultEnabled: true },
+  { key: "llm.cloudflare_secondary", category: "LLM", label: "Cloudflare GLM 4.7 Flash 기본", description: "public/internal 요청의 기본 Provider로 Cloudflare GLM 4.7 Flash를 사용합니다.", defaultEnabled: true },
 ];
 
 const ROLE_DEFAULTS: Record<UserRole, Set<PermissionKey>> = {

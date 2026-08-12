@@ -27,7 +27,26 @@ export type RagResultItem = {
   regionType?: string;
   region?: unknown;
   originalUrl?: string;
+  timeStartMs?: number;
+  timeEndMs?: number;
 };
+
+// 오디오/비디오 시작·종료 타임코드를 Media Fragments URI(#t=)로 표현한다 —
+// 브라우저 <audio>/<video> 가 표준으로 지원해 별도 플레이어 로직 없이 해당
+// 구간으로 이동한다. https://www.w3.org/TR/media-frags/
+function mediaFragmentUrl(url: string, timeStartMs?: number, timeEndMs?: number) {
+  if (typeof timeStartMs !== "number") return url;
+  const start = (timeStartMs / 1000).toFixed(1);
+  const end = typeof timeEndMs === "number" && timeEndMs > timeStartMs ? `,${(timeEndMs / 1000).toFixed(1)}` : "";
+  return `${url}#t=${start}${end}`;
+}
+
+function formatTimecode(ms: number) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
 
 type Props = {
   results: RagResultItem[];
@@ -123,6 +142,15 @@ export function RagResults({
               {/* 인용문은 원문 그대로다. 요약하지 않는다 — 근거 검증이 목적이다. */}
               <p className="rag-snippet">{result.snippet}</p>
               {result.regionId ? <span className="rag-chip">이미지 근거 · {result.regionType || "visual"}</span> : null}
+              {result.sourceType === "audio" && result.originalUrl
+                ? <audio className="rag-media" controls preload="none" src={mediaFragmentUrl(result.originalUrl, result.timeStartMs, result.timeEndMs)} />
+                : null}
+              {result.sourceType === "video" && result.originalUrl
+                ? <video className="rag-media" controls preload="none" src={mediaFragmentUrl(result.originalUrl, result.timeStartMs, result.timeEndMs)} />
+                : null}
+              {typeof result.timeStartMs === "number"
+                ? <span className="rag-chip">{formatTimecode(result.timeStartMs)}{typeof result.timeEndMs === "number" ? ` – ${formatTimecode(result.timeEndMs)}` : ""}</span>
+                : null}
 
               <div className="rag-result-foot">
                 {locator ? <span>{locator}</span> : null}

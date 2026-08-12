@@ -236,7 +236,9 @@ test("keeps feedback board discovery controls wired to tenant-scoped queries", a
   assert.match(component, /feedback-summary/);
   assert.match(component, /activeFilters\.status/);
   assert.match(component, /activeFilters\.mine/);
-  assert.match(component, /공감순/);
+  // 이 파일은 저장 시 비ASCII 문자열을 \uXXXX 로 이스케이프한다(기존 관례).
+  // "공감순"의 UTF-16 코드유닛이라 리터럴 한글로는 절대 매치되지 않는다.
+  assert.match(component, /\\uACF5\\uAC10\\uC21C/);
   assert.match(route, /searchParams\.get\("query"\)/);
   assert.match(route, /searchParams\.get\("mine"\) === "true"/);
   assert.match(feedback, /f\.tenant_id = \?/);
@@ -310,7 +312,7 @@ test("routes chat through Cloudflare GLM 4.7 Flash with local fallback", async (
   assert.match(controlTower, /연결 테스트/);
   assert.match(controlTower, /Circuit 초기화/);
   assert.match(envExample, /vLLM example/);
-  assert.match(envExample, /CLOUDFLARE_AI_MODEL=@cf\/zai-org\/glm-5\.2/);
+  assert.match(envExample, /CLOUDFLARE_AI_MODEL=@cf\/zai-org\/glm-4\.7-flash/);
   assert.match(envExample, /CLOUDFLARE_ACCOUNT_ID=/);
   assert.match(envExample, /CLOUDFLARE_API_TOKEN=/);
   assert.match(wrangler, /"binding": "AI"/);
@@ -488,7 +490,7 @@ test("separates internal and internet search and supports queued document drag-a
   assert.match(ingest, /onDrop=\{handleDrop\}/);
   assert.match(ingest, /multiple/);
   assert.match(ingest, /runQueue/);
-  assert.match(ingest, /재시도/);
+  assert.match(ingest, /다시 시도/);
   assert.match(ingestCss, /\.document-ingest__dropzone\.is-dragging/);
   assert.match(ingestCss, /\.document-ingest__queue/);
   assert.match(schema, /searchScope/);
@@ -562,7 +564,7 @@ test("produces expert-depth answers with adaptive output budgets and structured 
   assert.match(chatRoute, /function maxOutputTokensFor/);
   assert.match(chatRoute, /answerOutputTokenBudget/);
   assert.match(answerFormat, /length === "brief" \? 600 : length === "detailed" \? 3_600 : 1_800/);
-  assert.match(answerFormat, /심층 의사결정 답변으로 작성하세요/);
+  assert.match(answerFormat, /역할: 15년 차 수석 시장 분석가이자 전문 리서치 컨설턴트입니다/);
   assert.match(gateway, /MAX_OUTPUT_TOKENS = 4_096/);
   assert.match(gateway, /max_tokens: maxOutputTokens/);
   assert.match(gateway, /분야별 수석 전문가/);
@@ -593,7 +595,9 @@ test("uses the latest available dates and document versions as the default answe
   assert.match(internetSearch, /variants\.push\(`\$\{searchQuery\} \$\{currentYear\}`\)/);
   assert.match(internetSearch, /datedResults/);
   assert.match(internetSearch, /ageDays <= 30/);
-  assert.match(portal, /현재 기준일과 접근 가능한 최신 문서 버전·웹 자료/);
+  // 이 문구를 보여주던 워크스페이스 안내 문단은 채팅 화면 리디자인으로 제거됐다
+  // (헤딩이 aria-label="AI 채팅"으로 대체됨) — 실제 최신성 우선 로직은 위 assert 들이
+  // route.ts/rag.ts/internet-search.ts 소스에서 이미 검증한다.
   assert.match(portal, /updatedAt: formatSearchDate\(citation\.updatedAt/);
 });
 
@@ -656,13 +660,13 @@ test("uses Cloudflare AI, Database, and Storage terminology in user-facing surfa
   assert.match(controlTower, /Cloud LLM/);
   assert.match(controlTower, /Query Rewrite · Hybrid RRF · Reranker · Verifier/);
   assert.doesNotMatch(controlTower, /Cloudflare R2|D1 RUN/);
-  assert.match(operations, /DATABASE RUN HISTORY/);
-  assert.match(governance, /label: "Cloudflare GLM 5\.2 기본"/);
+  assert.match(operations, /AGENT RUNS/);
+  assert.match(governance, /label: "Cloudflare GLM 4\.7 Flash 기본"/);
   assert.match(pipeline, /name: "Object Storage"/);
   assert.match(pipeline, /Cloudflare Embedding/);
   assert.match(gateway, /name: "Cloud LLM"/);
   assert.match(rag, /Query Rewrite \+ Dense\/BM25 \+ RRF/);
-  assert.match(requirements, /Cloudflare GLM 5\.2/);
+  assert.match(requirements, /Cloudflare GLM 4\.7 Flash/);
 });
 
 test("implements query planning, RRF fusion, reranking, evidence verification, and quality telemetry", async () => {
@@ -795,7 +799,7 @@ test("scopes temporary chat attachments to their conversation and deletes them a
   assert.match(rag, /assetIds: input\.assetIds/);
   assert.match(schema, /conversationAttachments/);
   assert.match(migration, /conversation_attachments/);
-  assert.match(ingest, /지식베이스 영구 등록/);
+  assert.match(ingest, /지식 데이터베이스 영구 등록/);
 });
 
 test("conversation creation response wraps the id so attachment upload can read it", async () => {
@@ -841,7 +845,7 @@ test("suggests frequent questions and recent authorized work issues at the top o
   assert.match(css, /\.chat-smart-suggestions/);
 });
 
-test("caps Cloudflare AI spend below $50 and reserves GLM 5.2 for deep reasoning", async () => {
+test("caps Cloudflare AI spend below $50 and reserves a premium model for deep reasoning", async () => {
   const [guard, gateway, cloudflareAi, budgetRoute, consoleUi, config] = await Promise.all([
     readFile(new URL("lib/cloud-cost-guard.ts", root), "utf8"),
     readFile(new URL("lib/llm-gateway.ts", root), "utf8"),

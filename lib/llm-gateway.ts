@@ -808,7 +808,7 @@ export async function completeWithCloudflare(messages: GatewayMessage[], traceId
   }
 }
 
-type GatewayPolicy = {
+export type GatewayPolicy = {
   localEnabled?: boolean;
   cloudflareEnabled?: boolean;
   sensitivity?: GatewaySensitivity;
@@ -958,6 +958,17 @@ function allProvidersFailedMessage(model: string, cloudflareFailure: GatewayErro
     ? `Cloud 모델(${model})이 본문 없는 응답을 반환했습니다. 답변 분량을 줄이거나 잠시 후 다시 시도해 주세요.`
     : `Cloud 모델(${model}) 호출에 실패했습니다: ${cloudflareFailure.message}`;
   return `${cause} ${fallbackNote} (${codes})`;
+}
+
+// 답변을 한 번 더 생성해 교체하는 보정 경로들이 공통으로 쓴다. 사용량은 두 호출의
+// 합으로 청구되므로, 채택된 쪽만 남기면 실제 소비량이 과소 보고된다.
+export function mergeCompletionUsage(first: GatewayCompletion, second: GatewayCompletion): GatewayCompletion["usage"] {
+  if (!first.usage && !second.usage) return undefined;
+  return {
+    prompt_tokens: Number(first.usage?.prompt_tokens || 0) + Number(second.usage?.prompt_tokens || 0),
+    completion_tokens: Number(first.usage?.completion_tokens || 0) + Number(second.usage?.completion_tokens || 0),
+    total_tokens: Number(first.usage?.total_tokens || 0) + Number(second.usage?.total_tokens || 0),
+  };
 }
 
 export function createTraceId() {

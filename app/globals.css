@@ -1517,7 +1517,7 @@ h3 {
 .workspace-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
   flex-shrink: 0;
 }
@@ -4720,6 +4720,43 @@ td {
   overflow: hidden;
 }
 
+.governance-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.model-config-grid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.model-config-card {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.model-config-card h3 {
+  margin: 0;
+}
+
+.model-config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.model-config-field-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
 .governance-heading {
   align-items: flex-start;
 }
@@ -7708,22 +7745,52 @@ td {
   }
 }
 
-/* The top bar owns the page title; keep the chat workspace header descriptive. */
-.workspace-heading p {
-  display: block;
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
+@media (max-width: 700px) {
+  .workspace-heading {
+    align-items: flex-end;
+    flex-direction: row;
+  }
 }
 
-.workspace-heading > div:first-child {
+/* Keep the chat page inside the viewport; only message and context surfaces scroll. */
+.main-content.main-content-chat {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - 64px);
+  max-height: calc(100dvh - 64px);
+  overflow: hidden;
+}
+
+.main-content.main-content-chat > .workspace-layout {
+  width: 100%;
+  min-height: 0;
   flex: 1 1 auto;
 }
 
-@media (max-width: 700px) {
-  .workspace-heading p {
-    font-size: 11px;
+.main-content.main-content-chat .chat-workspace {
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+}
+
+.main-content.main-content-chat .context-rail {
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+@media (max-width: 760px) {
+  .main-content.main-content-chat {
+    min-height: calc(100dvh - 56px);
+    max-height: calc(100dvh - 56px);
+  }
+
+  .main-content.main-content-chat > .workspace-layout {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 180px);
+  }
+
+  .main-content.main-content-chat .context-rail {
+    max-height: 180px;
   }
 }
 
@@ -8437,5 +8504,45 @@ body {
   .home-view .home-bottom-grid > .panel:first-child {
     border-right: 1px solid #bfc9d7;
     border-bottom: 0;
+  }
+}
+
+/* Keep the planning board readable on wide screens instead of stretching sparse rows edge to edge. */
+.schedule-planning-panel {
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+}
+
+.schedule-planning-heading {
+  padding: 16px 20px 12px;
+}
+
+.schedule-planning-metrics {
+  gap: 14px;
+  padding: 8px 20px;
+}
+
+.schedule-planning-toolbar {
+  padding: 10px 20px 6px;
+}
+
+.schedule-plan-list {
+  padding: 0 20px 8px;
+}
+
+.schedule-plan-item {
+  padding-block: 11px;
+}
+
+@media (max-width: 700px) {
+  .schedule-planning-heading,
+  .schedule-planning-metrics,
+  .schedule-planning-toolbar {
+    padding-inline: 12px;
+  }
+
+  .schedule-plan-list {
+    padding-inline: 12px;
   }
 }
