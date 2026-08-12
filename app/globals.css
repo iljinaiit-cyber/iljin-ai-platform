@@ -10434,3 +10434,78 @@ td strong {
     min-width: 600px;
   }
 }
+
+/* Unified content frame: one outer gutter, one centered page width, one surface inset. */
+:root {
+  --content-gutter: clamp(24px, 3vw, 48px);
+  --content-inset: clamp(24px, 2vw, 32px);
+}
+
+.main-content {
+  padding: var(--content-gutter);
+}
+
+.main-content:not(.main-content-chat) > *,
+.main-content.main-content-chat > .workspace-layout {
+  width: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
+}
+
+.view-stack,
+.knowledge-base,
+.activity-page,
+.workspace-layout,
+.search-layout,
+.schedule-view,
+.feedback-board,
+.agent-ops-page,
+.admin-view,
+.admin-tab-screen,
+.admin-management-tab {
+  width: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
+}
+
+.section-block,
+.panel,
+.filter-panel,
+.result-panel,
+.knowledge-catalog,
+.feedback-list-panel,
+.feedback-form-panel,
+.admin-issue-summary,
+.admin-overview-dashboard,
+.schedule-calendar-panel,
+.schedule-side-panel,
+.platform-console {
+  padding: var(--content-inset);
+}
+
+.main-content.main-content-chat {
+  padding: var(--content-gutter);
+}
+
+.main-content.main-content-chat > .workspace-layout {
+  gap: var(--surface-gap);
+}
+
+@media (max-width: 900px) {
+  :root {
+    --content-gutter: 20px;
+    --content-inset: 24px;
+  }
+}
+
+@media (max-width: 700px) {
+  :root {
+    --content-gutter: 16px;
+    --content-inset: 20px;
+  }
+
+  .main-content,
+  .main-content.main-content-chat {
+    padding: var(--content-gutter);
+  }
+}
