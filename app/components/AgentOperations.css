@@ -4,14 +4,14 @@
 
 .agent-ops-page {
   width: 100%;
-  max-width: 1540px;
-  gap: 16px;
+  max-width: var(--content-max, 1480px);
+  gap: var(--surface-gap, 24px);
 }
 
 .agent-ops-heading {
   align-items: flex-end;
   margin: 0;
-  padding: 0 2px;
+  padding: 0;
 }
 
 .agent-ops-heading p {

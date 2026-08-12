@@ -10441,6 +10441,10 @@ td strong {
   --content-inset: clamp(24px, 2vw, 32px);
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 .main-content {
   padding: var(--content-gutter);
 }

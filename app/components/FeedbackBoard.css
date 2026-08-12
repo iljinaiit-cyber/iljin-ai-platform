@@ -260,15 +260,15 @@
 /* Keep the feedback surface readable when the global compact-density rules load later. */
 .feedback-board {
   width: 100%;
-  max-width: 1540px;
-  gap: 16px;
+  max-width: var(--content-max, 1480px);
+  gap: var(--surface-gap, 24px);
 }
 
 .feedback-board .feedback-page-heading {
   align-items: flex-end;
   gap: 18px;
   margin: 0;
-  padding: 0 2px;
+  padding: 0;
 }
 
 .feedback-board .feedback-page-heading > div {
@@ -297,13 +297,13 @@
 
 .feedback-board .feedback-layout {
   grid-template-columns: minmax(0, 1.65fr) minmax(290px, 0.8fr);
-  gap: 20px;
+  gap: var(--surface-gap, 24px);
 }
 
 .feedback-board .feedback-list-panel,
 .feedback-board .feedback-form-panel {
   min-width: 0;
-  padding: 20px;
+  padding: var(--content-inset, 24px);
 }
 
 .feedback-board .panel-title {
@@ -502,7 +502,7 @@
 
   .feedback-board .feedback-list-panel,
   .feedback-board .feedback-form-panel {
-    padding: 16px;
+    padding: var(--content-inset, 20px);
   }
 
   .feedback-board .panel-title {

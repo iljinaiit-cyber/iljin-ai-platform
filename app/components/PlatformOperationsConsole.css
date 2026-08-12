@@ -14,7 +14,7 @@
   border-radius: 10px;
   background: var(--admin-surface);
   color: var(--admin-ink);
-  padding: 22px;
+  padding: var(--content-inset, 24px);
 }
 
 .platform-console__header,
