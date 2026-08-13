@@ -68,6 +68,10 @@ npm run test:agent
 - `DEFAULT_TENANT_ID`, `DEFAULT_DEPARTMENT`, `DEFAULT_USER_ROLE`: 신규 로그인 사용자 프로필 기본값입니다. 운영 기본 역할은 `user`입니다.
 - `ADMIN_EMAILS`: 관리자 이메일 allowlist입니다.
 - `ALLOW_DEV_IDENTITY`: 로컬 테스트용이며 운영에서는 반드시 `false`로 유지합니다.
+- `TRUSTED_IDENTITY_MODE`: 기본값은 `session`이며, `sites-siwc`는 신뢰된 게이트웨이가 헤더를 보장하는 경우에만 사용합니다.
+- `TRUSTED_IDENTITY_HOSTS`: SIWC 전달 헤더를 허용할 정확한 호스트 목록입니다. 비워 두면 전달 identity 헤더는 항상 무시됩니다.
+
+운영 배포는 엣지에서 `EDGE_RATE_LIMITER`(일반 API 120회/분)와 `AUTH_RATE_LIMITER`(인증 API 20회/분)를 사용합니다. 이 binding이 빠진 `preview`·`production` 배포는 fail-closed로 503을 반환합니다. 인덱서 Worker는 `workers.dev` 공개 라우트를 사용하지 않도록 `workers_dev=false`로 배포합니다.
 
 Cloudflare 배포 환경의 값은 `.openai/hosting.json`이나 Git에 기록하지 않고 Sites 런타임 환경변수로 관리합니다.
 

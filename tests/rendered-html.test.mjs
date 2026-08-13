@@ -479,7 +479,7 @@ test("separates internal and internet search and supports queued document drag-a
   assert.match(chatRoute, /buildInternetGroundingPrompt/);
   // 근거 블록은 고정 상한을 자르는 대신 지시문·질문 길이를 뺀 나머지를 예산으로 쓴다.
   assert.match(chatRoute, /INTERNET_GROUNDING_MESSAGE_LIMIT = 7_900/);
-  assert.match(chatRoute, /const sourceBudget = maxLength - instruction\.length - question\.length/);
+  assert.match(chatRoute, /const sourceBudget = maxLength - instruction\.length - INTERNET_LINK_INSTRUCTION\.length - question\.length/);
   assert.match(chatRoute, /INTERNET_GROUNDING_SOURCE_LIMIT = 6/);
   assert.match(chatRoute, /boundedSourceContext/);
   assert.match(chatRoute, /ensureInternetCitationCoverage/);
@@ -563,7 +563,7 @@ test("produces expert-depth answers with adaptive output budgets and structured 
   assert.match(portal, /answer-table-wrap/);
   assert.match(chatRoute, /function maxOutputTokensFor/);
   assert.match(chatRoute, /answerOutputTokenBudget/);
-  assert.match(answerFormat, /length === "brief" \? 600 : length === "detailed" \? 3_600 : 1_800/);
+  assert.match(answerFormat, /length === "brief" \? 600 : length === "detailed" \? 4_800 : 1_800/);
   assert.match(answerFormat, /역할: 15년 차 수석 시장 분석가이자 전문 리서치 컨설턴트입니다/);
   assert.match(gateway, /MAX_OUTPUT_TOKENS = 4_096/);
   assert.match(gateway, /max_tokens: maxOutputTokens/);

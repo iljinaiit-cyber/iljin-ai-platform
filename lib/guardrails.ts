@@ -1,4 +1,4 @@
-import { getD1 } from "../db";
+import { getD1, RuntimeBindingError } from "../db";
 import { getRuntimeEnv } from "./runtime-env";
 import type { Principal } from "./identity";
 
@@ -105,16 +105,43 @@ export async function enforceRateLimit(principal: Principal, route: string, limi
   const windowStart = Math.floor(now / 60_000) * 60_000;
   const expiresAt = windowStart + 60_000;
   const bucketKey = `${principal.tenantId}:${principal.email}:${route}:${windowStart}`;
-  await db.prepare(`INSERT INTO rate_limit_buckets (bucket_key, request_count, window_started_at, expires_at)
-    VALUES (?, 1, ?, ?) ON CONFLICT(bucket_key) DO UPDATE SET request_count = request_count + 1`).bind(
-      bucketKey,
-      new Date(windowStart).toISOString(),
-      new Date(expiresAt).toISOString(),
-    ).run();
+  await db.batch([
+    db.prepare("DELETE FROM rate_limit_buckets WHERE expires_at <= ?")
+      .bind(new Date(now).toISOString()),
+    db.prepare(`INSERT INTO rate_limit_buckets (bucket_key, request_count, window_started_at, expires_at)
+      VALUES (?, 1, ?, ?) ON CONFLICT(bucket_key) DO UPDATE SET request_count = request_count + 1`).bind(
+        bucketKey,
+        new Date(windowStart).toISOString(),
+        new Date(expiresAt).toISOString(),
+      ),
+  ]);
   const row = await db.prepare("SELECT request_count FROM rate_limit_buckets WHERE bucket_key = ?")
     .bind(bucketKey).first<{ request_count: number }>();
   if (Number(row?.request_count || 0) > limit) {
     throw new GuardrailError("요청 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.", 429, "RATE_LIMITED", Math.max(1, Math.ceil((expiresAt - now) / 1000)));
+  }
+}
+
+export async function enforceEdgeRateLimit(request: Request, kind: "api" | "auth") {
+  const runtime = getRuntimeEnv();
+  const limiter = kind === "auth" ? runtime.AUTH_RATE_LIMITER : runtime.EDGE_RATE_LIMITER;
+  if (!limiter) {
+    if (runtime.APP_ENV === "production" || runtime.APP_ENV === "preview") {
+      throw new RuntimeBindingError(kind === "auth" ? "AUTH_RATE_LIMITER" : "EDGE_RATE_LIMITER");
+    }
+    return;
+  }
+
+  const url = new URL(request.url);
+  const ip = request.headers.get("cf-connecting-ip")?.trim() || "unknown";
+  const { success } = await limiter.limit({ key: `${url.hostname}:${ip}` });
+  if (!success) {
+    throw new GuardrailError(
+      "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+      429,
+      "RATE_LIMITED",
+      60,
+    );
   }
 }
 

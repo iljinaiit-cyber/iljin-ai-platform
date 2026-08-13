@@ -1059,7 +1059,7 @@ async function executeInternetSearch(plan: InternetSearchPlan, limit: number) {
     if (rerankResults(plan.searchQuery, collected, limit).length >= minimumResults) break;
   }
 
-  let results = rerankResults(plan.searchQuery, collected, limit);
+  const results = rerankResults(plan.searchQuery, collected, limit);
   // 실제로 최종 결과에 살아남은 출처만 "사용됨"으로 센다 — 응답은 왔지만
   // 중복·저관련으로 rerankResults 에서 전부 걸러진 Provider 는 제외한다.
   const providersUsed = [...new Set(results.map(providerOfResult).filter((id): id is InternetSearchProvider => Boolean(id)))];

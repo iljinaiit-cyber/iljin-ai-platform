@@ -3313,6 +3313,31 @@ a.answer-citation:hover {
   }
 }
 
+.admin-sync-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin: 8px 0 16px;
+}
+
+.admin-auto-refresh-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-auto-refresh-toggle input {
+  accent-color: var(--brand-700);
+}
+
+.admin-load-error {
+  margin: 0 0 16px;
+}
+
 .chat-composer > label {
   display: block;
   margin-bottom: 6px;

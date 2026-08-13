@@ -1,6 +1,7 @@
 import { searchRag } from "../../../../lib/rag";
 import { resolvePrincipal } from "../../../../lib/identity";
 import { authorizeFeature } from "../../../../lib/admin-governance";
+import { enforceRateLimit } from "../../../../lib/guardrails";
 import { fail, newTraceId, ok } from "../../_shared";
 
 export async function GET(request: Request) {
@@ -8,6 +9,7 @@ export async function GET(request: Request) {
   try {
     const principal = await resolvePrincipal(request);
     await authorizeFeature(principal, "rag.search", "rag.search");
+    await enforceRateLimit(principal, "search", 60);
     const url = new URL(request.url);
     const limitParam = Number(url.searchParams.get("limit"));
     const assetIds = url.searchParams.get("asset_ids")?.split(",").map((s) => s.trim()).filter(Boolean);

@@ -3,7 +3,7 @@ import { getRuntimeEnv } from "../lib/runtime-env";
 import * as schema from "./schema";
 
 export class RuntimeBindingError extends Error {
-  constructor(readonly binding: "DB" | "BUCKET") {
+  constructor(readonly binding: "DB" | "BUCKET" | "EDGE_RATE_LIMITER" | "AUTH_RATE_LIMITER") {
     super(`Required runtime binding ${binding} is unavailable.`);
     this.name = "RuntimeBindingError";
   }

@@ -1,13 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 export default function VerifyEmailPage() {
-  const [token, setToken] = useState("");
+  const [token] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("token") || "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => setToken(new URLSearchParams(window.location.search).get("token") || ""), []);
 
   const verify = async () => {
     if (!token || busy) return;

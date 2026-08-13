@@ -11,6 +11,10 @@ export type QueueProducer<T> = {
   send(message: T): Promise<void>;
 };
 
+export type RateLimitBinding = {
+  limit(input: { key: string }): Promise<{ success: boolean }>;
+};
+
 export type RuntimeEnv = {
   ASSETS?: Fetcher;
   DB?: D1Database;
@@ -24,6 +28,8 @@ export type RuntimeEnv = {
    * 없어도 동작해야 한다 — 캐시는 최적화지 정확성의 전제가 아니다.
    */
   CACHE?: KVNamespace;
+  EDGE_RATE_LIMITER?: RateLimitBinding;
+  AUTH_RATE_LIMITER?: RateLimitBinding;
   AI?: {
     /**
      * 세 번째 인자는 AI Gateway 옵션이다.
@@ -86,7 +92,10 @@ export type RuntimeEnv = {
   DEFAULT_TENANT_ID?: string;
   DEFAULT_DEPARTMENT?: string;
   DEFAULT_USER_ROLE?: string;
+  APP_ENV?: string;
   ALLOW_DEV_IDENTITY?: string;
+  TRUSTED_IDENTITY_MODE?: string;
+  TRUSTED_IDENTITY_HOSTS?: string;
   ADMIN_EMAILS?: string;
   ADMIN_BOOTSTRAP_TOKEN?: string;
   RESEND_API_KEY?: string;
@@ -142,7 +151,10 @@ export function getRuntimeEnv(): RuntimeEnv {
       DEFAULT_TENANT_ID: process.env.DEFAULT_TENANT_ID,
       DEFAULT_DEPARTMENT: process.env.DEFAULT_DEPARTMENT,
       DEFAULT_USER_ROLE: process.env.DEFAULT_USER_ROLE,
+      APP_ENV: process.env.APP_ENV,
       ALLOW_DEV_IDENTITY: process.env.ALLOW_DEV_IDENTITY,
+      TRUSTED_IDENTITY_MODE: process.env.TRUSTED_IDENTITY_MODE,
+      TRUSTED_IDENTITY_HOSTS: process.env.TRUSTED_IDENTITY_HOSTS,
       ADMIN_EMAILS: process.env.ADMIN_EMAILS,
       ADMIN_BOOTSTRAP_TOKEN: process.env.ADMIN_BOOTSTRAP_TOKEN,
       RESEND_API_KEY: process.env.RESEND_API_KEY,

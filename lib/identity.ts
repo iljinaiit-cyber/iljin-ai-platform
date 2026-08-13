@@ -386,6 +386,27 @@ async function sendVerificationEmail(input: { email: string; token: string; veri
   throw new AuthError("인증 메일을 발송하지 못했습니다. 잠시 후 다시 시도해 주세요.", 503, "AUTH_EMAIL_DELIVERY_FAILED");
 }
 
+function trustedForwardedIdentityAllowed(request: Request) {
+  // Forwarded identity headers are not authentication by themselves. Keep the
+  // default session-only and require an explicit host allowlist for a trusted
+  // Sites/SIWC gateway deployment.
+  const runtime = getRuntimeEnv();
+  if (runtime.TRUSTED_IDENTITY_MODE !== "sites-siwc") return false;
+  let hostname: string;
+  try {
+    hostname = new URL(request.url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  const trustedHosts = new Set(
+    (runtime.TRUSTED_IDENTITY_HOSTS || "")
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  return trustedHosts.has(hostname);
+}
+
 export async function registerEmailAccount(input: {
   email: string;
   password: string;
@@ -573,8 +594,10 @@ export async function loginEmailAccount(emailInput: string, password: string) {
 
 export async function resolveAccessIdentity(request: Request): Promise<AccessIdentity> {
   const runtime = getRuntimeEnv();
-  const forwardedEmail = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase()
-    || request.headers.get("x-forwarded-email")?.trim().toLowerCase();
+  const forwardedEmail = trustedForwardedIdentityAllowed(request)
+    ? request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase()
+      || request.headers.get("x-forwarded-email")?.trim().toLowerCase()
+    : undefined;
   const developmentEmail = localIdentityAllowed(request)
     ? request.headers.get("x-dev-user-email")?.trim().toLowerCase()
     : undefined;

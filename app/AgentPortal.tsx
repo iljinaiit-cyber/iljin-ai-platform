@@ -31,6 +31,9 @@ type SearchScope = "internal" | "internet";
 type ChatAnswerLength = "brief" | "standard" | "detailed";
 type ChatReasoningTier = "swift" | "expert" | "deep";
 
+const ORGANIZATION_NAME = "일진글로벌";
+const DEFAULT_DEPARTMENT = "AX전략팀";
+
 const GENERATION_STAGES: Record<SearchScope, string[]> = {
   internet: ["질문·의도 분석 중", "대화 맥락 확인 중", "웹 검색 중", "검색 결과 교차 검토 중", "근거 기반 답변 작성 중"],
   internal: ["질문·의도 분석 중", "대화 맥락 확인 중", "사내 문서 검색 중", "근거 확인 중", "근거 기반 답변 작성 중"],
@@ -953,7 +956,7 @@ function AccessGate({ access, onAuthenticated, onSignedOut, onRetry }: {
           {access.state === "checking" ? "로그인 확인 중" : access.state === "signed_out" ? "로그인 필요" : unrequested ? "가입 신청 필요" : pending ? "가입 승인 대기" : rejected ? "가입 신청 반려" : "연결 오류"}
         </span>
         <h1>{unrequested ? "이메일 가입 신청서를 작성해 주세요" : pending ? "가입 신청이 접수되었습니다" : rejected ? "가입 신청을 다시 제출할 수 있습니다" : access.state === "checking" ? "로그인 상태를 확인하고 있습니다" : access.state === "signed_out" ? "ILJIN AI Works에 로그인해 주세요" : "사용자 상태를 확인하지 못했습니다"}</h1>
-        <p>{unrequested ? "희망 부서와 신청 사유를 제출하면 관리자가 검토합니다." : pending ? "관리자가 조직과 역할을 확인한 뒤 가입을 승인하면 모든 업무 기능을 사용할 수 있습니다." : rejected ? user?.rejectionReason || "신청 정보를 보완해 다시 제출해 주세요." : access.state === "checking" ? "잠시만 기다려 주세요." : access.state === "signed_out" ? "기존 계정으로 로그인하거나 @iljin.com 회사 이메일로 가입을 신청할 수 있습니다." : "message" in access ? access.message : "사용자 상태를 확인하지 못했습니다."}</p>
+        <p>{unrequested ? "희망 부서와 신청 사유를 제출하면 관리자가 검토합니다." : pending ? "관리자가 조직과 역할을 확인한 뒤 가입을 승인하면 모든 업무 기능을 사용할 수 있습니다." : rejected ? user?.rejectionReason || "신청 정보를 보완해 다시 제출해 주세요." : access.state === "checking" ? "잠시만 기다려 주세요." : access.state === "signed_out" ? `${ORGANIZATION_NAME} 임직원은 @iljin.com 회사 이메일로 가입을 신청할 수 있습니다.` : "message" in access ? access.message : "사용자 상태를 확인하지 못했습니다."}</p>
         <ol className="signup-steps" aria-label="가입 진행 단계">
           <li className={access.state === "signed_out" || access.state === "checking" ? "active" : "complete"}><span>1</span><div><strong>계정 등록</strong><small>이메일·비밀번호</small></div></li>
           <li className={unrequested ? "active" : pending || rejected ? "complete" : ""}><span>2</span><div><strong>가입 신청</strong><small>이름·부서·신청 사유</small></div></li>
@@ -969,7 +972,7 @@ function AccessGate({ access, onAuthenticated, onSignedOut, onRetry }: {
             <label><span>이메일</span><input type="email" value={email} onChange={(event) => { setEmail(event.target.value); setFormError(""); }} autoComplete="email" maxLength={254} required placeholder="name@iljin.com" />{authMode === "register" && <small className="field-hint">일진 임직원 이메일(@iljin.com)만 가입할 수 있습니다.</small>}</label>
             <label><span>비밀번호</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={authMode === "login" ? "current-password" : "new-password"} minLength={12} maxLength={128} required placeholder="12자 이상 입력" /></label>
             {authMode === "register" && <>
-              <label><span>희망 부서</span><input value={department} onChange={(event) => setDepartment(event.target.value)} maxLength={120} required placeholder="예: DX전략팀" /></label>
+              <label><span>희망 부서</span><input value={department} onChange={(event) => setDepartment(event.target.value)} maxLength={120} required placeholder={`예: ${DEFAULT_DEPARTMENT}`} /></label>
               <label><span>가입 신청 사유</span><textarea value={applicationNote} onChange={(event) => setApplicationNote(event.target.value)} maxLength={1000} rows={4} placeholder="담당 업무와 AI Works 사용 목적을 입력해 주세요." /></label>
               <details className="admin-bootstrap"><summary>초기 관리자 계정 설정</summary><label><span>관리자 초기 설정 코드</span><input type="password" value={adminCode} onChange={(event) => setAdminCode(event.target.value)} autoComplete="one-time-code" maxLength={256} placeholder="관리자 이메일인 경우에만 입력" /></label></details>
             </>}
@@ -980,7 +983,7 @@ function AccessGate({ access, onAuthenticated, onSignedOut, onRetry }: {
         </>}
         {user && <dl><div><dt>이메일</dt><dd>{user.email}</dd></div><div><dt>신청자</dt><dd>{user.displayName}</dd></div>{pending && <div><dt>신청 부서</dt><dd>{user.department}</dd></div>}</dl>}
         {showApplication && <form className="access-application-form" onSubmit={submitApplication}>
-          <label><span>희망 부서</span><input value={department} onChange={(event) => setDepartment(event.target.value)} maxLength={120} required placeholder="예: DX전략팀" /></label>
+          <label><span>희망 부서</span><input value={department} onChange={(event) => setDepartment(event.target.value)} maxLength={120} required placeholder={`예: ${DEFAULT_DEPARTMENT}`} /></label>
           <label><span>가입 신청 사유</span><textarea value={applicationNote} onChange={(event) => setApplicationNote(event.target.value)} maxLength={1000} rows={4} placeholder="담당 업무와 AI Works 사용 목적을 입력해 주세요." /></label>
           {formError && <p className="form-error" role="alert">{formError}</p>}
           <button className="button button-primary" type="submit" disabled={submitting || !department.trim()}>{submitting ? "신청 중" : rejected ? "가입 재신청" : "이메일 가입 신청"}</button>
@@ -1958,7 +1961,7 @@ function HomeView({ scope, setScope, cases, user, activity, onNavigate, onOpenCo
       <section className="hero-panel">
         <div className="hero-copy">
           <h1>좋은 하루예요, {user.displayName}님. <em>업무를 어디서부터 시작할까요?</em></h1>
-          <p>내 권한과 {user.department} 업무 Context를 반영해 안전하게 답변합니다.</p>
+          <p>{ORGANIZATION_NAME} {user.department} 업무 Context를 반영해 안전하게 답변합니다.</p>
         </div>
         <div className="hero-stats" aria-label="오늘의 업무 현황">
           <div><strong>{activity.summary.todayActivities}</strong><span>오늘 활동</span></div>
@@ -1971,7 +1974,7 @@ function HomeView({ scope, setScope, cases, user, activity, onNavigate, onOpenCo
           <button className="button button-primary" type="submit">질문하기</button>
         </form>
         <div className="suggestion-row" aria-label="추천 질문">
-          {["오늘 업무 브리핑", "부서 KPI 요약", "출장 규정 확인"].map((item) => <button key={item} type="button" onClick={() => onPrompt(item)}>{item}</button>)}
+          {["오늘 업무 브리핑", "베어링 사업 KPI 요약", "출장 규정 확인"].map((item) => <button key={item} type="button" onClick={() => onPrompt(item)}>{item}</button>)}
         </div>
       </section>
 
@@ -2850,6 +2853,7 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
   const [assetSort, setAssetSort] = useState<AssetSort>("updated");
   const [lastSyncedAt, setLastSyncedAt] = useState<Date>();
   const [activeSection, setActiveSection] = useState<AdminSection>("overview");
+  const [autoRefresh, setAutoRefresh] = useState(false);
 
   const loadAdminData = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -2891,6 +2895,12 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
     void Promise.resolve().then(() => loadAdminData(controller.signal));
     return () => controller.abort();
   }, [loadAdminData]);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = window.setInterval(() => void loadAdminData(), 60_000);
+    return () => window.clearInterval(interval);
+  }, [autoRefresh, loadAdminData]);
 
   const manageAsset = async (asset: AssetRow, action: "reindex" | "delete") => {
     if (action === "delete" && !window.confirm(`'${asset.title}' 문서와 파생 인덱스를 삭제할까요?`)) return;
@@ -3019,7 +3029,11 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
       {activeSection === "overview" && <>
       <div className="page-heading"><div><h1 className="sr-only">RAG 운영 Dashboard</h1><p>Database·Storage·AI 모델의 실제 인덱싱 상태를 표시합니다.</p></div><div className="admin-actions"><span className="live-state" role="status" aria-live="polite" title={loadError || undefined}><span className={`status-dot ${loading ? "status-dot-checking" : loadError ? "status-dot-offline" : "status-dot-ready"}`} /> {loading ? "API 확인 중" : loadError ? "API 응답 오류" : "API 응답 완료"}</span><button className="button button-secondary" type="button" onClick={() => void loadAdminData()} disabled={loading}>{loading ? "동기화 중" : "데이터 새로고침"}</button></div></div>
       {lastSyncedAt && <p className="admin-sync-note" role="status">마지막 동기화 · {lastSyncedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</p>}
-      <section className="metric-grid admin-legacy-metrics">
+       <div className="admin-sync-toolbar">
+         <label className="admin-auto-refresh-toggle"><input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} /> Auto-refresh every 60s</label>
+       </div>
+       {loadError && <p className="form-error admin-load-error" role="alert">{loadError}</p>}
+       <section className="metric-grid admin-legacy-metrics">
         {[["인덱싱 Asset", String(assets.filter((asset) => asset.status === "indexed").length), "Database 실데이터"],["검색 Segment", String(segmentCount), "Dense Vector 포함"],["승인 대기", String(pendingAccess), "사용자 접근 요청"],["완료 Index Job", String(completedJobs), failedJobs ? `실패 ${failedJobs}` : "실패 0"]].map(([label, value, trend]) => <article className="metric-card" key={label}><span>{label}</span><strong>{value}</strong><small>{trend}</small></article>)}
       </section>
       <AdminOverviewDashboard overview={overview} health={health} qualityGates={qualityGates} loading={loading} onSelect={selectSection} />
