@@ -693,6 +693,8 @@ export async function updateOwnProfile(input: {
   request: Request;
   displayName: string;
   department: string;
+  currentPassword?: string;
+  newPassword?: string;
   traceId: string;
 }) {
   const identity = await resolveAccessIdentity(input.request);
@@ -708,9 +710,34 @@ export async function updateOwnProfile(input: {
     throw new AuthError("이름과 소속 부서를 입력해 주세요.", 400, "AUTH_INVALID_INPUT");
   }
 
+  const currentPassword = input.currentPassword || "";
+  const newPassword = input.newPassword || "";
+  const changingPassword = Boolean(currentPassword || newPassword);
+  if (changingPassword) {
+    if (!currentPassword || !newPassword) {
+      throw new AuthError("현재 비밀번호와 새 비밀번호를 모두 입력해 주세요.", 400, "AUTH_INVALID_INPUT");
+    }
+    if (newPassword.length < 12 || newPassword.length > 128) {
+      throw new AuthError("새 비밀번호는 12자 이상 128자 이하로 입력해 주세요.", 400, "AUTH_INVALID_INPUT");
+    }
+    const credential = await getD1().prepare(`SELECT password_hash, password_salt, password_iterations
+      FROM auth_credentials WHERE email = ?`).bind(identity.email).first<CredentialRow>();
+    if (!credential) {
+      throw new AuthError("현재 계정은 비밀번호 변경을 지원하지 않습니다.", 400, "AUTH_INVALID_INPUT");
+    }
+    const currentHash = await derivePasswordHash(
+      currentPassword,
+      base64UrlToBytes(credential.password_salt),
+      credential.password_iterations,
+    );
+    if (!constantTimeEqual(currentHash, credential.password_hash)) {
+      throw new AuthError("현재 비밀번호가 올바르지 않습니다.", 401, "AUTH_INVALID_CREDENTIALS");
+    }
+  }
+
   const now = new Date().toISOString();
   const db = getD1();
-  await db.batch([
+  const statements = [
     db.prepare(`UPDATE user_profiles SET display_name = ?, department = ?, updated_at = ?
       WHERE email = ? AND tenant_id = ?`).bind(displayName, department, now, identity.email, identity.tenantId),
     db.prepare(`INSERT INTO audit_logs
@@ -721,10 +748,25 @@ export async function updateOwnProfile(input: {
         identity.email,
         identity.email,
         input.traceId,
-        JSON.stringify({ displayName, department }),
+        JSON.stringify({ displayName, department, passwordChanged: changingPassword }),
         now,
       ),
-  ]);
+  ];
+  if (changingPassword) {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const passwordHash = await derivePasswordHash(newPassword, salt);
+    statements.push(
+      db.prepare(`UPDATE auth_credentials SET password_hash = ?, password_salt = ?, password_iterations = ?, updated_at = ?
+        WHERE email = ?`).bind(
+          passwordHash,
+          bytesToBase64Url(salt),
+          PASSWORD_ITERATIONS,
+          now,
+          identity.email,
+        ),
+    );
+  }
+  await db.batch(statements);
 
   const updated = await findProfile(identity.email);
   if (!updated) throw new Error("사용자 프로필을 불러오지 못했습니다.");

@@ -16,11 +16,18 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   const traceId = newTraceId();
   try {
-    const body = await request.json() as { displayName?: string; department?: string };
+    const body = await request.json() as {
+      displayName?: string;
+      department?: string;
+      currentPassword?: string;
+      newPassword?: string;
+    };
     const user = await updateOwnProfile({
       request,
       displayName: body.displayName ?? "",
       department: body.department ?? "",
+      currentPassword: body.currentPassword,
+      newPassword: body.newPassword,
       traceId,
     });
     return ok({ user }, traceId);

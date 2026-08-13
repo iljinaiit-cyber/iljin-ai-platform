@@ -175,7 +175,7 @@ export async function buildOrganizationDictionary(tenantId: string): Promise<Dic
 }
 
 /**
- * "DX전략팀" 과 "DX 전략팀" 은 같은 부서다. 공백 유무만 다른 표기를 별칭으로 넣는다.
+ * "AX전략팀" 과 "AX 전략팀" 은 같은 부서다. 공백 유무만 다른 표기를 별칭으로 넣는다.
  * 자유 텍스트 부서명이 오타로 갈라지던 문제를 여기서 흡수한다.
  */
 function aliasesFor(name: string): string[] {

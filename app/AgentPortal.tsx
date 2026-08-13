@@ -566,14 +566,6 @@ function gatewayCitationToResult(citation: NonNullable<GatewayResponse["citation
   };
 }
 
-function extractPreviewSummary(content: string) {
-  const line = content.replace(/\r\n?/g, "\n").split("\n").map((value) => value.trim()).find((value) =>
-    value && !/^>\s*기준일:/.test(value) && !/^#{1,3}\s+/.test(value),
-  );
-  if (!line) return "";
-  return line.length > 180 ? `${line.slice(0, 177)}…` : line;
-}
-
 type UseCase = {
   scope: Scope;
   title: string;
@@ -614,7 +606,7 @@ const useCases: UseCase[] = [
     title: "오늘의 업무 브리핑",
     audience: "전 임직원",
     description: "회의·메일·결재·담당 업무를 한 화면에서 우선순위로 요약합니다.",
-    prompt: "오늘 내가 먼저 처리해야 할 업무를 중요도 순으로 정리해줘.",
+    prompt: "오늘 일진글로벌 베어링 사업에서 내가 먼저 처리해야 할 업무를 중요도 순으로 정리해줘.",
     agent: "Work Briefing Agent",
     sources: ["그룹웨어", "일정", "ITSM"],
     output: "우선순위 브리핑",
@@ -636,7 +628,7 @@ const useCases: UseCase[] = [
     title: "출장 신청 초안",
     audience: "출장 예정자",
     description: "일정과 출장 규정을 확인해 결재 전 초안을 생성합니다.",
-    prompt: "다음 주 울산 출장 신청서를 규정에 맞게 작성해줘.",
+    prompt: "다음 주 베어링 생산 거점 출장 신청서를 규정에 맞게 작성해줘.",
     agent: "Business Support Agent",
     sources: ["일정", "출장 규정", "결재"],
     output: "결재 초안",
@@ -658,7 +650,7 @@ const useCases: UseCase[] = [
     title: "내 문서 비교",
     audience: "기획·관리 직군",
     description: "여러 버전의 문서를 비교하고 변경 근거를 Citation과 함께 표시합니다.",
-    prompt: "지난달과 이번 달 사업계획의 변경점을 근거와 함께 비교해줘.",
+    prompt: "지난달과 이번 달 베어링 사업계획의 변경점을 근거와 함께 비교해줘.",
     agent: "Document Agent",
     sources: ["내 문서", "SharePoint"],
     output: "변경점 표",
@@ -680,7 +672,7 @@ const useCases: UseCase[] = [
     title: "회의 요약과 Action Item",
     audience: "회의 참석자",
     description: "녹취의 핵심 결론과 담당자·기한을 시간 근거와 함께 정리합니다.",
-    prompt: "오늘 생산회의의 결정사항과 담당자별 할 일을 정리해줘.",
+    prompt: "오늘 베어링 생산회의의 결정사항과 담당자별 할 일을 정리해줘.",
     agent: "Meeting Agent",
     sources: ["회의 녹취", "일정"],
     output: "회의록·Action Item",
@@ -691,7 +683,7 @@ const useCases: UseCase[] = [
     title: "메일·보고서 초안",
     audience: "전 임직원",
     description: "선택한 근거를 바탕으로 사내 형식에 맞는 초안을 생성합니다.",
-    prompt: "품질 개선 결과를 임원 보고용 5줄 요약과 메일로 작성해줘.",
+    prompt: "베어링 품질 개선 결과를 임원 보고용 5줄 요약과 메일로 작성해줘.",
     agent: "Writing Agent",
     sources: ["선택 문서", "문서 템플릿"],
     output: "메일·보고서 초안",
@@ -701,8 +693,8 @@ const useCases: UseCase[] = [
     scope: "department",
     title: "생산 설비 장애 대응",
     audience: "생산기술팀",
-    description: "설비 사진과 오류 코드를 과거 장애 사례·매뉴얼과 교차 검색합니다.",
-    prompt: "이 설비 사진의 이상 징후와 우선 점검 순서를 알려줘.",
+    description: "베어링 생산설비 사진과 오류 코드를 과거 장애 사례·매뉴얼과 교차 검색합니다.",
+    prompt: "이 베어링 생산설비 사진의 이상 징후와 우선 점검 순서를 알려줘.",
     agent: "Maintenance Agent",
     sources: ["MES", "설비 매뉴얼", "장애 이력"],
     output: "점검 순서",
@@ -712,8 +704,8 @@ const useCases: UseCase[] = [
     scope: "department",
     title: "품질 불량 원인 분석",
     audience: "품질보증팀",
-    description: "불량 이미지·검사 결과·공정 조건을 함께 분석해 유사 사례를 찾습니다.",
-    prompt: "이 표면 불량과 유사한 과거 사례와 공정 조건을 비교해줘.",
+    description: "베어링 불량 이미지·검사 결과·공정 조건을 함께 분석해 유사 사례를 찾습니다.",
+    prompt: "이 베어링 표면 불량과 유사한 과거 사례와 공정 조건을 비교해줘.",
     agent: "Quality Agent",
     sources: ["QMS", "MES", "검사 이미지"],
     output: "원인 후보·근거",
@@ -723,8 +715,8 @@ const useCases: UseCase[] = [
     scope: "department",
     title: "안전 위험성 평가 지원",
     audience: "안전환경팀",
-    description: "작업 영상과 안전 규정을 연결해 위험 구간과 교육 근거를 제공합니다.",
-    prompt: "이 작업 영상에서 보호구 미착용 구간을 찾아 교육 기준을 연결해줘.",
+    description: "베어링 조립·검사 작업 영상과 안전 규정을 연결해 위험 구간과 교육 근거를 제공합니다.",
+    prompt: "이 베어링 조립 작업 영상에서 보호구 미착용 구간을 찾아 교육 기준을 연결해줘.",
     agent: "Safety Agent",
     sources: ["작업 영상", "안전 규정", "교육 자료"],
     output: "위험 구간·교육안",
@@ -746,7 +738,7 @@ const useCases: UseCase[] = [
     title: "공급사 비교와 구매 검토",
     audience: "구매팀",
     description: "계약·납기·품질 데이터를 비교해 구매 검토표 초안을 만듭니다.",
-    prompt: "A·B 공급사의 최근 1년 납기와 품질을 비교해줘.",
+    prompt: "베어링 원소재 A·B 공급사의 최근 1년 납기와 품질을 비교해줘.",
     agent: "Procurement Agent",
     sources: ["ERP", "계약", "품질 이력"],
     output: "공급사 비교표",
@@ -757,7 +749,7 @@ const useCases: UseCase[] = [
     title: "영업 고객 브리핑",
     audience: "영업팀",
     description: "고객 활동·견적·이슈를 회의 전 한 장으로 요약합니다.",
-    prompt: "내일 A고객 미팅 전 최근 이슈와 제안 포인트를 브리핑해줘.",
+    prompt: "내일 베어링 고객 미팅 전 최근 이슈와 제안 포인트를 브리핑해줘.",
     agent: "Sales Agent",
     sources: ["CRM", "메일", "견적"],
     output: "고객 브리핑",
@@ -768,7 +760,7 @@ const useCases: UseCase[] = [
     title: "재무 실적 차이 분석",
     audience: "재무팀",
     description: "계획 대비 실적 차이를 계정·사업부별로 설명하고 근거를 연결합니다.",
-    prompt: "2분기 계획 대비 실적 차이가 큰 항목과 원인을 요약해줘.",
+    prompt: "2분기 베어링 사업 계획 대비 실적 차이가 큰 항목과 원인을 요약해줘.",
     agent: "Finance Agent",
     sources: ["ERP", "사업계획", "결산 자료"],
     output: "Variance 분석",
@@ -779,7 +771,7 @@ const useCases: UseCase[] = [
     title: "설계 변경 영향 분석",
     audience: "R&D·설계팀",
     description: "도면·BOM·변경 이력을 연결해 영향 부품과 검토 항목을 제시합니다.",
-    prompt: "이 도면 변경이 BOM과 기존 시험 항목에 미치는 영향을 찾아줘.",
+    prompt: "이 베어링 도면 변경이 BOM과 기존 시험 항목에 미치는 영향을 찾아줘.",
     agent: "Engineering Agent",
     sources: ["PLM", "도면", "BOM", "시험 기준"],
     output: "영향 분석표",
@@ -801,7 +793,7 @@ const useCases: UseCase[] = [
     title: "IT 장애 대응 허브",
     audience: "IT운영팀",
     description: "서비스 상태·로그·유사 티켓을 조합해 조치안과 공지 초안을 만듭니다.",
-    prompt: "현재 ERP 지연과 유사한 장애를 찾고 사용자 공지를 작성해줘.",
+    prompt: "현재 베어링 사업 ERP 지연과 유사한 장애를 찾고 사용자 공지를 작성해줘.",
     agent: "IT Ops Agent",
     sources: ["ITSM", "모니터링", "Runbook"],
     output: "조치안·공지 초안",
@@ -812,7 +804,7 @@ const useCases: UseCase[] = [
     title: "경영 KPI 브리핑",
     audience: "경영기획팀",
     description: "부서별 KPI와 주요 이슈를 근거 중심의 경영 브리핑으로 압축합니다.",
-    prompt: "이번 주 전사 KPI 변화와 의사결정이 필요한 항목을 요약해줘.",
+    prompt: "이번 주 일진글로벌 베어링 사업 KPI 변화와 의사결정이 필요한 항목을 요약해줘.",
     agent: "Executive Briefing Agent",
     sources: ["ERP", "KPI", "주간보고"],
     output: "경영 브리핑",
@@ -834,7 +826,7 @@ const useCases: UseCase[] = [
     title: "에너지 사용 최적화",
     audience: "ESG·설비팀",
     description: "설비별 에너지 추이와 가동 조건을 비교해 절감 후보를 제시합니다.",
-    prompt: "전월 대비 에너지 사용이 증가한 설비와 원인 후보를 찾아줘.",
+    prompt: "전월 대비 베어링 생산설비 에너지 사용이 증가한 설비와 원인 후보를 찾아줘.",
     agent: "ESG Agent",
     sources: ["EMS", "MES", "설비 이력"],
     output: "절감 후보 리포트",
@@ -1037,6 +1029,7 @@ export function AgentPortal() {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileDraft, setProfileDraft] = useState({ displayName: "", department: "" });
+  const [passwordDraft, setPasswordDraft] = useState({ current: "", next: "", confirmation: "" });
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [themeColor, setThemeColor] = useState<ThemeColor>("blue");
@@ -1308,43 +1301,9 @@ export function AgentPortal() {
       const requestMessages = nextMessages
         .filter((message) => !message.error)
         .map((message) => ({ role: message.role, content: message.requestBody || message.body }));
-      try {
-        const summaryResponse = await fetch("/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Sensitivity": effectiveSensitivity,
-          },
-          body: JSON.stringify({
-            messages: requestMessages,
-            sensitivity: effectiveSensitivity,
-            rag: chatSearchScope === "internal",
-            search_mode: chatSearchScope,
-            reasoning_tier: "swift",
-            summary_only: true,
-            stream: false,
-          }),
-          signal: controller.signal,
-        });
-        if (summaryResponse.ok) {
-          const summaryPayload = await summaryResponse.json() as GatewayResponse;
-          const previewSummary = extractPreviewSummary(summaryPayload.content || summaryPayload.choices?.[0]?.message?.content || "");
-          if (previewSummary) {
-            setChatMessages((messages) => [...messages, {
-              role: "assistant",
-              body: "",
-              provider: summaryPayload.provider,
-              streamingResponse: true,
-              streamingStage: GENERATION_STAGES[chatSearchScope][0],
-              streamingSummary: previewSummary,
-            }]);
-            setNotice("빠른 요약을 먼저 표시했습니다. 상세 답변을 정리하고 있습니다.");
-          }
-        }
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") throw error;
-        console.warn("[chat] summary preflight failed", error);
-      }
+      // The final streaming response already exposes its first line as the
+      // quick summary. A separate summary_only request duplicated retrieval
+      // and generation, so every answer waited for two model calls in series.
       const response = await fetch("/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -1767,6 +1726,7 @@ export function AgentPortal() {
 
   const openProfile = () => {
     setProfileDraft({ displayName: currentUser.displayName, department: currentUser.department });
+    setPasswordDraft({ current: "", next: "", confirmation: "" });
     setProfileError("");
     setProfileOpen(true);
   };
@@ -1785,17 +1745,33 @@ export function AgentPortal() {
   const saveProfile = async (event: FormEvent) => {
     event.preventDefault();
     if (!profileDraft.displayName.trim() || !profileDraft.department.trim() || profileSaving) return;
+    const changingPassword = Boolean(passwordDraft.current || passwordDraft.next || passwordDraft.confirmation);
+    if (changingPassword && (!passwordDraft.current || !passwordDraft.next || !passwordDraft.confirmation)) {
+      setProfileError("비밀번호를 변경하려면 현재 비밀번호와 새 비밀번호를 모두 입력해 주세요.");
+      return;
+    }
+    if (changingPassword && passwordDraft.next !== passwordDraft.confirmation) {
+      setProfileError("새 비밀번호 확인이 일치하지 않습니다.");
+      return;
+    }
     setProfileSaving(true);
     setProfileError("");
     try {
       const response = await fetch("/api/auth/me", {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify(profileDraft),
+        body: JSON.stringify({
+          ...profileDraft,
+          ...(changingPassword ? {
+            currentPassword: passwordDraft.current,
+            newPassword: passwordDraft.next,
+          } : {}),
+        }),
       });
       const payload = await response.json() as { user?: AccessUser; error?: { message?: string } };
       if (!response.ok || !payload.user) throw new Error(payload.error?.message || "개인정보를 저장하지 못했습니다.");
       setAccess({ state: payload.user.status, user: payload.user });
+      setPasswordDraft({ current: "", next: "", confirmation: "" });
       setProfileOpen(false);
       setNotice("개인정보가 저장되었습니다.");
     } catch (error) {
@@ -1918,6 +1894,13 @@ export function AgentPortal() {
               <label><span>이메일</span><input value={currentUser.email} readOnly disabled /></label>
               <label><span>이름</span><input value={profileDraft.displayName} onChange={(event) => setProfileDraft((draft) => ({ ...draft, displayName: event.target.value }))} maxLength={120} autoComplete="name" required /></label>
               <label><span>소속 부서</span><input value={profileDraft.department} onChange={(event) => setProfileDraft((draft) => ({ ...draft, department: event.target.value }))} maxLength={120} required /></label>
+              <fieldset className="password-picker">
+                <legend>비밀번호 변경</legend>
+                <p className="field-hint">변경하지 않으려면 비워 두세요. 새 비밀번호는 12자 이상이어야 합니다.</p>
+                <label><span>현재 비밀번호</span><input type="password" value={passwordDraft.current} onChange={(event) => setPasswordDraft((draft) => ({ ...draft, current: event.target.value }))} autoComplete="current-password" maxLength={128} /></label>
+                <label><span>새 비밀번호</span><input type="password" value={passwordDraft.next} onChange={(event) => setPasswordDraft((draft) => ({ ...draft, next: event.target.value }))} autoComplete="new-password" minLength={12} maxLength={128} /></label>
+                <label><span>새 비밀번호 확인</span><input type="password" value={passwordDraft.confirmation} onChange={(event) => setPasswordDraft((draft) => ({ ...draft, confirmation: event.target.value }))} autoComplete="new-password" minLength={12} maxLength={128} /></label>
+              </fieldset>
               <fieldset className="theme-picker">
                 <legend>플랫폼 컬러 팔레트</legend>
                 <div className="theme-choice-grid" role="radiogroup" aria-label="플랫폼 컬러 팔레트">
@@ -1980,7 +1963,7 @@ function HomeView({ scope, setScope, cases, user, activity, onNavigate, onOpenCo
 
       <section className="section-block" aria-labelledby="work-title">
         <div className="section-heading">
-          <div><span className="section-kicker">PERSONALIZED WORK</span><h2 id="work-title">개인과 부서를 위한 AI 업무 예시</h2></div>
+          <div><span className="section-kicker">PERSONALIZED WORK</span><h2 id="work-title">일진글로벌 베어링 업무 예시</h2><p>AX전략팀이 베어링 제조·품질·공급망 업무에 활용할 수 있는 예시입니다.</p></div>
           <div className="segmented" role="group" aria-label="업무 범위 선택">
             <button type="button" className={scope === "personal" ? "selected" : ""} aria-pressed={scope === "personal"} onClick={() => setScope("personal")}>개인별 8</button>
             <button type="button" className={scope === "department" ? "selected" : ""} aria-pressed={scope === "department"} onClick={() => setScope("department")}>부서별 13</button>

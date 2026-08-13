@@ -7284,6 +7284,27 @@ td {
   padding: 0;
 }
 
+.password-picker {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.password-picker legend {
+  padding: 0 5px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.password-picker .field-hint {
+  margin: -2px 0 0;
+}
+
 .theme-picker legend {
   margin-bottom: 8px;
   color: var(--ink-soft);

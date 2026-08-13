@@ -143,7 +143,9 @@ const RRF_K = 40;
 const RRF_LEXICAL_WEIGHT = 0.4;
 const RRF_DENSE_WEIGHT = 0.6;
 const FUSION_CANDIDATE_LIMIT = 120;
-const RERANK_CANDIDATE_LIMIT = 50;
+// Keep interactive reranking bounded. The hybrid score still considers the
+// full candidate set; only the final expensive model call is smaller.
+const RERANK_CANDIDATE_LIMIT = 24;
 const EMBEDDING_BATCH_SIZE = 32;
 const EMBEDDING_CACHE_SIZE = 200;
 const EMBEDDING_CACHE_TTL_MS = 300_000;
@@ -1821,6 +1823,18 @@ export async function searchRag(query: string, options: {
 // 남지 않았다면 '고쳐진 답변'이 아니라 잘려나간 답변으로 보고 원본을 유지한다.
 const CITATION_REPAIR_MIN_LENGTH_RATIO = 0.6;
 
+async function verifyCitationsForAnswer(
+  answer: string,
+  evidence: Array<{ id: string; content: string }>,
+) {
+  // Lexical validation is local and covers the common case. Semantic
+  // embeddings are only needed when the cheap pass finds a possible repair.
+  const lexicalReport = await verifyCitations(answer, evidence);
+  if (!needsCitationRepair(lexicalReport)) return lexicalReport;
+  const semanticReport = await verifyCitations(answer, evidence, embedTexts);
+  return isCitationReportBetter(semanticReport, lexicalReport) ? semanticReport : lexicalReport;
+}
+
 function citationIssueBriefing(report: CitationReport) {
   const lines: string[] = [];
   const phantoms = [...new Set(report.issues.filter((i) => i.kind === "phantom_citation").map((i) => i.citation_id))];
@@ -1871,7 +1885,7 @@ ${citationIssueBriefing(input.report)}
     if (repaired.content.trim().length < input.completion.content.trim().length * CITATION_REPAIR_MIN_LENGTH_RATIO) {
       return unchanged;
     }
-    const repairedReport = await verifyCitations(repaired.content, input.evidence, embedTexts);
+    const repairedReport = await verifyCitationsForAnswer(repaired.content, input.evidence);
     if (!isCitationReportBetter(repairedReport, input.report)) return unchanged;
     console.info(JSON.stringify({
       event: "rag-citation-repaired",
@@ -2083,7 +2097,7 @@ ${latestUserMessage}`;
   // Post-hoc citation verification, then one repair pass if the answer cited
   // evidence that does not exist or does not say what the answer claims.
   const evidenceForGuard = search.citations.map((c) => ({ id: c.id, content: c.excerpt }));
-  const initialReport = await verifyCitations(completion.content, evidenceForGuard, embedTexts);
+  const initialReport = await verifyCitationsForAnswer(completion.content, evidenceForGuard);
   const verified = needsCitationRepair(initialReport)
     ? await repairCitedAnswer({
         completion,
