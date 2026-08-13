@@ -143,9 +143,7 @@ const RRF_K = 40;
 const RRF_LEXICAL_WEIGHT = 0.4;
 const RRF_DENSE_WEIGHT = 0.6;
 const FUSION_CANDIDATE_LIMIT = 120;
-// Keep interactive reranking bounded. The hybrid score still considers the
-// full candidate set; only the final expensive model call is smaller.
-const RERANK_CANDIDATE_LIMIT = 24;
+const RERANK_CANDIDATE_LIMIT = 50;
 const EMBEDDING_BATCH_SIZE = 32;
 const EMBEDDING_CACHE_SIZE = 200;
 const EMBEDDING_CACHE_TTL_MS = 300_000;

@@ -1318,7 +1318,7 @@ export function AgentPortal() {
         .filter((message) => !message.error)
         .map((message) => ({ role: message.role, content: message.requestBody || message.body }));
       // The final streaming response already exposes its first line as the
-      // quick summary. A separate summary_only request duplicated retrieval
+      // quick summary. A separate preview request duplicated retrieval
       // and generation, so every answer waited for two model calls in series.
       const response = await fetch("/api/v1/chat/completions", {
         method: "POST",

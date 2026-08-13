@@ -684,7 +684,7 @@ test("implements query planning, RRF fusion, reranking, evidence verification, a
   assert.match(rag, /export function reciprocalRankFusion/);
   assert.match(rag, /RRF_K = 40/);
   assert.match(rag, /FUSION_CANDIDATE_LIMIT = 120/);
-  assert.match(rag, /RERANK_CANDIDATE_LIMIT = 24/);
+  assert.match(rag, /RERANK_CANDIDATE_LIMIT = 50/);
   assert.match(rag, /function verifyEvidence/);
   assert.match(rag, /MIN_EVIDENCE_CONFIDENCE/);
   assert.match(rag, /queryPlan\.variants/);

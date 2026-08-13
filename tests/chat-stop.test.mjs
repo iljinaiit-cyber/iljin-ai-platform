@@ -13,4 +13,5 @@ test("답변 중단은 요청과 스트림을 취소하고 즉시 화면 상태�
   assert.match(portal, /if \(chatAbortRef\.current !== controller\) return;/);
   assert.match(portal, /if \(controller\.signal\.aborted\) throw new DOMException/);
   assert.match(portal, /setNotice\("AI 답변 생성을 중단했습니다\."\)/);
+  assert.doesNotMatch(portal, /summary_only:\s*true/);
 });
