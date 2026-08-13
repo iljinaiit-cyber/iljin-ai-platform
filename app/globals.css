@@ -507,7 +507,7 @@ h3 {
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: clamp(24px, 5vw, 72px);
+  padding: 16px;
   background:
     radial-gradient(circle at 15% 10%, rgba(6, 203, 220, 0.14), transparent 28%),
     linear-gradient(145deg, #012c61 0%, #004a98 58%, #f4f8fc 58%);
@@ -518,18 +518,18 @@ h3 {
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.97);
-  padding: clamp(28px, 6vw, 52px);
+  padding: clamp(20px, 3vw, 30px) clamp(22px, 4vw, 38px);
   box-shadow: 0 28px 80px rgba(0, 39, 84, 0.24);
 }
 
 .access-gate-card > img {
   width: 112px;
   height: auto;
-  margin-bottom: 34px;
+  margin-bottom: 16px;
 }
 
 .access-gate-card h1 {
-  margin: 14px 0 10px;
+  margin: 8px 0 6px;
   color: var(--ink);
   font-size: clamp(25px, 4vw, 36px);
   line-height: 1.2;
@@ -538,7 +538,7 @@ h3 {
 .access-gate-card > p {
   margin: 0;
   color: var(--ink-soft);
-  line-height: 1.7;
+  line-height: 1.45;
 }
 
 .access-state {
@@ -562,7 +562,7 @@ h3 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  margin: 28px 0 0;
+  margin: 16px 0 0;
   padding: 0;
   list-style: none;
 }
@@ -575,7 +575,7 @@ h3 {
   border: 1px solid var(--line);
   border-radius: 9px;
   background: #f8fafc;
-  padding: 10px;
+  padding: 7px 9px;
   color: var(--muted);
 }
 
@@ -620,15 +620,15 @@ h3 {
 
 .access-application-form {
   display: grid;
-  gap: 15px;
-  margin-top: 22px;
+  gap: 10px;
+  margin-top: 14px;
   border-top: 1px solid var(--line);
-  padding-top: 22px;
+  padding-top: 14px;
 }
 
 .access-application-form label {
   display: grid;
-  gap: 7px;
+  gap: 4px;
   color: var(--ink-soft);
   font-size: 11px;
   font-weight: 750;
@@ -640,7 +640,7 @@ h3 {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: white;
-  padding: 11px 12px;
+  padding: 8px 12px;
   color: var(--ink);
   font: inherit;
   font-size: 13px;
@@ -657,7 +657,7 @@ h3 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
-  margin-top: 22px;
+  margin-top: 14px;
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -786,7 +786,7 @@ h3 {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 28px;
+  margin-top: 16px;
 }
 
 .access-gate-actions .button { text-decoration: none; }
@@ -3313,6 +3313,291 @@ a.answer-citation:hover {
   }
 }
 
+.theme-mode-picker {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.theme-mode-picker legend {
+  padding: 0 5px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.theme-mode-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.theme-mode-choice {
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.theme-mode-choice:hover,
+.theme-mode-choice.selected {
+  border-color: var(--brand-500);
+  background: var(--brand-100);
+  color: var(--brand-700);
+}
+
+.theme-mode-icon {
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+
+.theme-mode-icon-light { background: currentColor; }
+.theme-mode-icon-dark { background: #0b0c0a; box-shadow: inset 5px 0 0 var(--surface); }
+.theme-mode-icon-system { border-radius: 3px; box-shadow: inset 0 -5px 0 currentColor; }
+
+/* Light mode wins over the earlier admin Industrial layer. */
+.app-shell.mode-light .admin-view {
+  --admin-canvas: var(--canvas);
+  --admin-surface-dark: var(--surface);
+  --admin-raised: var(--surface-soft);
+  --admin-line-dark: var(--line);
+  --admin-ink-dark: var(--ink);
+  --admin-muted-dark: var(--muted);
+  --admin-signal: var(--brand-700);
+  --admin-warning-dark: var(--warning);
+  --admin-danger-dark: var(--danger);
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: inherit;
+}
+
+.app-shell.mode-light .admin-view :is(.admin-section-nav, .admin-overview-dashboard, .admin-issue-summary, .panel, .platform-console) {
+  border-color: var(--line);
+  border-radius: var(--panel-radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.app-shell.mode-light .admin-view .admin-section-nav button {
+  background: var(--surface);
+  color: var(--ink-soft);
+}
+
+.app-shell.mode-light .admin-view .admin-section-nav button.active,
+.app-shell.mode-light .admin-view .admin-section-nav button:hover,
+.app-shell.mode-light .admin-view .admin-section-nav button:focus-visible {
+  background: var(--accent-soft);
+  color: var(--brand-700);
+}
+
+.app-shell.mode-light .admin-view :is(.admin-overview-dashboard__metric, .admin-issue-card, .knowledge-asset-card) {
+  border-color: var(--line);
+  border-radius: var(--ui-radius, 8px);
+  background: var(--surface-soft);
+}
+
+.app-shell.mode-light .admin-view .button-secondary,
+.app-shell.mode-light .admin-view .text-button {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.app-shell.mode-light .admin-view :is(.table-input, .table-select, input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  border-color: var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+}
+
+.app-shell.mode-light .admin-view :is(.status-pill, .knowledge-asset-status) {
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--brand-700);
+}
+
+.app-shell.mode-light .admin-view .admin-page-heading h1.sr-only { color: var(--ink); }
+
+@media (max-width: 420px) {
+  .theme-mode-choice-grid { grid-template-columns: 1fr; }
+}
+
+/* Platform-wide appearance modes. The color palette selection remains
+   independent, so users can keep their preferred brand accent in either mode. */
+.app-shell.mode-light {
+  color-scheme: light;
+}
+
+.app-shell.mode-dark {
+  color-scheme: dark;
+  --ink: #edf5ea;
+  --ink-soft: #c2d0c0;
+  --muted: #91a18f;
+  --line: #2b342b;
+  --line-strong: #435043;
+  --canvas: #0b0c0a;
+  --surface: #111411;
+  --surface-soft: #171b17;
+  --brand-100: #182118;
+  --brand-200: #263426;
+  --accent-soft: #182118;
+  --accent-ink: var(--brand-300);
+  --success-soft: #10251a;
+  --warning-soft: #2a2110;
+  --danger-soft: #2a1412;
+  --info-soft: #13202a;
+  --neutral-soft: #1a1e1a;
+  --neutral-ink: #b4c1b2;
+  --shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+  --focus: 0 0 0 3px color-mix(in srgb, var(--accent) 38%, transparent);
+}
+
+.app-shell.mode-dark .app-stage {
+  background: var(--canvas);
+}
+
+.app-shell.mode-dark .topbar {
+  border-bottom-color: var(--line);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.app-shell.mode-dark .main-content,
+.app-shell.mode-dark .main-content:not(.main-content-chat) {
+  color: var(--ink);
+}
+
+.app-shell.mode-dark :is(.panel, .section-block, .filter-panel, .result-panel, .knowledge-catalog, .feedback-list-panel, .feedback-form-panel, .schedule-calendar-panel, .schedule-side-panel, .context-rail, .chat-workspace, .usecase-card, .recent-panel) {
+  border-color: var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+}
+
+.app-shell.mode-dark :is(h1, h2, h3, h4, strong, td, .page-identity strong, .panel-title h2, .section-heading h2) {
+  color: var(--ink);
+}
+
+.app-shell.mode-dark :is(p, small, label, dt, .panel-description, .section-heading p, .page-heading p, .field-hint, .table-subtext) {
+  color: var(--ink-soft);
+}
+
+.app-shell.mode-dark :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select) {
+  border-color: var(--line-strong);
+  background: #0d0f0d;
+  color: var(--ink);
+}
+
+.app-shell.mode-dark :is(input, textarea, select)::placeholder {
+  color: var(--muted);
+}
+
+.app-shell.mode-dark .button-secondary,
+.app-shell.mode-dark .text-button,
+.app-shell.mode-dark .quiet-button {
+  border-color: var(--line-strong);
+  background: transparent;
+  color: var(--ink);
+}
+
+.app-shell.mode-dark :is(.button-secondary, .text-button, .quiet-button):hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.app-shell.mode-dark .button-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #071006;
+}
+
+.app-shell.mode-dark :is(table, th, td, .card-meta, .knowledge-asset-meta, .knowledge-asset-card, .knowledge-asset-card__actions) {
+  border-color: var(--line);
+}
+
+.app-shell.mode-dark .access-gate {
+  background: linear-gradient(145deg, #061c3c 0%, #073d79 58%, var(--canvas) 58%);
+}
+
+/* The admin console keeps its Industrial grid in dark mode and uses the same
+   geometry with the active platform palette in light mode. */
+.app-shell.mode-light .admin-view {
+  --admin-canvas: var(--canvas);
+  --admin-surface-dark: var(--surface);
+  --admin-raised: var(--surface-soft);
+  --admin-line-dark: var(--line);
+  --admin-ink-dark: var(--ink);
+  --admin-muted-dark: var(--muted);
+  --admin-signal: var(--brand-700);
+  --admin-warning-dark: var(--warning);
+  --admin-danger-dark: var(--danger);
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: inherit;
+}
+
+.app-shell.mode-light .admin-view :is(.admin-section-nav, .admin-overview-dashboard, .admin-issue-summary, .panel, .platform-console) {
+  border-radius: var(--panel-radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.app-shell.mode-light .admin-view .admin-section-nav button {
+  background: var(--surface);
+  color: var(--ink-soft);
+}
+
+.app-shell.mode-light .admin-view .admin-section-nav button.active,
+.app-shell.mode-light .admin-view .admin-section-nav button:hover,
+.app-shell.mode-light .admin-view .admin-section-nav button:focus-visible {
+  background: var(--accent-soft);
+  color: var(--brand-700);
+}
+
+.app-shell.mode-light .admin-view :is(.admin-overview-dashboard__metric, .admin-issue-card, .knowledge-asset-card) {
+  border-radius: var(--ui-radius, 8px);
+  background: var(--surface-soft);
+}
+
+.app-shell.mode-light .admin-view .button-secondary,
+.app-shell.mode-light .admin-view .text-button {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.app-shell.mode-light .admin-view :is(.table-input, .table-select, input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  border-color: var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+}
+
+.app-shell.mode-light .admin-view :is(.status-pill, .knowledge-asset-status) {
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--brand-700);
+}
+
+.app-shell.mode-light .admin-view .admin-page-heading h1.sr-only {
+  color: var(--ink);
+}
+
 .admin-sync-toolbar {
   display: flex;
   align-items: center;
@@ -5667,7 +5952,7 @@ td {
   }
 
   .access-gate-card {
-    padding: 26px 20px;
+    padding: 20px 16px;
   }
 
   .topbar {
@@ -9257,7 +9542,7 @@ body {
 }
 
 .access-gate-card {
-  padding: clamp(20px, 4vw, 32px);
+  padding: clamp(20px, 3vw, 30px) clamp(22px, 4vw, 38px);
 }
 
 @media (max-width: 760px) {
@@ -10621,4 +10906,445 @@ html {
   .context-rail {
     padding: var(--content-inset);
   }
+}
+
+/* Admin console visual system: dense operational workspace with a dark canvas,
+   one signal color, and hairline structure. Scoped so the rest of the portal
+   keeps its existing theme. */
+.admin-view {
+  --admin-canvas: #0b0c0a;
+  --admin-surface-dark: #111411;
+  --admin-raised: #171b17;
+  --admin-line-dark: #2b342b;
+  --admin-ink-dark: #edf5ea;
+  --admin-muted-dark: #9aaa9a;
+  --admin-signal: #c6ff4a;
+  --admin-warning-dark: #ffb800;
+  --admin-danger-dark: #ff3b30;
+  display: grid;
+  gap: 14px;
+  max-width: 1480px;
+  border: 1px solid var(--admin-line-dark);
+  background: var(--admin-canvas);
+  color: var(--admin-ink-dark);
+  font-family: "IBM Plex Mono", "JetBrains Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-view .admin-page-heading {
+  min-height: 0;
+  margin: -4px -4px 0;
+  padding: 12px 4px 16px;
+  border-bottom: 1px solid var(--admin-line-dark);
+}
+
+/* The semantic h1 is currently shared with the legacy sr-only utility. */
+.admin-view .admin-page-heading h1.sr-only {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 5px 0 6px;
+  overflow: visible;
+  clip: auto;
+  clip-path: none;
+  white-space: normal;
+  color: var(--admin-ink-dark);
+  font-size: clamp(25px, 3vw, 38px);
+  font-weight: 700;
+  letter-spacing: -0.06em;
+}
+
+.admin-view .admin-page-heading p,
+.admin-view .panel-description,
+.admin-view .admin-sync-note,
+.admin-view .admin-overview-dashboard__header p {
+  color: var(--admin-muted-dark);
+}
+
+.admin-view .section-kicker {
+  color: var(--admin-signal);
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+.admin-view .admin-section-nav,
+.admin-view .admin-overview-dashboard,
+.admin-view .admin-issue-summary,
+.admin-view .panel,
+.admin-view .platform-console {
+  border: 1px solid var(--admin-line-dark);
+  border-radius: 0;
+  background: var(--admin-surface-dark);
+  box-shadow: none;
+}
+
+.admin-view .admin-section-nav {
+  top: 10px;
+  overflow: hidden;
+  background: var(--admin-canvas);
+}
+
+.admin-view .admin-section-nav button {
+  min-height: 48px;
+  border-right: 1px solid var(--admin-line-dark);
+  background: var(--admin-surface-dark);
+  color: var(--admin-muted-dark);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.admin-view .admin-section-nav button > span { color: var(--admin-signal); }
+
+.admin-view .admin-section-nav button:hover,
+.admin-view .admin-section-nav button:focus-visible,
+.admin-view .admin-section-nav button.active {
+  background: var(--admin-raised);
+  color: var(--admin-signal);
+}
+
+.admin-view .admin-section-nav button.active {
+  box-shadow: inset 0 -2px 0 var(--admin-signal);
+}
+
+.admin-view .admin-overview-dashboard,
+.admin-view .admin-issue-summary,
+.admin-view .panel,
+.admin-view .platform-console {
+  padding: 18px;
+}
+
+.admin-view .admin-overview-dashboard__header h2,
+.admin-view .panel-title h2,
+.admin-view .admin-issue-summary__heading h2 {
+  color: var(--admin-ink-dark);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+
+.admin-view .admin-overview-dashboard__stamp,
+.admin-view .admin-overview-dashboard__period {
+  color: var(--admin-signal);
+}
+
+.admin-view .admin-overview-dashboard__metrics,
+.admin-view .admin-issue-summary__grid {
+  gap: 8px;
+}
+
+.admin-view .admin-overview-dashboard__metric,
+.admin-view .admin-issue-card {
+  border: 1px solid var(--admin-line-dark);
+  border-radius: 0;
+  background: var(--admin-raised);
+  box-shadow: none;
+}
+
+.admin-view .admin-overview-dashboard__metric {
+  min-height: 108px;
+  padding: 14px;
+}
+
+.admin-view .admin-overview-dashboard__metric span,
+.admin-view .admin-overview-dashboard__metric small,
+.admin-view .admin-issue-card span,
+.admin-view .admin-issue-card small {
+  color: var(--admin-muted-dark);
+}
+
+.admin-view .admin-overview-dashboard__metric strong,
+.admin-view .admin-issue-card strong {
+  color: var(--admin-ink-dark);
+}
+
+.admin-view .admin-overview-dashboard__metric strong {
+  font-size: clamp(25px, 2.6vw, 34px);
+}
+
+.admin-view .admin-issue-card {
+  min-height: 96px;
+  border-top: 2px solid var(--admin-signal);
+  padding: 13px;
+}
+
+.admin-view .admin-issue-card--danger { border-top-color: var(--admin-danger-dark); }
+.admin-view .admin-issue-card--warning { border-top-color: var(--admin-warning-dark); }
+.admin-view .admin-issue-card--neutral { border-top-color: var(--admin-signal); }
+
+.admin-view .admin-issue-card:hover,
+.admin-view .admin-issue-card:focus-visible {
+  border-color: var(--admin-signal);
+  background: #1d231d;
+}
+
+.admin-view .admin-overview-dashboard__panel {
+  border-top-color: var(--admin-line-dark);
+}
+
+.admin-view .admin-overview-dashboard__rows > div,
+.admin-view .admin-overview-dashboard__rows > button {
+  border-top-color: var(--admin-line-dark);
+  color: var(--admin-ink-dark);
+}
+
+.admin-view .admin-overview-dashboard__rows > button:hover,
+.admin-view .admin-overview-dashboard__rows > button:focus-visible {
+  color: var(--admin-signal);
+}
+
+.admin-view .admin-overview-dashboard__rows small,
+.admin-view .admin-overview-dashboard__footer span {
+  color: var(--admin-muted-dark);
+}
+
+.admin-view .admin-overview-dashboard__footer {
+  border-top-color: var(--admin-line-dark);
+}
+
+.admin-view .admin-overview-dashboard__footer span {
+  border: 1px solid var(--admin-line-dark);
+  border-radius: 0;
+  background: transparent;
+}
+
+.admin-view .admin-actions {
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-view .live-state,
+.admin-view .admin-auto-refresh-toggle {
+  border-color: var(--admin-line-dark);
+  background: var(--admin-raised);
+  color: var(--admin-muted-dark);
+  font-family: inherit;
+  font-size: 10px;
+}
+
+.admin-view .live-state { border-radius: 0; }
+
+.admin-view .button,
+.admin-view .text-button,
+.admin-view .quiet-button {
+  border-radius: 0;
+  font-family: inherit;
+}
+
+.admin-view .button-primary {
+  border-color: var(--admin-signal);
+  background: var(--admin-signal);
+  color: #0b0c0a;
+}
+
+.admin-view .button-primary:hover:not(:disabled) {
+  border-color: #e0ff9a;
+  background: #e0ff9a;
+}
+
+.admin-view .button-secondary,
+.admin-view .text-button {
+  border-color: var(--admin-line-dark);
+  background: transparent;
+  color: var(--admin-ink-dark);
+}
+
+.admin-view .button-secondary:hover:not(:disabled),
+.admin-view .text-button:hover:not(:disabled) {
+  border-color: var(--admin-signal);
+  color: var(--admin-signal);
+}
+
+.admin-view .form-error,
+.admin-view .admin-load-error {
+  border: 1px solid color-mix(in srgb, var(--admin-danger-dark) 55%, var(--admin-line-dark));
+  border-radius: 0;
+  background: color-mix(in srgb, var(--admin-danger-dark) 10%, var(--admin-surface-dark));
+  color: #ff9d96;
+}
+
+.admin-view table {
+  border-color: var(--admin-line-dark);
+  color: var(--admin-ink-dark);
+}
+
+.admin-view th,
+.admin-view td {
+  border-color: var(--admin-line-dark);
+}
+
+.admin-view th {
+  color: var(--admin-signal);
+  font-family: inherit;
+  font-size: 10px;
+}
+
+.admin-view td,
+.admin-view td strong { color: var(--admin-ink-dark); }
+
+.admin-view .table-input,
+.admin-view .table-select,
+.admin-view input:not([type="checkbox"]):not([type="radio"]),
+.admin-view select,
+.admin-view textarea {
+  border-color: var(--admin-line-dark);
+  border-radius: 0;
+  background: #0d0f0d;
+  color: var(--admin-ink-dark);
+  font-family: inherit;
+}
+
+.admin-view .table-input:focus,
+.admin-view .table-select:focus,
+.admin-view input:focus,
+.admin-view select:focus,
+.admin-view textarea:focus {
+  border-color: var(--admin-signal);
+  outline: 2px solid color-mix(in srgb, var(--admin-signal) 25%, transparent);
+}
+
+.admin-view .service-list > div,
+.admin-view .quality-list > div,
+.admin-view .knowledge-asset-card {
+  border-color: var(--admin-line-dark);
+}
+
+.admin-view .service-list span:nth-child(3),
+.admin-view .service-list small,
+.admin-view .quality-list span,
+.admin-view .table-subtext,
+.admin-view .knowledge-asset-card p,
+.admin-view .knowledge-asset-meta dt,
+.admin-view .knowledge-asset-detail {
+  color: var(--admin-muted-dark);
+}
+
+.admin-view .knowledge-asset-card {
+  border-radius: 0;
+  background: var(--admin-raised);
+}
+
+.admin-view .knowledge-asset-card__actions { border-top-color: var(--admin-line-dark); }
+
+.admin-view .status-pill,
+.admin-view .knowledge-asset-status {
+  border-radius: 0;
+  border: 1px solid var(--admin-line-dark);
+  background: transparent;
+  color: var(--admin-signal);
+}
+
+@media (max-width: 960px) {
+  .admin-view .admin-overview-dashboard__metrics,
+  .admin-view .admin-issue-summary__grid,
+  .admin-view .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-view .admin-overview-dashboard__columns {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-view {
+    gap: 10px;
+    margin-inline: -4px;
+    padding: 12px;
+  }
+
+  .admin-view .admin-section-nav {
+    display: flex;
+    overflow-x: auto;
+  }
+
+  .admin-view .admin-section-nav button {
+    flex: 0 0 148px;
+  }
+
+  .admin-view .admin-overview-dashboard,
+  .admin-view .admin-issue-summary,
+  .admin-view .panel,
+  .admin-view .platform-console {
+    padding: 14px;
+  }
+
+  .admin-view .admin-overview-dashboard__metrics,
+  .admin-view .admin-issue-summary__grid,
+  .admin-view .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-view .admin-page-heading h1.sr-only { font-size: 26px; }
+
+  .admin-view .admin-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-view .admin-actions > * { width: 100%; }
+}
+
+/* Final light-mode override: the admin Industrial treatment is opt-in to dark mode. */
+.app-shell.mode-light .admin-view {
+  --admin-canvas: var(--canvas);
+  --admin-surface-dark: var(--surface);
+  --admin-raised: var(--surface-soft);
+  --admin-line-dark: var(--line);
+  --admin-ink-dark: var(--ink);
+  --admin-muted-dark: var(--muted);
+  --admin-signal: var(--brand-700);
+  --admin-warning-dark: var(--warning);
+  --admin-danger-dark: var(--danger);
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: inherit;
+}
+
+.app-shell.mode-light .admin-view :is(.admin-section-nav, .admin-overview-dashboard, .admin-issue-summary, .panel, .platform-console) {
+  border-color: var(--line);
+  border-radius: var(--panel-radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.app-shell.mode-light .admin-view .admin-section-nav button {
+  background: var(--surface);
+  color: var(--ink-soft);
+}
+
+.app-shell.mode-light .admin-view .admin-section-nav button.active,
+.app-shell.mode-light .admin-view .admin-section-nav button:hover,
+.app-shell.mode-light .admin-view .admin-section-nav button:focus-visible {
+  background: var(--accent-soft);
+  color: var(--brand-700);
+}
+
+.app-shell.mode-light .admin-view :is(.admin-overview-dashboard__metric, .admin-issue-card, .knowledge-asset-card) {
+  border-color: var(--line);
+  border-radius: var(--ui-radius, 8px);
+  background: var(--surface-soft);
+}
+
+.app-shell.mode-light .admin-view .button-secondary,
+.app-shell.mode-light .admin-view .text-button {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.app-shell.mode-light .admin-view :is(.table-input, .table-select, input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  border-color: var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+}
+
+.app-shell.mode-light .admin-view :is(.status-pill, .knowledge-asset-status) {
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--brand-700);
 }

@@ -206,7 +206,7 @@ export function OrgConsole({ currentEmail }: { currentEmail: string }) {
                     </select></label>
                   <label><span>부서명</span>
                     <input value={deptName} onChange={(e) => setDeptName(e.target.value)}
-                      maxLength={120} placeholder="예: AX전략팀" /></label>
+                      maxLength={120} placeholder="예: IT개발2팀" /></label>
                   <button className="button" type="submit" disabled={busy || !deptCorp || !deptName.trim()}>등록</button>
                 </form>
                 <ul className="governance-list">

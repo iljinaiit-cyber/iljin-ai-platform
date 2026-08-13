@@ -32,7 +32,7 @@ type ChatAnswerLength = "brief" | "standard" | "detailed";
 type ChatReasoningTier = "swift" | "expert" | "deep";
 
 const ORGANIZATION_NAME = "일진글로벌";
-const DEFAULT_DEPARTMENT = "AX전략팀";
+const DEFAULT_DEPARTMENT = "IT개발2팀";
 
 const GENERATION_STAGES: Record<SearchScope, string[]> = {
   internet: ["질문·의도 분석 중", "대화 맥락 확인 중", "웹 검색 중", "검색 결과 교차 검토 중", "근거 기반 답변 작성 중"],
@@ -343,6 +343,7 @@ type AccessState =
   | { state: "error"; message: string; traceId?: string; retryAfter?: number };
 
 type ThemeColor = "blue" | "violet" | "emerald" | "amber" | "rose" | "slate" | "indigo" | "cyan";
+type ThemeMode = "light" | "dark" | "system";
 
 const themeColorOptions: Array<{ value: ThemeColor; label: string }> = [
   { value: "blue", label: "기본 블루" },
@@ -853,7 +854,6 @@ function AccessGate({ access, onAuthenticated, onSignedOut, onRetry }: {
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [department, setDepartment] = useState(user?.department === "미지정" ? "" : user?.department || "");
-  const [applicationNote, setApplicationNote] = useState(user?.applicationNote || "");
   const [adminCode, setAdminCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
@@ -884,7 +884,6 @@ function AccessGate({ access, onAuthenticated, onSignedOut, onRetry }: {
               password,
               displayName: displayName.trim(),
               department: department.trim(),
-              note: applicationNote.trim(),
               adminCode: adminCode.trim() || undefined,
             }
           : { email: email.trim(), password }),
@@ -918,7 +917,7 @@ function AccessGate({ access, onAuthenticated, onSignedOut, onRetry }: {
       const response = await fetch("/api/auth/application", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ department: department.trim(), note: applicationNote.trim() }),
+        body: JSON.stringify({ department: department.trim() }),
       });
       const payload = await response.json() as { user?: AccessUser; error?: { message?: string } };
       if (!response.ok || !payload.user) throw new Error(payload.error?.message || "가입 신청을 처리하지 못했습니다.");
@@ -948,10 +947,10 @@ function AccessGate({ access, onAuthenticated, onSignedOut, onRetry }: {
           {access.state === "checking" ? "로그인 확인 중" : access.state === "signed_out" ? "로그인 필요" : unrequested ? "가입 신청 필요" : pending ? "가입 승인 대기" : rejected ? "가입 신청 반려" : "연결 오류"}
         </span>
         <h1>{unrequested ? "이메일 가입 신청서를 작성해 주세요" : pending ? "가입 신청이 접수되었습니다" : rejected ? "가입 신청을 다시 제출할 수 있습니다" : access.state === "checking" ? "로그인 상태를 확인하고 있습니다" : access.state === "signed_out" ? "ILJIN AI Works에 로그인해 주세요" : "사용자 상태를 확인하지 못했습니다"}</h1>
-        <p>{unrequested ? "희망 부서와 신청 사유를 제출하면 관리자가 검토합니다." : pending ? "관리자가 조직과 역할을 확인한 뒤 가입을 승인하면 모든 업무 기능을 사용할 수 있습니다." : rejected ? user?.rejectionReason || "신청 정보를 보완해 다시 제출해 주세요." : access.state === "checking" ? "잠시만 기다려 주세요." : access.state === "signed_out" ? `${ORGANIZATION_NAME} 임직원은 @iljin.com 회사 이메일로 가입을 신청할 수 있습니다.` : "message" in access ? access.message : "사용자 상태를 확인하지 못했습니다."}</p>
+        <p>{unrequested ? "희망 부서를 제출하면 관리자가 검토합니다." : pending ? "관리자가 조직과 역할을 확인한 뒤 가입을 승인하면 모든 업무 기능을 사용할 수 있습니다." : rejected ? user?.rejectionReason || "신청 정보를 보완해 다시 제출해 주세요." : access.state === "checking" ? "잠시만 기다려 주세요." : access.state === "signed_out" ? `${ORGANIZATION_NAME} 임직원은 @iljin.com 회사 이메일로 가입을 신청할 수 있습니다.` : "message" in access ? access.message : "사용자 상태를 확인하지 못했습니다."}</p>
         <ol className="signup-steps" aria-label="가입 진행 단계">
           <li className={access.state === "signed_out" || access.state === "checking" ? "active" : "complete"}><span>1</span><div><strong>계정 등록</strong><small>이메일·비밀번호</small></div></li>
-          <li className={unrequested ? "active" : pending || rejected ? "complete" : ""}><span>2</span><div><strong>가입 신청</strong><small>이름·부서·신청 사유</small></div></li>
+          <li className={unrequested ? "active" : pending || rejected ? "complete" : ""}><span>2</span><div><strong>가입 신청</strong><small>이름·부서</small></div></li>
         <li className={pending ? "active" : rejected ? "rejected" : ""}><span>3</span><div><strong>가입 승인</strong><small>조직·역할 배정</small></div></li>
         </ol>
         {access.state === "signed_out" && <>
@@ -965,7 +964,6 @@ function AccessGate({ access, onAuthenticated, onSignedOut, onRetry }: {
             <label><span>비밀번호</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={authMode === "login" ? "current-password" : "new-password"} minLength={12} maxLength={128} required placeholder="12자 이상 입력" /></label>
             {authMode === "register" && <>
               <label><span>희망 부서</span><input value={department} onChange={(event) => setDepartment(event.target.value)} maxLength={120} required placeholder={`예: ${DEFAULT_DEPARTMENT}`} /></label>
-              <label><span>가입 신청 사유</span><textarea value={applicationNote} onChange={(event) => setApplicationNote(event.target.value)} maxLength={1000} rows={4} placeholder="담당 업무와 AI Works 사용 목적을 입력해 주세요." /></label>
               <details className="admin-bootstrap"><summary>초기 관리자 계정 설정</summary><label><span>관리자 초기 설정 코드</span><input type="password" value={adminCode} onChange={(event) => setAdminCode(event.target.value)} autoComplete="one-time-code" maxLength={256} placeholder="관리자 이메일인 경우에만 입력" /></label></details>
             </>}
             {formError && <p className="form-error" role="alert">{formError}</p>}
@@ -976,7 +974,6 @@ function AccessGate({ access, onAuthenticated, onSignedOut, onRetry }: {
         {user && <dl><div><dt>이메일</dt><dd>{user.email}</dd></div><div><dt>신청자</dt><dd>{user.displayName}</dd></div>{pending && <div><dt>신청 부서</dt><dd>{user.department}</dd></div>}</dl>}
         {showApplication && <form className="access-application-form" onSubmit={submitApplication}>
           <label><span>희망 부서</span><input value={department} onChange={(event) => setDepartment(event.target.value)} maxLength={120} required placeholder={`예: ${DEFAULT_DEPARTMENT}`} /></label>
-          <label><span>가입 신청 사유</span><textarea value={applicationNote} onChange={(event) => setApplicationNote(event.target.value)} maxLength={1000} rows={4} placeholder="담당 업무와 AI Works 사용 목적을 입력해 주세요." /></label>
           {formError && <p className="form-error" role="alert">{formError}</p>}
           <button className="button button-primary" type="submit" disabled={submitting || !department.trim()}>{submitting ? "신청 중" : rejected ? "가입 재신청" : "이메일 가입 신청"}</button>
         </form>}
@@ -1033,6 +1030,8 @@ export function AgentPortal() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [themeColor, setThemeColor] = useState<ThemeColor>("blue");
+  const [themeMode, setThemeMode] = useState<ThemeMode>("light");
+  const [resolvedThemeMode, setResolvedThemeMode] = useState<"light" | "dark">("light");
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const navigationRef = useRef<HTMLElement>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
@@ -1044,6 +1043,23 @@ export function AgentPortal() {
     const storedTheme = window.localStorage.getItem(`iljin-ai-theme:${authenticatedEmail}`);
     if (!isThemeColor(storedTheme)) return;
     const timer = setTimeout(() => setThemeColor(storedTheme), 0);
+    return () => clearTimeout(timer);
+  }, [authenticatedEmail]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const sync = () => setResolvedThemeMode(themeMode === "system" ? (media.matches ? "dark" : "light") : themeMode);
+    sync();
+    if (themeMode !== "system") return;
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, [themeMode]);
+
+  useEffect(() => {
+    if (!authenticatedEmail) return;
+    const storedMode = window.localStorage.getItem(`iljin-ai-theme-mode:${authenticatedEmail}`);
+    if (storedMode !== "light" && storedMode !== "dark" && storedMode !== "system") return;
+    const timer = setTimeout(() => setThemeMode(storedMode), 0);
     return () => clearTimeout(timer);
   }, [authenticatedEmail]);
 
@@ -1736,6 +1752,11 @@ export function AgentPortal() {
     if (authenticatedEmail) window.localStorage.setItem(`iljin-ai-theme:${authenticatedEmail}`, nextTheme);
   };
 
+  const changeThemeMode = (nextMode: ThemeMode) => {
+    setThemeMode(nextMode);
+    if (authenticatedEmail) window.localStorage.setItem(`iljin-ai-theme-mode:${authenticatedEmail}`, nextMode);
+  };
+
   const toggleSidebar = () => {
     const nextCollapsed = !sidebarCollapsed;
     setSidebarCollapsed(nextCollapsed);
@@ -1792,7 +1813,7 @@ export function AgentPortal() {
   const visibleNavigation = [...navItems, { id: "feedback" as View, label: "사용자 의견", mark: "FB", req: "U-09", permission: "workspace.home", icon: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 4v-4h0A2.5 2.5 0 0 1 4 13.5v-8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M8 8h8M8 11h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' }].filter((item) => item.id !== "admin").filter((item) => canUse(item.permission, item.feature));
 
   return (
-    <div className={`app-shell theme-${themeColor}`}>
+    <div className={`app-shell theme-${themeColor} mode-${resolvedThemeMode}`}>
       <a className="skip-link" href="#main-content">본문으로 바로가기</a>
       <aside ref={navigationRef} id="mobile-navigation" className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`} aria-label="주요 메뉴">
         <div className="brand-lockup">
@@ -1908,6 +1929,17 @@ export function AgentPortal() {
                     <button key={option.value} type="button" className={`theme-choice theme-choice-${option.value} ${themeColor === option.value ? "selected" : ""}`} aria-pressed={themeColor === option.value} onClick={() => changeThemeColor(option.value)}>
                       <span className="theme-swatch" aria-hidden="true" />
                       <span>{option.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+              <fieldset className="theme-mode-picker">
+                <legend>화면 모드</legend>
+                <div className="theme-mode-choice-grid" role="radiogroup" aria-label="화면 모드">
+                  {(["light", "dark", "system"] as const).map((mode) => (
+                    <button key={mode} type="button" className={`theme-mode-choice ${themeMode === mode ? "selected" : ""}`} aria-pressed={themeMode === mode} onClick={() => changeThemeMode(mode)}>
+                      <span className={`theme-mode-icon theme-mode-icon-${mode}`} aria-hidden="true" />
+                      <span>{mode === "light" ? "라이트" : mode === "dark" ? "다크" : "시스템"}</span>
                     </button>
                   ))}
                 </div>
