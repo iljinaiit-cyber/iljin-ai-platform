@@ -23,6 +23,14 @@ test("edge rate limits protect API and auth paths before the application handler
   assert.match(guardrails, /EDGE_RATE_LIMITER/);
   assert.match(guardrails, /AUTH_RATE_LIMITER/);
   assert.match(guardrails, /DELETE FROM rate_limit_buckets WHERE expires_at <=/);
+  assert.match(guardrails, /EDGE_RATE_LIMIT_REQUIRED !== "false"/);
+});
+
+test("Pages deployment config does not use Worker-only bindings", async () => {
+  const config = await source("wrangler.jsonc");
+  assert.doesNotMatch(config, /"ratelimits"\s*:/);
+  assert.doesNotMatch(config, /"observability"\s*:/);
+  assert.match(config, /"EDGE_RATE_LIMIT_REQUIRED": "false"/);
 });
 
 test("internal search has a principal-level rate limit", async () => {

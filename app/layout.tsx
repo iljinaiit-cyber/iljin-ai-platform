@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 
-const description = "개인과 부서의 업무를 연결하는 Enterprise AI Agent Portal";
+const description = "임직원의 개인·부서 업무를 연결하는 Enterprise AI Agent Portal";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();

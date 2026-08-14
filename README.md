@@ -1,5 +1,7 @@
 # ILJIN AI Works
 
+일진글로벌 임직원 업무를 지원하는 AI 포털입니다.
+
 ## LLM 라우팅 (2026-07-23)
 
 채팅 답변 생성은 public/internal 요청에서 `Cloudflare AI GLM 4.7 Flash → 로컬 PC vLLM/Ollama` 순서로 호출합니다. Cloudflare가 미구성, 타임아웃, 비정상 응답 또는 회로 차단 상태이면 로컬 모델로 자동 전환합니다. confidential 요청은 외부로 전송하지 않고 로컬 LLM만 사용합니다. RAG 임베딩과 재랭킹도 Cloudflare AI binding으로 처리합니다.

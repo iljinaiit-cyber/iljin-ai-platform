@@ -126,7 +126,7 @@ export async function enforceEdgeRateLimit(request: Request, kind: "api" | "auth
   const runtime = getRuntimeEnv();
   const limiter = kind === "auth" ? runtime.AUTH_RATE_LIMITER : runtime.EDGE_RATE_LIMITER;
   if (!limiter) {
-    if (runtime.APP_ENV === "production" || runtime.APP_ENV === "preview") {
+    if (runtime.EDGE_RATE_LIMIT_REQUIRED !== "false" && (runtime.APP_ENV === "production" || runtime.APP_ENV === "preview")) {
       throw new RuntimeBindingError(kind === "auth" ? "AUTH_RATE_LIMITER" : "EDGE_RATE_LIMITER");
     }
     return;

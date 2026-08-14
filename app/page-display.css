@@ -1,0 +1,876 @@
+/* Shared page display system. Imported after page components so the rhythm is consistent. */
+:root {
+  --display-gutter: clamp(12px, 1.5vw, 22px);
+  --display-gap: clamp(8px, 0.9vw, 14px);
+  --display-inset: clamp(12px, 1.3vw, 18px);
+  --display-radius: 10px;
+  --display-body: 13px;
+  --display-meta: 11px;
+  --display-leading: 1.48;
+}
+
+.main-content:not(.main-content-chat) {
+  padding: var(--display-gutter);
+}
+
+.main-content:not(.main-content-chat) > *,
+.main-content.main-content-chat > .workspace-layout,
+.view-stack,
+.knowledge-base,
+.activity-page,
+.workspace-layout,
+.search-layout,
+.schedule-view,
+.feedback-board,
+.agent-ops-page,
+.admin-view,
+.admin-tab-screen,
+.admin-management-tab {
+  width: 100%;
+  max-width: 1480px;
+  margin-inline: auto;
+}
+
+.view-stack,
+.knowledge-base,
+.activity-page,
+.workspace-layout,
+.search-layout,
+.schedule-view,
+.feedback-board,
+.agent-ops-page,
+.admin-view,
+.admin-tab-screen,
+.admin-management-tab,
+.home-bottom-grid,
+.admin-grid,
+.feedback-layout,
+.schedule-grid,
+.metric-grid,
+.admin-overview-dashboard__metrics,
+.admin-issue-summary__grid {
+  gap: var(--display-gap);
+}
+
+.section-block,
+.panel,
+.filter-panel,
+.result-panel,
+.knowledge-catalog,
+.feedback-list-panel,
+.feedback-form-panel,
+.admin-issue-summary,
+.admin-overview-dashboard,
+.schedule-calendar-panel,
+.schedule-side-panel,
+.platform-console,
+.context-rail {
+  border-radius: var(--display-radius);
+  padding: var(--display-inset);
+  font-size: var(--display-body);
+  line-height: var(--display-leading);
+}
+
+.page-heading,
+.section-heading,
+.panel-title,
+.result-heading,
+.knowledge-hero-heading,
+.schedule-header,
+.activity-page-heading,
+.agent-ops-heading,
+.feedback-page-heading {
+  align-items: flex-start;
+  gap: var(--display-gap);
+}
+
+.page-heading h1,
+.schedule-header h1,
+.feedback-board .feedback-page-heading h1 {
+  margin: 2px 0 3px;
+  font-size: clamp(26px, 2.8vw, 36px);
+  line-height: 1.1;
+  letter-spacing: -0.045em;
+}
+
+.section-heading h2,
+.panel-title h2,
+.result-heading h2,
+.schedule-planning-heading h2 {
+  margin: 2px 0 0;
+  font-size: clamp(18px, 1.55vw, 22px);
+  line-height: 1.15;
+  letter-spacing: -0.035em;
+}
+
+.page-heading p,
+.section-heading p,
+.panel-title p,
+.result-heading p,
+.panel-description,
+.schedule-subtitle,
+.feedback-board .feedback-page-heading p {
+  max-width: 72ch;
+  margin: 3px 0 0;
+  color: var(--ink-soft);
+  font-size: var(--display-body);
+  line-height: var(--display-leading);
+}
+
+.section-kicker,
+.hero-kicker,
+.knowledge-eyebrow {
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 0.13em;
+}
+
+.hero-panel,
+.knowledge-hero,
+.search-hero {
+  min-height: 0;
+  padding: clamp(18px, 2vw, 26px);
+}
+
+.hero-copy h1 {
+  max-width: 19ch;
+  margin-bottom: 7px;
+  font-size: clamp(30px, 3.5vw, 48px);
+  line-height: 1.08;
+}
+
+.hero-copy p,
+.knowledge-hero-heading p {
+  max-width: 66ch;
+  margin-bottom: 0;
+  font-size: var(--display-body);
+  line-height: 1.45;
+}
+
+.usecase-grid,
+.knowledge-card-grid,
+.home-bottom-grid,
+.admin-grid,
+.feedback-layout,
+.search-layout,
+.schedule-grid {
+  gap: var(--display-gap);
+}
+
+.usecase-card,
+.knowledge-card {
+  min-height: 0;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.usecase-card h3,
+.knowledge-card h3,
+.knowledge-asset-card h3 {
+  margin: 6px 0 4px;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.usecase-card > p,
+.knowledge-card p,
+.knowledge-asset-card p,
+.schedule-task-body small,
+.table-subtext,
+.empty-state {
+  font-size: var(--display-meta);
+  line-height: 1.45;
+}
+
+.usecase-card > p { margin-bottom: 6px; }
+
+.card-meta,
+.knowledge-asset-meta {
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.card-meta dt,
+.knowledge-asset-meta dt { font-size: 10px; line-height: 1.35; }
+.card-meta dd,
+.knowledge-asset-meta dd { font-size: 12px; line-height: 1.35; }
+.card-action { margin-top: 8px; padding-top: 8px; font-size: 11px; }
+.recent-row { min-height: 42px; padding-block: 6px; }
+.recent-row strong { font-size: 12px; line-height: 1.35; }
+.recent-row small { font-size: 10px; line-height: 1.35; }
+
+.message-list,
+.rag-results,
+.rag-result-list,
+.agent-run-list,
+.approval-list,
+.source-list,
+.knowledge-assets-list { gap: var(--display-gap); }
+
+.chat-workspace { padding: 8px; }
+.message-list { padding-block: 6px; }
+.message-content { font-size: 13px; line-height: 1.58; }
+.message p { padding: 8px 10px; }
+
+.answer-table-wrap,
+.table-wrap { border-radius: 7px; }
+
+table {
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+th,
+td { padding: 7px 9px; line-height: 1.35; }
+th { font-size: 10px; letter-spacing: 0.06em; }
+td,
+td strong { font-size: 12px; }
+
+.rag-result,
+.agent-run,
+.approval-list > li,
+.source-row,
+.requirement-row,
+.knowledge-asset-card {
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.rag-result-head h3,
+.agent-run-head strong,
+.approval-head strong { font-size: 14px; line-height: 1.3; }
+
+.composer-query-wrap { position: relative; flex: 1 1 0; min-width: 0; }
+.composer-query-wrap textarea { width: 100%; }
+.chat-agent-chip { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 5px; color: var(--brand-700); font-size: 11px; }
+.chat-agent-chip button { min-width: 18px; min-height: 18px; border: 0; border-radius: 999px; background: var(--accent-soft); color: inherit; cursor: pointer; }
+.chat-agent-menu { position: absolute; z-index: 8; right: 0; bottom: calc(100% + 8px); left: 0; display: grid; gap: 4px; max-height: 220px; overflow: auto; padding: 6px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+.chat-agent-menu button { display: grid; gap: 2px; width: 100%; padding: 9px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.chat-agent-menu button:hover, .chat-agent-menu button:focus-visible { background: var(--accent-soft); }
+.chat-agent-menu strong { color: var(--brand-700); font-size: 12px; }
+.chat-agent-menu span, .chat-agent-menu p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.rag-snippet,
+.agent-ops-note,
+.agent-ops-error,
+.approval-meta,
+.agent-run-meta { font-size: 12px; line-height: 1.42; }
+
+.search-layout { grid-template-columns: minmax(210px, 240px) minmax(0, 1fr); }
+.filter-panel { top: calc(var(--topbar-height) + var(--display-gap)); }
+.filter-panel h2 { margin-bottom: 10px; font-size: 16px; }
+.filter-panel fieldset { gap: 6px; padding-block: 10px; }
+
+.schedule-summary article,
+.admin-overview-dashboard__metric,
+.admin-issue-card {
+  min-height: 68px;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.schedule-planning-panel { padding: 0; }
+.schedule-planning-heading { padding: 10px 14px 8px; }
+.schedule-planning-metrics,
+.schedule-planning-toolbar,
+.schedule-plan-list { padding-inline: 14px; }
+.feedback-board .feedback-post-summary,
+.feedback-board .feedback-post-content { border-radius: 8px; padding: 12px; }
+
+.admin-view { gap: var(--display-gap); padding: var(--display-inset); }
+.admin-view .admin-page-heading { margin: 0; padding: 0 0 8px; }
+.admin-view .admin-section-nav button { min-height: 38px; font-size: 10px; }
+.admin-view .panel,
+.admin-view .admin-overview-dashboard,
+.admin-view .admin-issue-summary,
+.admin-view .platform-console { padding: var(--display-inset); }
+
+@media (max-width: 900px) {
+  :root { --display-gutter: 12px; --display-gap: 10px; --display-inset: 14px; }
+  .page-heading,
+  .section-heading,
+  .panel-title,
+  .result-heading,
+  .knowledge-hero-heading,
+  .schedule-header,
+  .activity-page-heading,
+  .agent-ops-heading,
+  .feedback-page-heading { flex-direction: column; }
+  .page-heading > :last-child,
+  .section-heading > :last-child,
+  .panel-title > :last-child,
+  .result-heading > :last-child,
+  .schedule-header > :last-child,
+  .feedback-page-heading > :last-child { align-self: stretch; }
+  .page-heading .button,
+  .schedule-header .button,
+  .schedule-header .schedule-create-btn,
+  .feedback-page-heading .button { width: fit-content; }
+}
+
+@media (max-width: 700px) {
+  :root { --display-gutter: 10px; --display-gap: 8px; --display-inset: 12px; }
+  .page-heading h1,
+  .schedule-header h1,
+  .feedback-board .feedback-page-heading h1 { font-size: 25px; }
+  .hero-panel,
+  .knowledge-hero,
+  .search-hero { padding: 16px 14px; }
+  .hero-copy h1 { max-width: none; font-size: 30px; }
+  .hero-stats { gap: 6px; }
+  .hero-stats div { min-width: 0; padding-inline: 8px; }
+  .admin-view { padding: 10px; }
+  .admin-view .panel,
+  .admin-view .admin-overview-dashboard,
+  .admin-view .admin-issue-summary,
+  .admin-view .platform-console { padding: 12px; }
+  table { min-width: 560px; }
+}
+
+/* Visual alignment contract: every page uses the same content edge, card
+   treatment, and overflow behavior. This sits after component styles so
+   data-heavy views do not drift as features add their own layouts. */
+.view-stack,
+.knowledge-base,
+.activity-page,
+.workspace-layout,
+.search-layout,
+.schedule-view,
+.feedback-board,
+.agent-ops-page,
+.admin-view,
+.admin-tab-screen,
+.admin-management-tab,
+.home-bottom-grid,
+.feedback-layout,
+.schedule-grid,
+.metric-grid,
+.admin-overview-dashboard__metrics,
+.admin-issue-summary__grid,
+.knowledge-card-grid,
+.usecase-grid {
+  min-width: 0;
+}
+
+.view-stack > *,
+.knowledge-base > *,
+.activity-page > *,
+.workspace-layout > *,
+.search-layout > *,
+.schedule-view > *,
+.feedback-board > *,
+.agent-ops-page > *,
+.admin-view > *,
+.home-bottom-grid > *,
+.feedback-layout > *,
+.schedule-grid > *,
+.metric-grid > *,
+.admin-overview-dashboard__metrics > *,
+.admin-issue-summary__grid > *,
+.knowledge-card-grid > *,
+.usecase-grid > * {
+  min-width: 0;
+}
+
+.main-content :is(img, video, canvas) {
+  display: block;
+  max-inline-size: 100%;
+}
+
+.answer-table-wrap,
+.table-wrap,
+.schedule-calendar-panel {
+  max-inline-size: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.hero-stats,
+.knowledge-stats,
+.schedule-summary,
+.admin-overview-dashboard__metrics,
+.admin-issue-summary__grid,
+.metric-grid {
+  align-items: stretch;
+}
+
+.hero-stats > div,
+.knowledge-stats > div,
+.schedule-summary > article,
+.admin-overview-dashboard__metric,
+.admin-issue-card,
+.metric-grid > article {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--display-radius);
+  background: var(--surface-soft);
+  box-shadow: none;
+}
+
+.hero-stats > div,
+.knowledge-stats > div,
+.schedule-summary > article,
+.admin-overview-dashboard__metric,
+.admin-issue-card {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+}
+
+.hero-stats strong,
+.knowledge-stats strong,
+.schedule-summary strong,
+.admin-overview-dashboard__metric strong,
+.admin-issue-card strong {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.evidence-strip,
+.knowledge-operational-strip,
+.admin-overview-dashboard__footer,
+.card-meta,
+.knowledge-asset-meta {
+  min-width: 0;
+}
+
+.evidence-strip a,
+.knowledge-operational-strip > span,
+.admin-overview-dashboard__footer > span {
+  max-width: 100%;
+  border-radius: 999px;
+}
+
+@media (max-width: 700px) {
+  .hero-stats,
+  .knowledge-stats,
+  .schedule-summary,
+  .admin-overview-dashboard__metrics,
+  .admin-issue-summary__grid,
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .schedule-calendar-panel {
+    padding-inline: var(--display-inset);
+  }
+
+  .calendar-grid {
+    min-width: 560px;
+  }
+}
+
+@media (max-width: 420px) {
+  .hero-stats,
+  .knowledge-stats,
+  .schedule-summary,
+  .admin-overview-dashboard__metrics,
+  .admin-issue-summary__grid,
+  .metric-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Typography contract: Korean UI copy, controls, and operational pages share
+   one sans-serif family. Numeric values retain tabular alignment without
+   turning a single page into a different typographic system. */
+:root {
+  --font-ui: Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", Arial, sans-serif;
+  --type-body: 14px;
+  --type-meta: 12px;
+  --type-label: 11px;
+  --type-title: clamp(20px, 1.8vw, 24px);
+  --type-page-title: clamp(28px, 3vw, 38px);
+}
+
+.app-shell,
+.access-gate,
+.app-shell :is(button, input, textarea, select),
+.access-gate :is(button, input, textarea, select),
+.admin-view,
+.admin-view :is(button, input, textarea, select) {
+  font-family: var(--font-ui);
+}
+
+.main-content,
+.access-gate-card {
+  font-size: var(--type-body);
+  line-height: 1.6;
+}
+
+.page-heading h1,
+.schedule-header h1,
+.feedback-board .feedback-page-heading h1,
+.admin-view .admin-page-heading h1.sr-only {
+  font-size: var(--type-page-title);
+  font-weight: 760;
+  letter-spacing: -0.045em;
+}
+
+.section-heading h2,
+.panel-title h2,
+.result-heading h2,
+.schedule-planning-heading h2,
+.platform-console h2,
+.ingest-head h2 {
+  font-size: var(--type-title);
+  font-weight: 740;
+  letter-spacing: -0.03em;
+}
+
+.section-kicker,
+.hero-kicker,
+.knowledge-eyebrow,
+.nav-eyebrow,
+th,
+.card-meta dt,
+.knowledge-asset-meta dt,
+.knowledge-card dt,
+.status-pill,
+.risk-pill,
+.rag-badge,
+.rag-chip {
+  font-size: var(--type-label);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.page-heading p,
+.section-heading p,
+.panel-title p,
+.result-heading p,
+.panel-description,
+.schedule-subtitle,
+.field-hint,
+.table-subtext,
+.rag-result-foot,
+.agent-run-meta,
+.approval-meta,
+.source-row small,
+.knowledge-card p,
+.usecase-card > p,
+.recent-row small {
+  font-size: var(--type-meta);
+  line-height: 1.55;
+}
+
+.usecase-card h3,
+.knowledge-card h3,
+.rag-result-head h3,
+.agent-run-head strong,
+.approval-head strong,
+.source-row strong,
+.schedule-task-body strong {
+  font-size: 15px;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+}
+
+.hero-stats strong,
+.knowledge-stats strong,
+.schedule-summary strong,
+.admin-overview-dashboard__metric strong,
+.admin-issue-card strong,
+.rag-score,
+.live-clock,
+.admin-overview-dashboard__stamp,
+.admin-overview-dashboard__period {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 700px) {
+  :root {
+    --type-body: 14px;
+    --type-meta: 12px;
+    --type-label: 11px;
+    --type-page-title: 28px;
+  }
+}
+
+/* Knowledge Data Base: preserve the dark hero's contrast and keep its live
+   status information above the fold. The shared card contract is intentionally
+   overridden only inside this dark surface. */
+.knowledge-hero {
+  padding: clamp(16px, 1.6vw, 20px);
+}
+
+.knowledge-hero-heading {
+  gap: 14px;
+}
+
+.knowledge-eyebrow {
+  margin-top: 0;
+}
+
+.knowledge-hero-heading p {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.knowledge-policy {
+  min-width: 190px;
+  padding: 8px 12px;
+}
+
+.knowledge-hero .search-scope-switch {
+  margin-top: 8px;
+}
+
+.knowledge-hero .search-scope-switch button {
+  min-height: 34px;
+  padding-inline: 14px;
+}
+
+.knowledge-hero .knowledge-stats {
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.knowledge-hero .knowledge-stats > div {
+  min-height: 56px;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.1);
+  padding: 7px 10px;
+}
+
+.knowledge-hero .knowledge-stats :is(span, small) {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.knowledge-hero .knowledge-stats strong {
+  color: #fff;
+  font-size: 20px;
+}
+
+.knowledge-hero .knowledge-stats .knowledge-date {
+  font-size: 14px;
+}
+
+.knowledge-hero .knowledge-operational-strip {
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.knowledge-hero .knowledge-operational-strip span {
+  padding: 5px 8px;
+}
+
+.knowledge-hero .knowledge-search-form {
+  margin-top: 8px;
+}
+
+.knowledge-hero .knowledge-search-form :is(input, button) {
+  min-height: 38px;
+}
+
+.knowledge-hero .knowledge-quick-topics {
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.knowledge-hero .knowledge-quick-topics button {
+  min-height: 26px;
+  padding: 3px 8px;
+}
+
+/* Home: status cards sit on the same dark surface as the welcome panel. */
+.hero-panel .hero-stats > div {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.hero-panel .hero-stats strong {
+  color: #fff;
+}
+
+.hero-panel .hero-stats span {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+@media (max-width: 700px) {
+  .knowledge-hero-heading {
+    gap: 10px;
+  }
+
+  .knowledge-policy {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .knowledge-hero .knowledge-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Shared answer content rhythm: Markdown structure uses one readable contract. */
+.message-content {
+  --content-section-gap: 1.5em;
+  --content-paragraph-gap: 0.5em;
+}
+
+.message-content h2,
+.message-content h3 {
+  margin: var(--content-section-gap) 0 var(--content-paragraph-gap);
+}
+
+.message-content > :first-child {
+  margin-top: 0;
+}
+
+.message-content > :last-child {
+  margin-bottom: 0;
+}
+
+.message-content p {
+  margin: 0 0 var(--content-paragraph-gap);
+}
+
+.message-content ul,
+.message-content ol {
+  margin: var(--content-paragraph-gap) 0 1em;
+  padding-left: 2ch;
+  gap: 0.25em;
+}
+
+.answer-divider {
+  margin: var(--content-section-gap) 0;
+}
+
+.answer-table-wrap {
+  margin: var(--content-paragraph-gap) 0 var(--content-section-gap);
+}
+
+.answer-table-wrap th,
+.answer-table-wrap td {
+  border: 1px solid var(--line);
+  padding: 0.5em 0.65em;
+  text-align: left;
+  vertical-align: top;
+}
+
+.answer-table-wrap tbody tr:last-child td {
+  border-bottom: 1px solid var(--line);
+}
+
+/* Knowledge Data Base: use the available width to shorten the hero without
+   changing the existing visual language or the information order. */
+.knowledge-hero {
+  gap: 6px;
+  padding: 14px 18px 12px;
+}
+
+.knowledge-hero-heading {
+  gap: 12px;
+}
+
+.knowledge-hero-heading p {
+  max-width: none;
+}
+
+.knowledge-hero .search-scope-switch,
+.knowledge-hero .knowledge-stats,
+.knowledge-hero .knowledge-operational-strip,
+.knowledge-hero .knowledge-search-form,
+.knowledge-hero .knowledge-quick-topics {
+  margin-top: 0;
+}
+
+.knowledge-hero .knowledge-stats > div {
+  min-height: 0;
+  gap: 2px;
+  padding: 6px 10px;
+  line-height: 1.25;
+}
+
+.knowledge-hero .knowledge-operational-strip {
+  min-height: 24px;
+}
+
+.knowledge-hero .knowledge-search-form {
+  width: 100%;
+  max-width: none;
+}
+
+.knowledge-hero .knowledge-search-form :is(input, button) {
+  min-height: 36px;
+}
+
+.knowledge-hero .knowledge-quick-topics button {
+  min-height: 24px;
+}
+
+.knowledge-load-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  border: 1px solid #e5b8b3;
+  border-radius: 8px;
+  background: #fff7f6;
+  padding: 9px 11px;
+  color: #8f302a;
+  font-size: 12px;
+}
+
+.knowledge-load-error button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  border: 1px solid #d9948d;
+  border-radius: 6px;
+  background: #fff;
+  color: #8f302a;
+  padding: 4px 9px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+@media (max-width: 760px) {
+  .knowledge-hero {
+    padding: 14px;
+  }
+
+  .knowledge-hero-heading {
+    flex-direction: column;
+  }
+
+  .knowledge-policy {
+    width: 100%;
+  }
+
+  .knowledge-load-error {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* The chat prompt must fill the space between the fixed attachment and send
+   controls. Grid prevents the textarea wrapper from collapsing to its content
+   width in the legacy flex layout. */
+.chat-composer,
+.composer-input-row {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.composer-input-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.chat-composer .composer-query-wrap {
+  flex: none;
+  width: 100%;
+  min-width: 0;
+}
+
+.composer-query-wrap textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}

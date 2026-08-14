@@ -24,6 +24,7 @@ import {
 import { fail, newTraceId, ok } from "../../../_shared";
 import { registerWorkItemFromText } from "../../../../../lib/schedule-planning";
 import { createScheduledTask, isValidCronExpression, parseNaturalLanguageSchedule } from "../../../../../lib/scheduled-tasks";
+import { chatAgentContext, getChatAgent } from "../../../../../lib/chat-agents";
 
 type Body = {
   messages?: Array<{ role: string; content: string }>;
@@ -36,6 +37,7 @@ type Body = {
   stream?: boolean;
   summary_only?: boolean;
   conversation_id?: string;
+  agent_id?: string;
 };
 
 const sse = (event: string, data: unknown) =>
@@ -265,6 +267,8 @@ async function executeChat(request: Request, body: Body, traceId: string, emitSt
       getEffectiveModel(principal.tenantId, "chat_local").catch(() => undefined),
     ]);
     const userContent = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+    const selectedAgent = body.agent_id ? await getChatAgent(principal, body.agent_id) : undefined;
+    const selectedAgentContext = selectedAgent ? chatAgentContext(selectedAgent) : "";
     // A research/landscape request needs enough room for evidence comparison,
     // company cases, caveats, and a business-plan takeaway. Explicit user
     // length choices still win; otherwise research questions use the detailed
@@ -283,7 +287,7 @@ async function executeChat(request: Request, body: Body, traceId: string, emitSt
       ? body.reasoning_tier
       : answerReasoningTier(answerLength);
     const preference = `${responsePreferenceInstruction(answerLength, answerFormat, userContent)}${body.summary_only ? "\n첫 줄에 질문에 대한 한 문장 요약만 작성하고, 추가 설명은 작성하지 마세요." : ""}`;
-    const preferenceWithLearning = `${preference}${feedbackLearningContext}`;
+    const preferenceWithLearning = `${preference}${feedbackLearningContext}${selectedAgentContext}`;
     const contextMessages = body.conversation_id
       ? [
           ...(await conversationContext(principal, body.conversation_id)),
@@ -411,6 +415,7 @@ async function executeChat(request: Request, body: Body, traceId: string, emitSt
         providerPolicy: { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength, reasoningTier), cloudflareModelOverride, localModelOverride },
         responsePreferences: { length: answerLength, format: answerFormat, learningContext: feedbackLearningContext },
         reasoningTier,
+        contextFileBlock: selectedAgentContext,
         assetIds: attachmentAssetIds.length ? attachmentAssetIds : undefined,
         onStage: emitStage,
       });

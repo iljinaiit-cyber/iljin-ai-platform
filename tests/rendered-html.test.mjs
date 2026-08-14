@@ -236,6 +236,9 @@ test("keeps feedback board discovery controls wired to tenant-scoped queries", a
   assert.match(component, /feedback-summary/);
   assert.match(component, /activeFilters\.status/);
   assert.match(component, /activeFilters\.mine/);
+  assert.doesNotMatch(component, />\\uC804\\uCCB4/);
+  assert.doesNotMatch(component, /placeholder="\\uC81C/);
+  assert.doesNotMatch(component, />\\uAC80\\uC0C9/);
   // 이 파일은 저장 시 비ASCII 문자열을 \uXXXX 로 이스케이프한다(기존 관례).
   // "공감순"의 UTF-16 코드유닛이라 리터럴 한글로는 절대 매치되지 않는다.
   assert.match(component, /\\uACF5\\uAC10\\uC21C/);
@@ -739,7 +742,7 @@ test("implements multimodal document analysis, visual indexing, and image citati
   assert.match(multimodal, /regionType: "chart"/);
   assert.match(assetRoute, /regionCount/);
   assert.match(portal, /멀티모달 첨부/);
-  assert.match(portal, /이미지 근거/);
+  assert.match(portal, /sourceType === "image"/);
   assert.match(results, /rag-document__visual/);
   assert.match(migration, /visual_regions/);
   assert.match(runtime, /CLOUD_VLM_MODEL/);

@@ -501,6 +501,20 @@ export const agentRuns = sqliteTable(
   ],
 );
 
+export const chatAgents = sqliteTable(
+  "chat_agents",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    ownerEmail: text("owner_email").notNull(),
+    name: text("name").notNull(),
+    instructions: text("instructions").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [index("chat_agents_owner_updated_idx").on(table.tenantId, table.ownerEmail, table.updatedAt)],
+);
+
 export const agentSteps = sqliteTable(
   "agent_steps",
   {

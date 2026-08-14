@@ -1,4 +1,5 @@
 import { getD1 } from "../db";
+import { COMPANY_NAME } from "./company-profile";
 import { authorizeFeature } from "./admin-governance";
 import type { Principal } from "./identity";
 import { ensureAgentSchema } from "./agent-orchestrator";
@@ -246,8 +247,8 @@ export async function getActivityDashboard(principal: Principal, limit = 50) {
     {
       id: "recent-fallback-ai",
       category: "recent",
-      label: "제조업 AI 활용 동향",
-      question: "최근 제조업 AI 활용 동향과 실무 적용 사례를 정리해줘.",
+      label: "AI 활용 동향",
+      question: `${COMPANY_NAME} 베어링 제조 업무에 적용할 수 있는 최근 AI 활용 동향과 실무 사례를 정리해줘.`,
       meta: "최근 업무 이슈",
     },
   ];

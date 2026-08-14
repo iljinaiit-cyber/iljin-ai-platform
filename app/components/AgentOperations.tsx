@@ -1,12 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import "./AgentOperations.css";
 
 type AgentRun = {
   id: string; title?: string; objective?: string; status: string;
   current_state?: string; created_at?: string; updated_at?: string;
   error_message?: string; owner_email?: string;
+};
+
+type ChatAgent = {
+  id: string;
+  name: string;
+  instructions: string;
+  ownerEmail?: string;
+  updatedAt?: string;
 };
 
 type ToolApproval = {
@@ -55,11 +63,85 @@ function useEndpoint<T>(url: string, pick: (payload: Record<string, unknown>) =>
   return { items, loading, error, reload: () => { setLoading(true); void load(); } };
 }
 
-export function AgentTasksView() {
+export function AgentTasksView({ currentUser }: { currentUser: { role: string } }) {
+  const pickAgentRuns = useCallback((payload: Record<string, unknown>) => (payload.runs as AgentRun[]) ?? [], []);
+  const pickChatAgents = useCallback((payload: Record<string, unknown>) => (payload.agents as ChatAgent[]) ?? [], []);
   const { items, loading, error } = useEndpoint<AgentRun>(
     "/api/v1/agent/runs?limit=50",
-    (payload) => (payload.runs as AgentRun[]) ?? [],
+    pickAgentRuns,
   );
+  const { items: agents, loading: agentsLoading, error: agentsError, reload: reloadAgents } = useEndpoint<ChatAgent>("/api/v1/agents", pickChatAgents);
+  const [name, setName] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [deletingId, setDeletingId] = useState("");
+  const [editingAgent, setEditingAgent] = useState<ChatAgent | null>(null);
+  const [createError, setCreateError] = useState("");
+  const [createNotice, setCreateNotice] = useState("");
+  const canManageAgents = currentUser.role === "admin";
+
+  const saveAgent = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedName = name.trim();
+    const trimmedInstructions = instructions.trim();
+    if (!trimmedName || !trimmedInstructions || creating) return;
+    setCreating(true);
+    setCreateError("");
+    setCreateNotice("");
+    try {
+      const response = await fetch("/api/v1/agents", {
+        method: editingAgent ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editingAgent?.id, name: trimmedName, instructions: trimmedInstructions }),
+      });
+      const payload = await response.json() as { agent?: ChatAgent; error?: { message?: string } };
+      if (!response.ok) throw new Error(payload.error?.message || "에이전트를 생성하지 못했습니다.");
+      setName("");
+      setInstructions("");
+      setCreateNotice(editingAgent ? `/${payload.agent?.name || trimmedName} 에이전트를 수정했습니다.` : `/${payload.agent?.name || trimmedName} 명령으로 AI 채팅에서 호출할 수 있습니다.`);
+      setEditingAgent(null);
+      reloadAgents();
+    } catch (cause) {
+      setCreateError(cause instanceof Error ? cause.message : "에이전트를 생성하지 못했습니다.");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const editAgent = (agent: ChatAgent) => {
+    setEditingAgent(agent);
+    setName(agent.name);
+    setInstructions(agent.instructions);
+    setCreateError("");
+    setCreateNotice("");
+  };
+
+  const deleteAgent = async (agent: ChatAgent) => {
+    if (deletingId || !window.confirm(`/${agent.name} 에이전트를 삭제할까요?`)) return;
+    setDeletingId(agent.id);
+    setCreateError("");
+    setCreateNotice("");
+    try {
+      const response = await fetch("/api/v1/agents", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: agent.id }),
+      });
+      const payload = await response.json() as { error?: { message?: string } };
+      if (!response.ok) throw new Error(payload.error?.message || "에이전트를 삭제하지 못했습니다.");
+      if (editingAgent?.id === agent.id) {
+        setEditingAgent(null);
+        setName("");
+        setInstructions("");
+      }
+      setCreateNotice(`/${agent.name} 에이전트를 삭제했습니다.`);
+      reloadAgents();
+    } catch (cause) {
+      setCreateError(cause instanceof Error ? cause.message : "에이전트를 삭제하지 못했습니다.");
+    } finally {
+      setDeletingId("");
+    }
+  };
 
   return (
     <div className="view-stack agent-ops agent-ops-page">
@@ -70,6 +152,61 @@ export function AgentTasksView() {
         </div>
         <span className="agent-ops-count">{items.length}건</span>
       </div>
+      <section className="panel agent-create-panel" aria-labelledby="agent-create-title">
+        <div className="agent-create-heading">
+          <div>
+            <span className="section-kicker">NEW AGENT</span>
+            <h2 id="agent-create-title">{editingAgent ? "에이전트 수정" : "에이전트 생성"}</h2>
+            <p>{editingAgent ? "관리자 권한으로 에이전트 이름과 역할 지침을 변경합니다." : "AI 채팅에서 / 명령으로 호출할 역할과 응답 원칙을 등록하세요."}</p>
+          </div>
+        </div>
+        <form className="agent-create-form" onSubmit={saveAgent}>
+          <label className="agent-create-name">
+            <span>에이전트 이름</span>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="예: 안전 점검 Agent"
+              maxLength={80}
+              minLength={2}
+              required
+            />
+          </label>
+          <label className="agent-create-objective">
+            <span>역할 지침</span>
+            <textarea
+              value={instructions}
+              onChange={(event) => setInstructions(event.target.value)}
+              placeholder="예: 안전 규정과 현장 점검 기준을 근거로 핵심 위험, 확인 항목, 조치 우선순위를 정리해줘."
+              maxLength={2000}
+              minLength={2}
+              rows={3}
+              required
+            />
+            <small>{instructions.length}/2,000자</small>
+          </label>
+          <div className="agent-create-actions">
+            {editingAgent ? <button className="quiet-button" type="button" disabled={creating} onClick={() => { setEditingAgent(null); setName(""); setInstructions(""); }}>취소</button> : null}
+            <button className="primary-button agent-create-submit" type="submit" disabled={creating || name.trim().length < 2 || instructions.trim().length < 2}>
+              {creating ? "저장 중…" : editingAgent ? "변경 저장" : "에이전트 생성"}
+            </button>
+          </div>
+        </form>
+        <div aria-live="polite">
+          {createError ? <p className="agent-ops-error" role="alert">{createError}</p> : null}
+          {createNotice ? <p className="agent-create-success">{createNotice}</p> : null}
+        </div>
+        <div className="agent-command-list" aria-label="등록된 채팅 에이전트">
+          <strong>채팅 호출 명령</strong>
+          {agentsLoading ? <span>불러오는 중…</span>
+            : agentsError ? <span className="agent-create-inline-error">{agentsError}</span>
+            : agents.length ? <ul>{agents.map((agent) => <li key={agent.id}>
+              <div className="agent-command-copy"><code>/{agent.name}</code><span>{agent.instructions}</span>{canManageAgents && agent.ownerEmail ? <small>생성자 · {agent.ownerEmail}</small> : null}</div>
+              {canManageAgents ? <div className="agent-command-actions"><button type="button" onClick={() => editAgent(agent)}>수정</button><button type="button" className="danger-button" disabled={deletingId === agent.id} onClick={() => void deleteAgent(agent)}>{deletingId === agent.id ? "삭제 중…" : "삭제"}</button></div> : null}
+            </li>)}</ul>
+            : <span>등록된 에이전트가 없습니다.</span>}
+        </div>
+      </section>
       <section className="panel agent-ops-panel" aria-label="Agent 실행 목록">
 
         {loading ? <p className="agent-ops-note">불러오는 중…</p>

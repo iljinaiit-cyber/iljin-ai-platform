@@ -93,6 +93,7 @@ export type RuntimeEnv = {
   DEFAULT_DEPARTMENT?: string;
   DEFAULT_USER_ROLE?: string;
   APP_ENV?: string;
+  EDGE_RATE_LIMIT_REQUIRED?: string;
   ALLOW_DEV_IDENTITY?: string;
   TRUSTED_IDENTITY_MODE?: string;
   TRUSTED_IDENTITY_HOSTS?: string;
@@ -152,6 +153,7 @@ export function getRuntimeEnv(): RuntimeEnv {
       DEFAULT_DEPARTMENT: process.env.DEFAULT_DEPARTMENT,
       DEFAULT_USER_ROLE: process.env.DEFAULT_USER_ROLE,
       APP_ENV: process.env.APP_ENV,
+      EDGE_RATE_LIMIT_REQUIRED: process.env.EDGE_RATE_LIMIT_REQUIRED,
       ALLOW_DEV_IDENTITY: process.env.ALLOW_DEV_IDENTITY,
       TRUSTED_IDENTITY_MODE: process.env.TRUSTED_IDENTITY_MODE,
       TRUSTED_IDENTITY_HOSTS: process.env.TRUSTED_IDENTITY_HOSTS,

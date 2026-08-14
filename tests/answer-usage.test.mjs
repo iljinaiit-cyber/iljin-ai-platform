@@ -12,7 +12,8 @@ test("답변 상태 레이블 옆에 총 토큰과 생성 경과 시간을 표�
   assert.match(portal, /generationElapsedMs/);
   assert.match(portal, /토큰 계산 중/);
   assert.match(portal, /message\.latencyMs \?\? 0/);
-  assert.match(portal, /message\.streamingResponse \? generationElapsedMs/);
+  assert.match(portal, /message\.streamingResponse && message\.streamingStage/);
+  assert.match(portal, /elapsedMs=\{generationElapsedMs\}/);
   assert.match(portal, /typewriterQueue\.slice\(0, 2\)/);
   assert.match(portal, /typewriterQueue\.slice\(2\)/);
   assert.match(portal, /function GenerationProgress/);
@@ -20,4 +21,10 @@ test("답변 상태 레이블 옆에 총 토큰과 생성 경과 시간을 표�
   assert.match(portal, /검색 결과 교차 검토/);
   assert.match(portal, /GenerationProgress scope=\{searchScope\}/);
   assert.match(portal, /liveCitation = gatewayCitationToResult/);
+  assert.doesNotMatch(portal, /className="evidence-strip"/);
+  assert.match(portal, /if \(\/\^\\\[W\\d\+\\\]\$\/\.test\(part\)\) return null;/);
+  assert.match(portal, /function shortenCitationFilename/);
+  assert.match(portal, /c\.fileName \|\| c\.title/);
+  assert.match(portal, /const label = ref\?\.title \? shortenCitationFilename\(ref\.title\) : part/);
+  assert.match(portal, /const linkMatch = part\.match/);
 });

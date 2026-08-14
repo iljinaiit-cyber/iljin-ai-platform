@@ -28,6 +28,37 @@
   font-weight: 750;
 }
 
+.agent-create-panel {
+  display: grid;
+  gap: 14px;
+  border-color: color-mix(in srgb, var(--accent, #2563eb) 24%, var(--line, #e3eaf5));
+  background: color-mix(in srgb, var(--accent-soft, #eef4ff) 34%, var(--surface, #fff));
+}
+
+.agent-create-heading h2 { margin: 5px 0 3px; font-size: 19px; line-height: 1.25; }
+.agent-create-heading p { margin: 0; color: var(--muted, #5b6b85); font-size: 12.5px; line-height: 1.5; }
+.agent-create-form { display: grid; grid-template-columns: minmax(180px, 0.42fr) minmax(0, 1fr) auto; gap: 12px; align-items: start; }
+.agent-create-form label { display: grid; gap: 6px; min-width: 0; }
+.agent-create-form label > span { color: var(--ink, #1c2b43); font-size: 12px; font-weight: 700; }
+.agent-create-form :is(input, textarea) { width: 100%; }
+.agent-create-form textarea { min-height: 90px; resize: vertical; }
+.agent-create-form small { color: var(--muted, #5b6b85); font-size: 11px; line-height: 1.4; }
+.agent-create-objective small { text-align: right; }
+.agent-create-inline-error { color: var(--danger, #c53b44) !important; }
+.agent-create-actions { display: flex; align-self: end; gap: 8px; }
+.agent-create-submit { min-height: 40px; white-space: nowrap; }
+.agent-create-success { margin: 0; color: var(--success, #14805e); font-size: 13px; font-weight: 700; }
+.agent-command-list { display: grid; gap: 7px; border-top: 1px solid var(--line, #e3eaf5); padding-top: 12px; color: var(--muted, #5b6b85); font-size: 12px; }
+.agent-command-list > strong { color: var(--ink, #1c2b43); font-size: 12px; }
+.agent-command-list ul { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.agent-command-list li { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.agent-command-copy { display: grid; flex: 1; gap: 3px; min-width: 0; }
+.agent-command-list code { flex: 0 0 auto; color: var(--accent-ink, #1d4ed8); font-weight: 750; }
+.agent-command-list li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-command-copy small { color: var(--muted, #5b6b85); font-size: 10px; }
+.agent-command-actions { display: flex; flex: 0 0 auto; gap: 6px; }
+.agent-command-actions button { min-height: 30px; padding: 4px 8px; font-size: 11px; }
+
 .agent-ops-panel {
   min-width: 0;
 }
@@ -53,3 +84,11 @@
 .risk-R2 { background: var(--accent-soft); color: var(--accent-ink); }
 .risk-R3 { background: var(--warning-soft); color: var(--warning); }
 .risk-R4 { background: var(--danger-soft); color: var(--danger); }
+
+@media (max-width: 760px) {
+  .agent-create-form { grid-template-columns: 1fr; align-items: stretch; }
+  .agent-create-actions, .agent-create-submit { width: 100%; }
+  .agent-create-actions { align-self: stretch; }
+  .agent-create-actions .quiet-button { flex: 0 0 auto; }
+  .agent-create-submit { flex: 1; }
+}

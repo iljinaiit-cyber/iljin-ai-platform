@@ -1,6 +1,14 @@
 export type AnswerLength = "brief" | "standard" | "detailed";
 export type AnswerFormat = "paragraph" | "bullets" | "table";
 
+// Keep negative commentary focused unless the user explicitly asks for it.
+// A negative retrieved source alone must not make the answer disproportionate.
+const NEGATIVE_PERSPECTIVE_QUERY_PATTERN = /(?:부정(?:적|적인)?\s*(?:의견|평가|반응|자료)|단점|문제점|비판|반대\s*의견|리스크|위험|우려|부작용|실패\s*사례|불만|약점|한계|주의사항|negative|criticism|criticisms|drawbacks?|risks?|concerns?|limitations?|failure\s*cases?)/iu;
+
+export function explicitlyRequestsNegativePerspectives(query: string) {
+  return NEGATIVE_PERSPECTIVE_QUERY_PATTERN.test(query.trim());
+}
+
 const RESEARCH_QUERY_PATTERN = /(리서치|조사|현황|시장|산업|트렌드|동향|벤치마킹|사업계획서|경쟁사|업계|기업들|research|landscape|market|industry|benchmark)/i;
 const AX_RESEARCH_QUERY_PATTERN = /(\bAX\b|AI\s*transformation|자율제조|스마트팩토리|AI\s*팩토리|제조업|중공업|생산·?품질|예지보전|피지컬\s*AI)/i;
 
@@ -57,5 +65,8 @@ export function answerPreferenceInstruction(length: AnswerLength | undefined, fo
       ? "\nAX 심층 벤치마킹 브리프 규칙: 제조·중공업 기업의 AX 추진 현황을 사업계획서용 조사 보고서로 작성하세요. 답변 첫머리에 '도입률보다 스케일링·P&L·거버넌스가 경쟁 격차'처럼 조사에서 도출한 한 줄의 논지를 제시하고, 기준일·조사 범위·자료의 한계를 함께 밝히세요. 아래 7개 구조를 지키세요: ## TL;DR(핵심 결론 3~5개) → ## 1. AX 개념과 DX 대비 성숙도 → ## 2. 글로벌 도입·성과 지표(지표/수치/표본/조사시점/정의 표) → ## 3. 한국 기업·정부 정책 현황 → ## 4. 제조·중공업 유즈케이스와 KPI → ## 5. 주요 기업별 조직·플랫폼·투자·공개 성과 벤치마크 → ## 6. 성공·실패 요인과 추진 로드맵 → ## 7. 사업계획서용 시사점·권고안 → ## Caveats 및 출처. 기업 사례는 회사명·대상 업무·실행 방식·조직/플랫폼·투자 또는 규모·공개 성과·시점을 한 묶음으로 쓰고, 공개 성과가 없으면 '정량 성과 미공개'라고 표시하세요. 글로벌/한국/대기업/중견·중소를 같은 비교축으로 분리하고, 예지보전·비전검사·수요예측·문서자동화·에이전트·자율제조를 데이터 준비도·ROI 발생시점·리스크 관점에서 비교하세요. 정부 정책의 예산·목표치는 실측 성과와 분리하고, 조사기관 수치가 충돌하면 표본·정의·시점 차이를 설명하세요. 모든 핵심 수치에는 [Wn] 인용을 붙이고, 사실·출처 기반 해석·당사 권고를 각각 [사실]·[해석]·[권고]로 구분하세요. 근거가 없는 수치·기업 사례·인용은 만들지 말고 [확인 필요]로 남기세요."
       : "\n리서치 브리프 규칙: 기업·시장·산업 현황을 조사하는 질문입니다. 사업계획서에 인용할 수 있도록 먼저 한 줄의 핵심 결론과 조사 기준일·범위를 제시하세요. 그 다음 글로벌/국내 또는 규모·산업별 현황을 정량 근거와 함께 비교하고, 개별 기업 사례는 회사명·실행 내용·공개된 투자/조직/성과 지표·시점을 한 세트로 정리하세요. 여러 기업에서 반복되는 실행 패턴과 벤치마킹 포인트를 도출하고, 질문에 포함된 산업의 정책·시장·현장 적용 시사점을 별도로 설명하세요. ROI나 도입률 수치는 조사기관·표본·정의가 다르면 충돌을 숨기지 말고 나란히 제시하며, 사실·출처 기반 해석·권고를 구분하세요. 마지막에는 사업계획서에 바로 옮길 수 있는 논지, 실행 우선순위, 확인이 필요한 공백을 정리하세요. 근거가 없는 수치나 기업 사례는 만들지 말고 [확인 필요]로 표시하세요."
     : "";
-  return `답변 분량 규칙: ${answerLengthInstruction(length)}\n답변 형식 규칙: ${answerFormatInstruction(format)}${researchInstruction}`;
+  const negativePerspectiveInstruction = explicitlyRequestsNegativePerspectives(query)
+    ? "\n부정적 관점 요청: 사용자가 부정적인 의견·단점·리스크·비판을 직접 요청했으므로, 제공된 근거 범위에서 관련 내용을 균형 있게 포함하세요. 사실과 해석을 구분하고 근거 없는 비난은 추가하지 마세요."
+    : "\n부정적 관점 기본 원칙: 부정적인 의견이나 평가가 많은 자료는 답변의 핵심과 직접 관련된 범위에서만 최소한으로 반영하세요. 사용자가 부정적인 의견·단점·리스크·비판 등을 직접 요청하지 않았다면 부정적 자료를 확대하거나 별도 목록으로 강조하지 마세요. 다만 질문에 답하는 데 필수적인 사실, 안전상 중요한 경고, 법적·규정상 제한은 누락하지 마세요. 긍정적인 내용으로 임의로 바꾸거나 사실을 왜곡하지 마세요."
+  return `답변 분량 규칙: ${answerLengthInstruction(length)}\n답변 형식 규칙: ${answerFormatInstruction(format)}${researchInstruction}${negativePerspectiveInstruction}`;
 }

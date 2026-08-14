@@ -22,7 +22,11 @@ import { RequirementsChecklist } from "./components/RequirementsChecklist";
 import { IngestionSources } from "./components/IngestionSources";
 import { InternetSearchOperations } from "./components/InternetSearchOperations";
 import { PlatformOperationsConsole } from "./components/PlatformOperationsConsole";
+import { SystemArchitectureMonitor } from "./components/SystemArchitectureMonitor";
 import { FeedbackBoard } from "./components/FeedbackBoard";
+import "./page-display.css";
+import "./industrial-layout.css";
+import { COMPANY_NAME } from "../lib/company-profile";
 
 type View = "home" | "chat" | "search" | "tasks" | "approvals" | "activity" | "schedule" | "feedback" | "admin";
 type Scope = "personal" | "department";
@@ -31,7 +35,6 @@ type SearchScope = "internal" | "internet";
 type ChatAnswerLength = "brief" | "standard" | "detailed";
 type ChatReasoningTier = "swift" | "expert" | "deep";
 
-const ORGANIZATION_NAME = "일진글로벌";
 const DEFAULT_DEPARTMENT = "IT개발2팀";
 
 const GENERATION_STAGES: Record<SearchScope, string[]> = {
@@ -81,6 +84,17 @@ function formatSearchDate(value?: string) {
   return Number.isNaN(timestamp) ? value.slice(0, 40) : new Date(timestamp).toLocaleDateString("ko-KR");
 }
 
+async function readApiPayload<T>(response: Response): Promise<T & { error?: { message?: string } }> {
+  const raw = await response.text();
+  try {
+    return JSON.parse(raw) as T & { error?: { message?: string } };
+  } catch {
+    throw new Error(response.ok
+      ? "서버 응답을 읽을 수 없습니다. 잠시 후 다시 시도해 주세요."
+      : `서버 오류가 발생했습니다. (${response.status}) 잠시 후 다시 시도해 주세요.`);
+  }
+}
+
 function internetProviderLabel(provider?: string) {
   if (provider === "tavily") return "Tavily 본문 검색";
   if (provider === "exa") return "Exa 의미 검색";
@@ -102,9 +116,14 @@ function internetProvidersSummary(providers?: string[]) {
 
 type CitationLookup = Map<string, { url?: string; title: string }>;
 
+function shortenCitationFilename(value: string) {
+  const filename = value.trim();
+  return filename.length > 48 ? `${filename.slice(0, 48)}…` : filename;
+}
+
 function buildCitationLookup(citations?: RagResultItem[]): CitationLookup {
   if (!citations?.length) return new Map();
-  return new Map(citations.map((c) => [`[${c.citationId || c.id}]`, { url: citationHref(c.sourceUrl), title: c.title }]));
+  return new Map(citations.map((c) => [`[${c.citationId || c.id}]`, { url: citationHref(c.sourceUrl), title: c.fileName || c.title }]));
 }
 
 function inlineAnswerContent(text: string, keyPrefix: string, citations?: CitationLookup): ReactNode[] {
@@ -120,15 +139,17 @@ function inlineAnswerContent(text: string, keyPrefix: string, citations?: Citati
         return <code key={key}>{part.slice(1, -1)}</code>;
       }
       if (/^\[(?:W|S)\d+\]$/.test(part)) {
+        if (/^\[W\d+\]$/.test(part)) return null;
         const ref = citations?.get(part);
+        const label = ref?.title ? shortenCitationFilename(ref.title) : part;
         if (ref?.url) {
           return (
             <a key={key} href={ref.url} target="_blank" rel="noreferrer" className="answer-citation" title={ref.title}>
-              {part}
+              {label}
             </a>
           );
         }
-        return <span className="answer-citation" key={key}>{part}</span>;
+        return <span className="answer-citation" key={key}>{label}</span>;
       }
       if (part === "---") {
         return <hr key={key} className="answer-divider" />;
@@ -361,6 +382,7 @@ function isThemeColor(value: string | null): value is ThemeColor {
 }
 
 type FollowUpQuestion = { question: string; intent: string };
+type ChatAgent = { id: string; name: string; instructions: string };
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -493,8 +515,8 @@ const defaultChatSuggestions: ActivityDashboard["suggestedQuestions"] = [
   {
     id: "default-manufacturing-ai",
     category: "recent",
-    label: "제조업 AI 활용 동향",
-    question: "최근 제조업 AI 활용 동향과 실무 적용 사례를 정리해줘.",
+    label: "AI 활용 동향",
+    question: `${COMPANY_NAME} 베어링 제조 업무에 적용할 수 있는 최근 AI 활용 동향과 실무 사례를 정리해줘.`,
     meta: "최근 업무 이슈",
   },
 ];
@@ -946,8 +968,8 @@ function AccessGate({ access, onAuthenticated, onSignedOut, onRetry }: {
         <span className={`access-state access-state-${access.state}`}>
           {access.state === "checking" ? "로그인 확인 중" : access.state === "signed_out" ? "로그인 필요" : unrequested ? "가입 신청 필요" : pending ? "가입 승인 대기" : rejected ? "가입 신청 반려" : "연결 오류"}
         </span>
-        <h1>{unrequested ? "이메일 가입 신청서를 작성해 주세요" : pending ? "가입 신청이 접수되었습니다" : rejected ? "가입 신청을 다시 제출할 수 있습니다" : access.state === "checking" ? "로그인 상태를 확인하고 있습니다" : access.state === "signed_out" ? "ILJIN AI Works에 로그인해 주세요" : "사용자 상태를 확인하지 못했습니다"}</h1>
-        <p>{unrequested ? "희망 부서를 제출하면 관리자가 검토합니다." : pending ? "관리자가 조직과 역할을 확인한 뒤 가입을 승인하면 모든 업무 기능을 사용할 수 있습니다." : rejected ? user?.rejectionReason || "신청 정보를 보완해 다시 제출해 주세요." : access.state === "checking" ? "잠시만 기다려 주세요." : access.state === "signed_out" ? `${ORGANIZATION_NAME} 임직원은 @iljin.com 회사 이메일로 가입을 신청할 수 있습니다.` : "message" in access ? access.message : "사용자 상태를 확인하지 못했습니다."}</p>
+        <h1 className={access.state === "signed_out" ? "access-gate-login-title" : undefined}>{unrequested ? "이메일 가입 신청서를 작성해 주세요" : pending ? "가입 신청이 접수되었습니다" : rejected ? "가입 신청을 다시 제출할 수 있습니다" : access.state === "checking" ? "로그인 상태를 확인하고 있습니다" : access.state === "signed_out" ? "ILJIN AI Works에 로그인해 주세요" : "사용자 상태를 확인하지 못했습니다"}</h1>
+        <p>{unrequested ? "희망 부서를 제출하면 관리자가 검토합니다." : pending ? "관리자가 조직과 역할을 확인한 뒤 가입을 승인하면 모든 업무 기능을 사용할 수 있습니다." : rejected ? user?.rejectionReason || "신청 정보를 보완해 다시 제출해 주세요." : access.state === "checking" ? "잠시만 기다려 주세요." : access.state === "signed_out" ? "@iljin.com 회사 이메일로 가입을 신청할 수 있습니다." : "message" in access ? access.message : "사용자 상태를 확인하지 못했습니다."}</p>
         <ol className="signup-steps" aria-label="가입 진행 단계">
           <li className={access.state === "signed_out" || access.state === "checking" ? "active" : "complete"}><span>1</span><div><strong>계정 등록</strong><small>이메일·비밀번호</small></div></li>
           <li className={unrequested ? "active" : pending || rejected ? "complete" : ""}><span>2</span><div><strong>가입 신청</strong><small>이름·부서</small></div></li>
@@ -1246,11 +1268,13 @@ export function AgentPortal() {
     return () => window.clearInterval(timer);
   }, [streaming]);
 
-  const submitChat = async (event: FormEvent) => {
+  const submitChat = async (event: FormEvent, agent?: ChatAgent) => {
     event.preventDefault();
-    const text = query.trim();
+    const rawText = query.trim();
+    const command = agent ? `/${agent.name}` : "";
+    const text = agent && rawText.startsWith(command) ? rawText.slice(command.length).trim() : rawText;
     if (!text || streaming) return;
-    await runChat(text);
+    await runChat(text, agent ? `${command} ${text}` : text, agent?.id);
   };
 
   const submitChatWithText = async (text: string) => {
@@ -1273,7 +1297,7 @@ export function AgentPortal() {
     await runChat(requestBody, displayBody);
   };
 
-  const runChat = async (text: string, displayText = text) => {
+  const runChat = async (text: string, displayText = text, agentId?: string) => {
     const effectiveSensitivity: ChatSensitivity = chatSearchScope === "internet"
       ? "public"
       : chatSensitivity === "public"
@@ -1335,6 +1359,7 @@ export function AgentPortal() {
           reasoning_tier: chatAnswerLength === "brief" ? "swift" : chatAnswerLength === "detailed" ? "deep" : "expert",
           stream: true,
           conversation_id: activeConversationId,
+          agent_id: agentId,
         }),
         signal: controller.signal,
       });
@@ -1378,9 +1403,16 @@ export function AgentPortal() {
         let resolveTypewriter: (() => void) | undefined;
         let typewriterDone = Promise.resolve();
         const updateDisplayedContent = () => {
+          const deliveredCharacters = displayedContent.trim().length;
           setChatMessages((messages) => messages.map((message, index) =>
             index === messages.length - 1 && message.streamingResponse
-              ? { ...message, body: displayedContent }
+              ? {
+                  ...message,
+                  body: displayedContent,
+                  streamingDetail: deliveredCharacters
+                    ? `답변 본문 ${deliveredCharacters.toLocaleString()}자를 전송했습니다.`
+                    : undefined,
+                }
               : message
           ));
         };
@@ -1422,7 +1454,10 @@ export function AgentPortal() {
                 ? {
                     ...message,
                     streamingStage: eventPayload.stage as string,
-                    streamingDetail: sourceCount === undefined ? message.streamingDetail : `${sourceCount}개 검색 결과를 확인하고 있습니다.`,
+                    // A stage transition must replace the previous status. Keeping an old
+                    // search count here made it look as if search was still running while
+                    // the answer itself was being generated.
+                    streamingDetail: sourceCount === undefined ? undefined : `${sourceCount}개 검색 결과를 교차 검토하고 있습니다.`,
                     tokenCount: typeof eventPayload.tokens === "number" ? eventPayload.tokens as number : message.tokenCount,
                   }
                 : message
@@ -1446,11 +1481,15 @@ export function AgentPortal() {
           } else if (eventName === "citation") {
             streamedCitations.push(eventPayload as NonNullable<GatewayResponse["citations"]>[number]);
             const liveCitation = gatewayCitationToResult(eventPayload as NonNullable<GatewayResponse["citations"]>[number]);
-            setChatMessages((messages) => messages.map((message, index) =>
-              index === messages.length - 1 && message.streamingResponse
-                ? { ...message, citations: [...(message.citations || []).filter((citation) => citation.id !== liveCitation.id), liveCitation] }
-                : message
-            ));
+            setChatMessages((messages) => messages.map((message, index) => {
+              if (index !== messages.length - 1 || !message.streamingResponse) return message;
+                const citations = [...(message.citations || []).filter((citation) => citation.id !== liveCitation.id), liveCitation];
+              return {
+                ...message,
+                citations,
+                streamingDetail: `${citations.length}개 근거를 답변에 연결했습니다.`,
+              };
+            }));
           } else if (eventName === "error" && typeof eventPayload.message === "string") {
             throw new Error(eventPayload.message as string);
           } else if (eventName === "done") {
@@ -1813,7 +1852,7 @@ export function AgentPortal() {
   const visibleNavigation = [...navItems, { id: "feedback" as View, label: "사용자 의견", mark: "FB", req: "U-09", permission: "workspace.home", icon: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 4v-4h0A2.5 2.5 0 0 1 4 13.5v-8z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M8 8h8M8 11h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' }].filter((item) => item.id !== "admin").filter((item) => canUse(item.permission, item.feature));
 
   return (
-    <div className={`app-shell theme-${themeColor} mode-${resolvedThemeMode}`}>
+    <div className={`app-shell operation-console theme-${themeColor} mode-${resolvedThemeMode}`}>
       <a className="skip-link" href="#main-content">본문으로 바로가기</a>
       <aside ref={navigationRef} id="mobile-navigation" className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`} aria-label="주요 메뉴">
         <div className="brand-lockup">
@@ -1895,7 +1934,7 @@ export function AgentPortal() {
             <ChatView messages={chatMessages} query={query} setQuery={setQuery} sensitivity={chatSensitivity} setSensitivity={changeChatSensitivity} searchScope={chatSearchScope} setSearchScope={changeChatSearchScope} answerLength={chatAnswerLength} setAnswerLength={setChatAnswerLength} providerAvailability={providerAvailability} streaming={streaming} generationStage={generationStage} generationElapsedMs={generationElapsedMs} currentUser={currentUser} conversationId={conversationId} suggestedQuestions={activityDashboard.suggestedQuestions} canUpload={canUse("documents.manage", "documents.upload")} onEnsureConversation={ensureConversationForAttachment} onNewConversation={startNewConversation} onOpenConversation={openConversation} onFeedback={submitFeedback} onSubmit={submitChat} onStop={stopChat} onKeyDown={handleComposerKey} onOpenAgent={() => navigate("tasks")} onFollowUpClick={submitChatWithText} onClarificationSubmit={submitClarification} />
           )}
           {view === "search" && <SearchView type={searchType} setType={setSearchType} canUpload={canUse("documents.manage", "documents.upload")} onChat={(prompt, nextScope) => { changeChatSearchScope(nextScope); setQuery(prompt); navigate("chat"); }} />}
-          {view === "tasks" && <AgentTasksView />}
+          {view === "tasks" && <AgentTasksView currentUser={{ role: currentUser.role }} />}
           {view === "approvals" && <ToolApprovalsView currentUser={{ email: currentUser.email, role: currentUser.role }} />}
           {view === "activity" && <ActivityView onNavigate={navigate} onOpenConversation={openConversation} />}
           {view === "schedule" && <ScheduleView />}
@@ -1976,7 +2015,7 @@ function HomeView({ scope, setScope, cases, user, activity, onNavigate, onOpenCo
       <section className="hero-panel">
         <div className="hero-copy">
           <h1>좋은 하루예요, {user.displayName}님. <em>업무를 어디서부터 시작할까요?</em></h1>
-          <p>{ORGANIZATION_NAME} {user.department} 업무 Context를 반영해 안전하게 답변합니다.</p>
+          <p>{user.department} 업무 Context를 반영해 안전하게 답변합니다.</p>
         </div>
         <div className="hero-stats" aria-label="오늘의 업무 현황">
           <div><strong>{activity.summary.todayActivities}</strong><span>오늘 활동</span></div>
@@ -1989,13 +2028,13 @@ function HomeView({ scope, setScope, cases, user, activity, onNavigate, onOpenCo
           <button className="button button-primary" type="submit">질문하기</button>
         </form>
         <div className="suggestion-row" aria-label="추천 질문">
-          {["오늘 업무 브리핑", "베어링 사업 KPI 요약", "출장 규정 확인"].map((item) => <button key={item} type="button" onClick={() => onPrompt(item)}>{item}</button>)}
+          {["오늘 업무 브리핑", "사업 KPI 요약", "출장 규정 확인"].map((item) => <button key={item} type="button" onClick={() => onPrompt(item)}>{item}</button>)}
         </div>
       </section>
 
       <section className="section-block" aria-labelledby="work-title">
         <div className="section-heading">
-          <div><span className="section-kicker">PERSONALIZED WORK</span><h2 id="work-title">일진글로벌 베어링 업무 예시</h2><p>AX전략팀이 베어링 제조·품질·공급망 업무에 활용할 수 있는 예시입니다.</p></div>
+          <div><span className="section-kicker">WORK EXAMPLES</span><h2 id="work-title">업무 예시</h2><p>제조·품질·공급망 업무에 활용할 수 있습니다.</p></div>
           <div className="segmented" role="group" aria-label="업무 범위 선택">
             <button type="button" className={scope === "personal" ? "selected" : ""} aria-pressed={scope === "personal"} onClick={() => setScope("personal")}>개인별 8</button>
             <button type="button" className={scope === "department" ? "selected" : ""} aria-pressed={scope === "department"} onClick={() => setScope("department")}>부서별 13</button>
@@ -2107,7 +2146,7 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
   onNewConversation: () => void | Promise<void>;
   onOpenConversation: (id: string) => void;
   onFeedback: (messageId: string, rating: 1 | -1) => void;
-  onSubmit: (event: FormEvent) => void;
+  onSubmit: (event: FormEvent, agent?: ChatAgent) => void;
   onStop: () => void;
   onKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
   onOpenAgent: () => void;
@@ -2119,6 +2158,9 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
   const [conversationAttachments, setConversationAttachments] = useState<ConversationAttachmentItem[]>([]);
   const [copiedMessage, setCopiedMessage] = useState("");
   const [dragActive, setDragActive] = useState(false);
+  const [agents, setAgents] = useState<ChatAgent[]>([]);
+  const [agentMenuError, setAgentMenuError] = useState("");
+  const [selectedAgent, setSelectedAgent] = useState<ChatAgent>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
   // Bumped on every attach so a stale poll from a previous file can detect it
@@ -2127,7 +2169,6 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
 
   useEffect(() => () => { attachmentGenerationRef.current += 1; }, []);
   const activeStreamingMessage = [...messages].reverse().find((message) => message.streamingResponse);
-  const activeCitations = [...messages].reverse().find((message) => message.role === "assistant" && message.citations?.length)?.citations || [];
 
   const loadConversationAttachments = async (id?: string) => {
     if (!id) {
@@ -2169,6 +2210,28 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
       .catch(() => { if (active) setConversations([]); });
     return () => { active = false; };
   }, [conversationId, messages.length]);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/v1/agents", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json() as { agents?: ChatAgent[]; error?: { message?: string } };
+        if (!response.ok) throw new Error(payload.error?.message || "에이전트 목록을 불러오지 못했습니다.");
+        return payload.agents || [];
+      })
+      .then((items) => { if (active) { setAgents(items); setAgentMenuError(""); } })
+      .catch((error: unknown) => { if (active) setAgentMenuError(error instanceof Error ? error.message : "에이전트 목록을 불러오지 못했습니다."); });
+    return () => { active = false; };
+  }, []);
+
+  const trimmedQuery = query.trimStart();
+  const agentSearch = trimmedQuery.startsWith("/") ? trimmedQuery.slice(1).trim().toLocaleLowerCase("ko-KR") : "";
+  const showAgentMenu = trimmedQuery.startsWith("/") && !selectedAgent;
+  const matchedAgents = agents.filter((agent) => !agentSearch || agent.name.toLocaleLowerCase("ko-KR").includes(agentSearch));
+  const selectAgent = (agent: ChatAgent) => {
+    setSelectedAgent(agent);
+    setQuery(`/${agent.name} `);
+  };
 
   const insertAttachmentPrompt = (file: File, modality?: string) => {
     const attachmentKind = modality === "image" ? "첨부 이미지" : "첨부 문서";
@@ -2333,13 +2396,7 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
           ))}
           {streaming && !messages.some((message) => message.streamingResponse) && <article className="message assistant streaming"><span className="message-avatar" aria-hidden="true">AI</span><div><div className="message-label">ILJIN AI</div><GenerationProgress scope={searchScope} stage={generationStage} elapsedMs={generationElapsedMs} /></div></article>}
         </div>
-        {activeCitations.length > 0 && <div className="evidence-strip" aria-label="실제 답변 근거">
-          {activeCitations.slice(0, 6).map((citation) => <a key={citation.id} href={citationHref(citation.sourceUrl)} target="_blank" rel="noopener noreferrer" aria-label={`${citation.title} 출처 새 창에서 열기`}>{citation.sourceType === "image" && citation.originalUrl && <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={citation.originalUrl} alt="" />
-          </>}<span>{citation.sourceLabel}{citation.sourceType === "image" ? " · 이미지 근거" : ""}</span><strong>{citation.title}</strong></a>)}
-        </div>}
-        <form className={`chat-composer${dragActive ? " is-dragging" : ""}`} onSubmit={onSubmit} onDragEnter={handleDragEnter} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+        <form className={`chat-composer${dragActive ? " is-dragging" : ""}`} onSubmit={(event) => { onSubmit(event, selectedAgent); setSelectedAgent(undefined); }} onDragEnter={handleDragEnter} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
           <div className="composer-controls-row">
             <div className="search-scope-switch search-scope-switch--compact" role="group" aria-label="대화 검색 범위">
               <button type="button" className={searchScope === "internal" ? "selected" : ""} aria-pressed={searchScope === "internal"} disabled={streaming || !providerAvailability.internalSearch} onClick={() => setSearchScope("internal")}>내부</button>
@@ -2350,9 +2407,17 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
           </div>
           <div className="composer-input-row">
             <div className="composer-attach-slot">{canUpload && <><input ref={fileInputRef} className="sr-only" type="file" accept=".txt,.md,.csv,.json,.pdf,.jpg,.jpeg,.png,.webp,.svg,.gif,.bmp,text/plain,text/markdown,text/csv,application/json,application/pdf,image/*" onChange={(event) => void attachDocument(event.target.files?.[0])} /><button type="button" className="quiet-button composer-attach-btn" aria-label="멀티모달 첨부" disabled={!providerAvailability.rag} onClick={() => fileInputRef.current?.click()}>+</button></>}</div>
-            <textarea id="chat-question" rows={1} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={onKeyDown} placeholder="질문을 입력하거나 + 버튼으로 파일을 첨부하세요" />
+            <div className="composer-query-wrap">
+              {selectedAgent && <span className="chat-agent-chip"><strong>/{selectedAgent.name}</strong><button type="button" onClick={() => { setSelectedAgent(undefined); setQuery(query.replace(`/${selectedAgent.name}`, "").trimStart()); }} aria-label={`${selectedAgent.name} 선택 해제`}>×</button></span>}
+              <textarea id="chat-question" rows={1} value={query} onChange={(event) => { const value = event.target.value; setQuery(value); if (selectedAgent && !value.trimStart().startsWith(`/${selectedAgent.name}`)) setSelectedAgent(undefined); }} onKeyDown={onKeyDown} placeholder="질문을 입력하거나 /로 에이전트를 호출하세요" />
+            </div>
             <div className="composer-send-slot">{streaming ? <button className="button button-secondary" type="button" onClick={onStop}>답변 중단</button> : <button className="button button-primary composer-send-btn" type="submit" disabled={!query.trim()}>보내기</button>}</div>
           </div>
+          {showAgentMenu && <div className="chat-agent-menu" role="listbox" aria-label="에이전트 호출 목록">
+            {agentMenuError ? <p role="alert">{agentMenuError}</p>
+              : matchedAgents.length ? matchedAgents.map((agent) => <button key={agent.id} type="button" role="option" aria-selected={false} onClick={() => selectAgent(agent)}><strong>/{agent.name}</strong><span>{agent.instructions}</span></button>)
+              : <p>호출할 에이전트가 없습니다. 작업 메뉴에서 새 에이전트를 만들어 주세요.</p>}
+          </div>}
           {dragActive && <div className="composer-drop-hint" aria-hidden="true"><strong>+ 여기에 문서를 놓으세요</strong><span>문서 · PDF · 이미지 · 표 · 차트</span></div>}
           {conversationAttachments.length > 0 && (
             <div className="temporary-attachments" aria-label="대화 임시 첨부파일">
@@ -2375,7 +2440,7 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
         </form>
       </section>
       <aside className="context-rail" aria-label="대화 Context">
-        <div className="rail-section"><span className="section-kicker">ACTIVE AGENT</span><h2>Maintenance Agent</h2><p>설비 매뉴얼·장애 이력·안전 규정을 함께 검증합니다.</p></div>
+        <div className="rail-section"><span className="section-kicker">ACTIVE AGENT</span><h2>{selectedAgent ? selectedAgent.name : "선택된 에이전트 없음"}</h2><p>{selectedAgent ? selectedAgent.instructions : "채팅 입력창에서 /를 입력해 등록한 에이전트를 호출하세요."}</p></div>
         <div className="rail-section"><span className="section-kicker">CONTEXT</span><ul className="clean-list"><li>{currentUser.department} 권한</li><li>{currentUser.role} 역할 정책</li><li>Tenant·문서등급 ACL</li></ul></div>
         <div className="rail-section conversation-history"><span className="section-kicker">CONVERSATIONS</span><h2>최근 대화</h2>{conversations.length === 0 ? <p>저장된 대화가 없습니다.</p> : conversations.slice(0, 6).map((conversation) => <div className={conversationId === conversation.id ? "conversation-row active" : "conversation-row"} key={conversation.id}><button type="button" onClick={() => onOpenConversation(conversation.id)}><strong>{conversation.title}</strong><small>{new Date(conversation.updated_at).toLocaleString("ko-KR")}</small></button><button type="button" className="conversation-delete" aria-label={`${conversation.title} 삭제`} onClick={() => void deleteConversationItem(conversation.id)}>×</button></div>)}</div>
         <div className="rail-section"><span className="section-kicker">TOOL ACTION</span><p>R2 이상 Tool은 서버가 별도 승인 요청을 만들고 승인 전 실행을 차단합니다.</p><button className="button button-secondary full-button" type="button" onClick={onOpenAgent}>실제 Agent 실행 열기</button></div>
@@ -2446,11 +2511,17 @@ function SearchView({ type, setType, canUpload, onChat }: { type: string; setTyp
   const [overviewError, setOverviewError] = useState("");
   const [catalogRefreshKey, setCatalogRefreshKey] = useState(0);
 
+  const refreshOverview = () => {
+    setOverviewError("");
+    setOverviewLoading(true);
+    setCatalogRefreshKey((key) => key + 1);
+  };
+
   useEffect(() => {
     const controller = new AbortController();
     fetch("/api/v1/knowledge-base", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
-        const payload = await response.json() as KnowledgeOverview & { error?: { message?: string } };
+        const payload = await readApiPayload<KnowledgeOverview>(response);
         if (!response.ok) throw new Error(payload.error?.message || "지식 베이스를 불러오지 못했습니다.");
         return payload;
       })
@@ -2497,7 +2568,7 @@ function SearchView({ type, setType, canUpload, onChat }: { type: string; setTyp
           } : {}),
         }),
       });
-      const payload = (await response.json()) as {
+      const payload = await readApiPayload<{
         citations?: GatewayResponse["citations"];
         results?: Array<{
           id: string;
@@ -2515,8 +2586,7 @@ function SearchView({ type, setType, canUpload, onChat }: { type: string; setTyp
         latencyMs?: number;
         traceId?: string;
         retrieval?: { strategy?: string; fusionStrategy?: "rrf"; queryType?: string; queryModality?: "text" | "image" | "table" | "chart" | "multimodal"; queryVariants?: string[]; embeddingModel?: string; embeddingProvider?: "cloudflare"; embeddingFallbackUsed?: boolean; embeddingDimensions?: number; rerankModel?: string; rerankProvider?: "cloudflare"; rerankStatus?: "applied" | "not_configured" | "fallback"; candidateCount?: number; fusionCandidateCount?: number; rerankCandidateCount?: number; evidenceConfidence?: number; verifierStatus?: "passed" | "insufficient" };
-        error?: { message?: string };
-      };
+      }>(response);
       if (!response.ok) throw new Error(payload.error?.message || "검색 요청을 처리하지 못했습니다.");
       setResults(requestedScope === "internal"
         ? (payload.citations || []).map((citation) => ({
@@ -2589,7 +2659,7 @@ function SearchView({ type, setType, canUpload, onChat }: { type: string; setTyp
 
   const quickTopics = scope === "internal"
     ? ["설비 예방보전 기준", "안전 작업 절차", "품질 이상 대응", "AI 플랫폼 운영 기준"]
-    : ["제조 AI 최신 동향", "산업안전 정책 변경", "에너지 시장 동향"];
+    : [`${COMPANY_NAME} 베어링 제조 AI 최신 동향`, "산업안전 정책 변경", "에너지 시장 동향"];
 
   return (
     <div className="view-stack knowledge-base">
@@ -2622,8 +2692,11 @@ function SearchView({ type, setType, canUpload, onChat }: { type: string; setTyp
         </form>
         <div className="knowledge-quick-topics" aria-label="추천 검색어"><span>추천</span>{quickTopics.map((topic) => <button type="button" key={topic} onClick={() => void executeSearch(topic)}>{topic}</button>)}</div>
       </section>
-      {overviewError && scope === "internal" && <p className="form-error" role="alert">{overviewError}</p>}
-      {scope === "internal" && <div className="knowledge-catalog-toolbar"><span>Knowledge Data Base 카탈로그</span><button className="knowledge-refresh-button" type="button" onClick={() => { setOverviewLoading(true); setCatalogRefreshKey((key) => key + 1); }} disabled={overviewLoading}>새로고침</button></div>}
+      {overviewError && scope === "internal" && <div className="knowledge-load-error" role="alert">
+        <span>{overviewError}</span>
+        <button type="button" onClick={refreshOverview}>다시 시도</button>
+      </div>}
+      {scope === "internal" && <div className="knowledge-catalog-toolbar"><span>Knowledge Data Base 카탈로그</span><button className="knowledge-refresh-button" type="button" onClick={refreshOverview} disabled={overviewLoading}>새로고침</button></div>}
       {scope === "internal" && <section className="knowledge-catalog" aria-labelledby="recent-knowledge-title">
         <div className="knowledge-section-heading"><div><span className="section-kicker">LATEST KNOWLEDGE</span><h2 id="recent-knowledge-title">최근 업데이트 지식</h2><p>접근 가능한 최신 버전의 문서와 원문 상태를 보여줍니다.</p></div><div className="knowledge-category-summary">{(overview?.categories || []).slice(0, 4).map((category) => <span key={category.sourceType}>{category.label} {category.count}</span>)}</div></div>
         {overviewLoading ? <div className="knowledge-catalog-loading" role="status">지식 카탈로그를 불러오고 있습니다.</div> : overview?.recent.length ? <div className="knowledge-card-grid">{overview.recent.slice(0, 6).map((asset) => <article className="knowledge-card" key={asset.id}>
@@ -2712,7 +2785,7 @@ function AdminIssueSummary({ items, onSelect }: {
   );
 }
 
-type AdminSection = "overview" | "access" | "management" | "knowledge";
+type AdminSection = "overview" | "system" | "access" | "management" | "knowledge";
 
 type AdminOverviewData = {
   generatedAt: string;
@@ -2807,6 +2880,7 @@ function AdminOverviewDashboard({
 function AdminSectionNav({ activeSection, onSelect }: { activeSection: AdminSection; onSelect: (section: AdminSection) => void }) {
   const sections = [
     ["overview", "운영 개요"],
+    ["system", "시스템 구조·모니터링"],
     ["access", "가입 승인"],
     ["management", "조직·권한 관리"],
     ["knowledge", "지식베이스"],
@@ -3055,6 +3129,7 @@ function AdminView({ currentEmail }: { currentEmail: string }) {
       <AdminIssueSummary items={issueItems} onSelect={selectSection} />
       <PlatformOperationsConsole />
       </>}
+      {activeSection === "system" && <SystemArchitectureMonitor />}
       {activeSection === "access" && <section className="panel access-review-panel" id="admin-access">
         <div className="panel-title"><div><span className="section-kicker">REGISTRATION APPROVAL</span><h2>가입 승인</h2></div><span className={`status-pill ${pendingAccess ? "status-승인-대기" : "status-승인-완료"}`}>{pendingAccess ? `${pendingAccess}건 대기` : "대기 없음"}</span></div>
         <p className="panel-description">가입 신청자의 법인·부서·사유·역할을 조직 마스터 기준으로 검토하고 승인합니다.</p>

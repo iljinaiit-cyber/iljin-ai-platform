@@ -2,6 +2,7 @@ import { getD1 } from "../db";
 import type { Principal } from "./identity";
 import { ensureRagSchema, RagError } from "./rag";
 import { getRuntimeEnv, type RuntimeEnv } from "./runtime-env";
+import { COMPANY_INDUSTRY, COMPANY_NAME } from "./company-profile";
 
 export type InternetSearchProvider = "tavily" | "exa" | "google" | "naver" | "youtube" | "brave" | "webpilot" | "duckduckgo" | "jina" | "wikimedia";
 export type InternetSourceCategory = "government" | "academic" | "reference" | "web";
@@ -260,8 +261,22 @@ function contextualSearchQuery(query: string, context: string[] = []) {
   return optimizeSearchQuery(`${anchor} ${query}`).replace(/\s+/g, " ").trim().slice(0, 500);
 }
 
+const AMBIGUOUS_COMPANY_QUERY_PATTERN = /(일진|iljin)/i;
+const COMPANY_CONTEXT_QUERY_PATTERN = /(기업|회사|사업|제품|산업|제조|베어링|매출|실적|공장|공급|품질|기술|동향|연혁|계열|법인|시장|company|business|product|industry|manufactur|bearing)/i;
+const EXPLICIT_OTHER_ILJIN_ENTITY_PATTERN = /(일진그룹|일진홀딩스|일진전기|일진머티리얼즈|일진하이솔루스|iljin\s+(group|electric|materials|hi-solis))/i;
+
+function prioritizeCompanySearchQuery(query: string) {
+  if (
+    !AMBIGUOUS_COMPANY_QUERY_PATTERN.test(query)
+    || !COMPANY_CONTEXT_QUERY_PATTERN.test(query)
+    || /일진글로벌|iljin\s+global/i.test(query)
+    || EXPLICIT_OTHER_ILJIN_ENTITY_PATTERN.test(query)
+  ) return query;
+  return `${COMPANY_NAME} ${COMPANY_INDUSTRY} ${query}`;
+}
+
 function buildSearchPlan(query: string, context: string[] = []): InternetSearchPlan {
-  const searchQuery = contextualSearchQuery(query, context);
+  const searchQuery = contextualSearchQuery(prioritizeCompanySearchQuery(query), context);
   const requestedFreshness = freshnessForQuery(searchQuery);
   const latestRequired = Boolean(requestedFreshness) || !isExplicitHistoricalQuery(searchQuery);
   const freshness = requestedFreshness || (latestRequired ? "py" as const : undefined);
@@ -1134,7 +1149,7 @@ export function getInternetSearchStatus(): InternetSearchStatus {
 export async function probeInternetSearch(): Promise<InternetSearchProbe> {
   const startedAt = Date.now();
   try {
-    const plan = buildSearchPlan("일진 AI 최신 기술 동향");
+    const plan = buildSearchPlan(`${COMPANY_NAME} 베어링 제조 최신 기술 동향`);
     const result = await executeInternetSearch(plan, 3);
     const status = result.results.length
       ? result.fallbackUsed ? "degraded" : "ready"

@@ -16,16 +16,6 @@
   "pages_build_output_dir": "./dist/pages",
   "compatibility_date": "2026-08-10",
   "compatibility_flags": ["nodejs_compat"],
-  "observability": {
-    "enabled": true,
-    "logs": { "enabled": true, "head_sampling_rate": 1, "invocation_logs": true },
-    "traces": { "enabled": false }
-  },
-  "ratelimits": [
-    { "name": "EDGE_RATE_LIMITER", "namespace_id": "2026081301", "simple": { "limit": 120, "period": 60 } },
-    { "name": "AUTH_RATE_LIMITER", "namespace_id": "2026081302", "simple": { "limit": 20, "period": 60 } }
-  ],
-
   // ── 최상위 = 로컬 개발(wrangler pages dev) 기본값 ──────────────────────
   // Pages 는 Workers 와 달리 최상위 바인딩을 환경이 상속한다. 다만 환경별로
   // 다시 선언하면 그것이 이긴다. 아래 env 블록이 preview/production 을 각각 덮는다.
@@ -67,6 +57,7 @@
     "ALLOW_DEV_IDENTITY": "false",
     "TRUSTED_IDENTITY_MODE": "session",
     "TRUSTED_IDENTITY_HOSTS": "",
+    "EDGE_RATE_LIMIT_REQUIRED": "false",
     "ADMIN_EMAILS": "iljin.ai.it@iljin.com",
     "RESEND_FROM_EMAIL": "ILJIN AI Works <no-reply@notify.iljin.com>",
 
@@ -86,10 +77,6 @@
     // ── PREVIEW — 브랜치 배포 공통 ────────────────────────────────────
     // 사내 문서를 넣지 않는다. egress-guard 배선 전까지 민감도 상한을 public 으로 잠근다.
     "preview": {
-      "ratelimits": [
-        { "name": "EDGE_RATE_LIMITER", "namespace_id": "2026081311", "simple": { "limit": 120, "period": 60 } },
-        { "name": "AUTH_RATE_LIMITER", "namespace_id": "2026081312", "simple": { "limit": 20, "period": 60 } }
-      ],
       "ai": { "binding": "AI" },
       "d1_databases": [
         {
@@ -129,6 +116,7 @@
         "ALLOW_DEV_IDENTITY": "false",
         "TRUSTED_IDENTITY_MODE": "session",
         "TRUSTED_IDENTITY_HOSTS": "",
+        "EDGE_RATE_LIMIT_REQUIRED": "false",
         "ADMIN_EMAILS": "iljin.ai.it@iljin.com",
         "RESEND_FROM_EMAIL": "ILJIN AI Works <no-reply@notify.iljin.com>",
         "APP_ENV": "preview",
@@ -144,10 +132,6 @@
     // ── PRODUCTION — 실서비스 ────────────────────────────────────────
     // D1 ID 는 현재 운영 중인 값이다. 바꾸면 기존 데이터와 끊긴다.
     "production": {
-      "ratelimits": [
-        { "name": "EDGE_RATE_LIMITER", "namespace_id": "2026081321", "simple": { "limit": 120, "period": 60 } },
-        { "name": "AUTH_RATE_LIMITER", "namespace_id": "2026081322", "simple": { "limit": 20, "period": 60 } }
-      ],
       "ai": { "binding": "AI" },
       "d1_databases": [
         {
@@ -187,6 +171,7 @@
         "ALLOW_DEV_IDENTITY": "false",
         "TRUSTED_IDENTITY_MODE": "session",
         "TRUSTED_IDENTITY_HOSTS": "",
+        "EDGE_RATE_LIMIT_REQUIRED": "false",
         "ADMIN_EMAILS": "iljin.ai.it@iljin.com",
         "RESEND_FROM_EMAIL": "ILJIN AI Works <no-reply@notify.iljin.com>",
         "APP_ENV": "production",

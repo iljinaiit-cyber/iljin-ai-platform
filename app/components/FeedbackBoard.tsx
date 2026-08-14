@@ -179,7 +179,7 @@ export function FeedbackBoard() {
     try {
       const response = await fetch(`/api/v1/feedback/${encodeURIComponent(post.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ isNotice: !post.isNotice, category: post.isNotice ? "other" : "notice" }) });
       const payload = await response.json() as { item?: { title: string; content: string; category: FeedbackCategory; isNotice: boolean }; error?: { message?: string } };
-      if (!response.ok || !payload.item) throw new Error(payload.error?.message || "\uACF5\C9C0 \uC124\uC815 \uBCC0\uACBD\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.");
+      if (!response.ok || !payload.item) throw new Error(payload.error?.message || "\uACF5\uC9C0 \uC124\uC815 \uBCC0\uACBD\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.");
       setPosts((current) => current.map((item) => item.id === post.id ? { ...item, ...payload.item! } : item));
       setMessage(payload.item.isNotice ? "\uAC8C\uC2DC\uAE00\uC774 \uACF5\uC9C0\uB85C \uC9C0\uC815\uB418\uC5C8\uC2B5\uB2C8\uB2E4." : "\uACF5\uC9C0 \uC9C0\uC815\uC774 \uD574\uC81C\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
     } catch (noticeError) { setError(noticeError instanceof Error ? noticeError.message : "\uACF5\uC9C0 \uC124\uC815 \uBCC0\uACBD\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4."); }
@@ -189,19 +189,19 @@ export function FeedbackBoard() {
   return <div className="view-stack feedback-board">
     <div className="page-heading feedback-page-heading"><div className="feedback-page-heading-copy"><span className="section-kicker">USER VOICE</span><p>{"\uC11C\uBE44\uC2A4\uC5D0 \uB300\uD55C \uC81C\uC548\uACFC \uC758\uACAC\uC744 \uB0A8\uACA8 \uC8FC\uC138\uC694."}</p></div><span className="feedback-count">{text.all} {pagination.total}{"\uAC74"}</span></div>
     <div className="feedback-summary">
-      <span>\uC804\uCCB4 {summary.total}</span>
+      <span>{text.all} {summary.total}</span>
       <span>{text.received} {summary.received}</span>
       <span>{text.reviewing} {summary.reviewing}</span>
       <span>{text.resolved} {summary.resolved}</span>
     </div>
     <div className="feedback-layout">
       <section className="panel feedback-list-panel" aria-labelledby="feedback-list-title">
-        <div className="panel-title"><div><h2 id="feedback-list-title">{"\uAC8C\uC2DC\uAE00 \uBAA9\uB85D"}</h2><p className="panel-description">{"\uACF5\uC9C0\uB294 \uC0C1\uB2E8\uC5D0 \uACE0\uC815\uB418\uBA70, \uAC8C\uC2DC\uAE00\uC740 10\uAC1C\uC529 \uD45C\uC2DC\uB429\uB2C8\uB2E4."}</p></div><button className="button button-secondary feedback-refresh" type="button" onClick={() => void loadPosts(pagination.page, filter)} disabled={loading}>{"\uC0C8\uB85C\uACE0\CE68"}</button></div>
+        <div className="panel-title"><div><h2 id="feedback-list-title">{"\uAC8C\uC2DC\uAE00 \uBAA9\uB85D"}</h2><p className="panel-description">{"\uACF5\uC9C0\uB294 \uC0C1\uB2E8\uC5D0 \uACE0\uC815\uB418\uBA70, \uAC8C\uC2DC\uAE00\uC740 10\uAC1C\uC529 \uD45C\uC2DC\uB429\uB2C8\uB2E4."}</p></div><button className="button button-secondary feedback-refresh" type="button" onClick={() => void loadPosts(pagination.page, filter)} disabled={loading}>{"\uC0C8\uB85C\uACE0\uCE68"}</button></div>
         <div className="feedback-filters" role="tablist" aria-label={"\uAC8C\uC2DC\uD310 \uBD84\uB958"}>{filters.map((item) => <button key={item.value} type="button" role="tab" aria-selected={filter === item.value} className={filter === item.value ? "selected" : ""} onClick={() => { setFilter(item.value); void loadPosts(1, item.value); }}>{item.label}</button>)}</div>
         <div className="feedback-discovery">
           <form className="feedback-search" onSubmit={submitQuery}>
-            <input value={queryDraft} onChange={(event) => setQueryDraft(event.target.value)} placeholder="\uC81C\uBAA9\u00B7\uB0B4\uC6A9 \uAC80\uC0C9" aria-label="\uAC8C\uC2DC\uAE00 \uAC80\uC0C9" maxLength={100} />
-            <button className="button button-secondary" type="submit" disabled={loading}>\uAC80\uC0C9</button>
+            <input value={queryDraft} onChange={(event) => setQueryDraft(event.target.value)} placeholder={"\uC81C\uBAA9\u00B7\uB0B4\uC6A9 \uAC80\uC0C9"} aria-label={"\uAC8C\uC2DC\uAE00 \uAC80\uC0C9"} maxLength={100} />
+            <button className="button button-secondary" type="submit" disabled={loading}>{"\uAC80\uC0C9"}</button>
           </form>
           <label className="feedback-discovery-field">{"\uC0C1\uD0DC"}
             <select value={activeFilters.status} onChange={(event) => updateFilters({ status: event.target.value as ActiveFilters["status"] })}>
