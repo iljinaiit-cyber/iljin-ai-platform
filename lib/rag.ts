@@ -144,6 +144,11 @@ const RRF_LEXICAL_WEIGHT = 0.4;
 const RRF_DENSE_WEIGHT = 0.6;
 const FUSION_CANDIDATE_LIMIT = 120;
 const RERANK_CANDIDATE_LIMIT = 50;
+const MAX_RAG_PROMPT_CHARS = 7_800;
+const MIN_RAG_EVIDENCE_CHARS = 400;
+const RAG_EVIDENCE_MARKER = "__RAG_EVIDENCE__";
+const MAX_FALLBACK_CONTEXT_CHARS = 16_000;
+const MAX_FALLBACK_MESSAGE_CHARS = 7_800;
 const EMBEDDING_BATCH_SIZE = 32;
 const EMBEDDING_CACHE_SIZE = 200;
 const EMBEDDING_CACHE_TTL_MS = 300_000;
@@ -155,6 +160,29 @@ const CLOUDFLARE_RERANK_FALLBACK_MODELS = [
 ];
 const embeddingCache = new Map<string, { vectors: number[][]; model: string; expiresAt: number }>();
 let schemaReady: Promise<void> | undefined;
+
+function fitRagPrompt(template: string, evidence: string) {
+  const markerIndex = template.indexOf(RAG_EVIDENCE_MARKER);
+  if (markerIndex < 0) throw new Error("RAG evidence marker is missing.");
+  const evidenceBudget = MAX_RAG_PROMPT_CHARS - template.length + RAG_EVIDENCE_MARKER.length;
+  if (evidenceBudget < MIN_RAG_EVIDENCE_CHARS) {
+    throw new RagError("질문 또는 이전 대화가 너무 길어 답변 근거를 포함할 수 없습니다. 새 대화를 시작하거나 질문을 줄여 주세요.", 400, "RAG_PROMPT_TOO_LONG");
+  }
+  return template.replace(RAG_EVIDENCE_MARKER, evidence.slice(0, evidenceBudget));
+}
+
+function boundFallbackMessages(messages: GatewayMessage[]) {
+  let remaining = MAX_FALLBACK_CONTEXT_CHARS;
+  const bounded: GatewayMessage[] = [];
+  for (const message of messages.slice(-20).reverse()) {
+    const content = message.content.trim();
+    if (!content || remaining <= 0) continue;
+    const limit = Math.min(MAX_FALLBACK_MESSAGE_CHARS, remaining);
+    bounded.push({ ...message, content: content.slice(0, limit) });
+    remaining -= Math.min(content.length, limit);
+  }
+  return bounded.reverse();
+}
 
 export type RagQueryPlan = {
   original: string;
@@ -1990,7 +2018,7 @@ export async function completeWithRag(input: {
     }
     input.onStage?.("근거 기반 답변 작성 중");
     const fallbackCompletion = await completeWithGateway(
-      input.messages,
+      boundFallbackMessages(input.messages),
       input.traceId,
       input.providerPolicy,
       reasoningTier,
@@ -2060,7 +2088,7 @@ export async function completeWithRag(input: {
     multi_hop: `질의 유형(복합): 서로 다른 근거를 연결해야 답할 수 있는 질문입니다. 어느 근거에서 어떤 사실을 가져와 어떻게 연결했는지 추론 경로를 밝히고, 연결 고리 자체가 근거로 뒷받침되지 않으면 그 지점을 추정으로 명시합니다.`,
   };
 
-  const prompt = `기준 일시(대한민국): ${currentKoreanReferenceTime()} KST
+  const promptTemplate = `기준 일시(대한민국): ${currentKoreanReferenceTime()} KST
 아래 '근거'에 제공된 사내 문서만 답변 근거로 사용하세요. 근거 외의 사전 지식·추론·일반론은 사용하지 마세요. 각 핵심 주장 뒤에 [S1] 형식으로 근거 ID를 표시하세요. 숫자·코드·날짜·조건은 근거 원문에서 그대로 인용하고 임의로 변형하지 마세요. 사용자 질문의 전제가 근거와 다르면 그 점을 먼저 명시하세요.
 ${preference}
 ${input.contextFileBlock || ""}
@@ -2078,10 +2106,11 @@ ${input.contextFileBlock || ""}
 ${tierInstructions[reasoningTier]}
 ${queryTypeInstructions[search.retrieval.queryType]}
 근거:
-${context}
+${RAG_EVIDENCE_MARKER}
 ${historyBlock}
 질문:
 ${latestUserMessage}`;
+  const prompt = fitRagPrompt(promptTemplate, context);
 
   // Pass reasoningTier to the gateway
   input.onStage?.("근거 기반 답변 작성 중");
