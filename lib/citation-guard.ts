@@ -17,12 +17,13 @@ export type CitationReport = {
 
 export type EmbedTexts = (texts: string[]) => Promise<number[][]>;
 
-const CITATION_RE = /\[(S\d{1,2})\]/g;
-const CITATION_ONLY_RE = /^(?:\[S\d{1,2}\][\s.,]*)+$/;
+// 내부 문서(S)와 검증된 웹 검색 결과(W)는 같은 주장-근거 규칙으로 검사한다.
+const CITATION_RE = /\[((?:S|W)\d{1,2})\]/g;
+const CITATION_ONLY_RE = /^(?:\[(?:S|W)\d{1,2}\][\s.,]*)+$/;
 const SENTENCE_RE = /[^.!?。？！]+[.!?。？！]*/g;
 const FACTUAL_HINT_RE = /\d|[A-Za-z]{2,}|니다|이다|한다|된다|있다/;
 const NON_FACTUAL_PREFIX_RE = /^(결론|요약|정리하면|먼저|또한|한편|다음|참고|주의|리스크|한계)[\s:,]/;
-const TOKEN_RE = /[\w][\w.:/-]*/g;
+const TOKEN_RE = /[\p{L}\p{N}][\p{L}\p{N}_.:/-]*/gu;
 const MIN_OVERLAP_RATIO = 0.25;
 const MIN_SEMANTIC_SIMILARITY = 0.5;
 const WARN_COVERAGE_FLOOR = 0.8;

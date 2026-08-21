@@ -24,6 +24,7 @@ import {
 } from "../../../../../lib/guardrails";
 import { fail, newTraceId, ok } from "../../../_shared";
 import { chatAgentContext, getChatAgent } from "../../../../../lib/chat-agents";
+import { annotateCitationIssues, needsCitationWarning, verifyCitations } from "../../../../../lib/citation-guard";
 
 type Body = {
   messages?: Array<{ role: string; content: string }>;
@@ -81,6 +82,15 @@ function maxOutputTokensFor(length: Body["answer_length"], tier: "swift" | "expe
 
 function responsePreferenceInstruction(length: Body["answer_length"], format: Body["answer_format"], query = "") {
   return answerPreferenceInstruction(length, format, query);
+}
+
+function explicitRequestConstraintInstruction(query: string) {
+  const count = query.match(/(?:^|[\s,])([1-9]\d?)\s*(?:가지|개|항목)(?:로|을|를|만)?/u)?.[1];
+  const omitCost = /(?:비용|가격|단가)\s*(?:은|는|을|를)?\s*(?:제외|빼고|생략|무시|언급하지|생각하지\s*말)/u.test(query);
+  return [
+    count && `사용자가 요청한 항목 수: 정확히 ${count}개만 제시하세요. 추가 항목·부록·확장 목록을 만들지 마세요.`,
+    omitCost && "사용자 제약: 비용·가격·단가 정보는 언급하지 마세요.",
+  ].filter(Boolean).join("\n");
 }
 
 function boundedSourceContext(result: InternetSearchResponse, budget: number) {
@@ -398,7 +408,8 @@ async function executeChat(request: Request, body: Body, traceId: string, emitSt
     const reasoningTier = body.reasoning_tier === "swift" || body.reasoning_tier === "expert" || body.reasoning_tier === "deep"
       ? body.reasoning_tier
       : answerReasoningTier(answerLength);
-    const preference = `${responsePreferenceInstruction(answerLength, answerFormat, userContent)}${body.summary_only ? "\n첫 줄에 질문에 대한 한 문장 요약만 작성하고, 추가 설명은 작성하지 마세요." : ""}`;
+    const explicitRequestConstraints = explicitRequestConstraintInstruction(userContent);
+    const preference = `${responsePreferenceInstruction(answerLength, answerFormat, userContent)}${explicitRequestConstraints ? `\n${explicitRequestConstraints}` : ""}${body.summary_only ? "\n첫 줄에 질문에 대한 한 문장 요약만 작성하고, 추가 설명은 작성하지 마세요." : ""}`;
     const preferenceWithLearning = `${preference}${feedbackLearningContext}${selectedAgentContext}`;
     const contextMessages = body.conversation_id
       ? [
@@ -463,7 +474,7 @@ async function executeChat(request: Request, body: Body, traceId: string, emitSt
           const internetPreference = deepInternetResearch
             ? `${preferenceWithLearning}\n${deepInternetFirstPassInstruction()}`
             : preferenceWithLearning;
-          const internetPrompt = buildConversationAwareInternetPrompt(userContent, webSearch, internetPreference, contextMessages.slice(0, -1));
+          const internetPrompt = `${buildConversationAwareInternetPrompt(userContent, webSearch, internetPreference, contextMessages.slice(0, -1))}\n\n정확성 제약: 설정값·단위·범위는 출처에 직접 적힌 표기만 사용하세요. 컨텍스트 윈도우, 최대 입력, 최대 출력은 서로 다른 지표이므로 하나를 다른 값으로 바꾸거나 추정하지 마세요. 출처에 없는 세부값은 '공개 문서에서 별도 확인 필요'로 표시하세요.`;
           emitStage?.(deepInternetResearch ? "1차 근거 보고서 작성 중" : "근거 기반 답변 작성 중");
           completion = await completeWithGateway(
             [{ role: "user", content: internetPrompt }],
@@ -482,14 +493,29 @@ async function executeChat(request: Request, body: Body, traceId: string, emitSt
             ? related.relatedQuestions.slice(0, 3)
             : buildFallbackRelatedQuestions(userContent, webSearch);
           completion.content = related.content;
-          citations = webSearch.results.slice(0, INTERNET_GROUNDING_SOURCE_LIMIT).map((item, index) => ({
+           citations = webSearch.results.slice(0, INTERNET_GROUNDING_SOURCE_LIMIT).map((item, index) => ({
             id: `W${index + 1}`, assetId: item.url, segmentId: item.id, title: item.title, version: 1,
             updatedAt: item.publishedAt, excerpt: item.snippet, score: item.score, lexicalScore: item.score,
             denseScore: item.score, url: item.url, sourceType: "web" as const, source: item.source,
             sourceCategoryLabel: item.sourceCategoryLabel, publishedAt: item.publishedAt,
-          }));
-          completion.content = ensureDeepInternetSourceSection(ensureInternetCitationCoverage(completion.content, citations), citations, researchDepth ? "detailed" : answerLength);
-          internetGrounded = true;
+           }));
+           completion.content = ensureDeepInternetSourceSection(ensureInternetCitationCoverage(completion.content, citations), citations, researchDepth ? "detailed" : answerLength);
+           // 내부 RAG만이 아니라 웹 근거도 같은 주장-인용 규칙으로 확인한다. 웹 발췌문은
+           // 외부 임베딩 호출 없이 로컬 어휘 검증을 적용해, 근거가 맞지 않는 인용을 숨기지 않는다.
+           const webCitationReport = await verifyCitations(
+             completion.content,
+             citations.map((citation) => ({ id: citation.id, content: `${citation.title}\n${citation.excerpt}` })),
+           );
+           if (needsCitationWarning(webCitationReport)) {
+             completion.content = annotateCitationIssues(completion.content, webCitationReport);
+             console.warn(JSON.stringify({
+               event: "internet-citation-warning",
+               traceId,
+               coverage: webCitationReport.citation_coverage,
+               issues: webCitationReport.issues.length,
+             }));
+           }
+           internetGrounded = true;
           console.info(JSON.stringify({ event: "internet-grounded", traceId, providersUsed: webSearch.providersUsed, providerPath: webSearch.providerPath }));
         }
       } catch (error) {

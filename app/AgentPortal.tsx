@@ -137,7 +137,7 @@ function buildCitationLookup(citations?: RagResultItem[]): CitationLookup {
 
 function inlineAnswerContent(text: string, keyPrefix: string, citations?: CitationLookup): ReactNode[] {
   return text
-    .split(/(\*\*[^*]+\*\*|`[^`]+`|\[(?:W|S)\d+\]|\[[^\]]+\]\([^)]+\)|---)/g)
+    .split(/(\*\*[^*]+\*\*|`[^`]+`|\[(?:W|S)\d+\]|\[[^\]]+\]\([^)]+\)|https?:\/\/[^\s<)]+|---)/g)
     .filter(Boolean)
     .map((part, index) => {
       const key = `${keyPrefix}-${index}`;
@@ -148,9 +148,8 @@ function inlineAnswerContent(text: string, keyPrefix: string, citations?: Citati
         return <code key={key}>{part.slice(1, -1)}</code>;
       }
       if (/^\[(?:W|S)\d+\]$/.test(part)) {
-        if (/^\[W\d+\]$/.test(part)) return null;
         const ref = citations?.get(part);
-        const label = ref?.title ? shortenCitationFilename(ref.title) : part;
+        const label = /^\[W\d+\]$/.test(part) ? part : ref?.title ? shortenCitationFilename(ref.title) : part;
         if (ref?.url) {
           return (
             <a key={key} href={ref.url} target="_blank" rel="noreferrer" className="answer-citation" title={ref.title}>
@@ -172,6 +171,10 @@ function inlineAnswerContent(text: string, keyPrefix: string, citations?: Citati
             {linkMatch[1]}
           </a>
         );
+      }
+      if (/^https?:\/\//.test(part)) {
+        const href = citationHref(part);
+        return href ? <a key={key} href={href} target="_blank" rel="noopener noreferrer">{sourceDomain(href)}</a> : part;
       }
       return part;
     });
@@ -268,7 +271,8 @@ function FormattedAnswer({ content, citations }: { content: string; citations?: 
     );
   }
 
-  return <div className="message-content">{blocks}</div>;
+  const sources = citations ? [...citations.entries()] : [];
+  return <div className="message-content">{blocks}{sources.length > 0 && <section className="generation-sources answer-sources" aria-label="참고 출처"><div className="generation-sources__heading"><span>근거</span><strong>참고 출처</strong></div><div className="generation-sources__list">{sources.map(([id, source]) => source.url ? <a key={id} href={source.url} target="_blank" rel="noopener noreferrer" className="generation-source-card">{id} · {source.title}</a> : <span key={id} className="generation-source-card">{id} · {source.title}</span>)}</div></section>}</div>;
 }
 
 const kstDateFormatter = new Intl.DateTimeFormat("ko-KR", {
@@ -392,6 +396,7 @@ function isThemeColor(value: string | null): value is ThemeColor {
 
 type FollowUpQuestion = { question: string; intent: string };
 type ChatAgent = { id: string; name: string; instructions: string };
+type FeedbackReason = "inaccurate" | "insufficient_evidence" | "misunderstood" | "missing_key_point" | "format_mismatch";
 type ScheduleCandidate = {
   id: string;
   title: string;
@@ -1033,6 +1038,7 @@ export function AgentPortal() {
   });
   const [searchType, setSearchType] = useState("전체");
   const [notice, setNotice] = useState("");
+  const [feedbackReasonMessageId, setFeedbackReasonMessageId] = useState<string>();
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [apiStatus, setApiStatus] = useState<ApiStatus>({
     state: "checking",
@@ -1590,7 +1596,6 @@ export function AgentPortal() {
             ? `${providerLabel} 답변이 출력 한도에 도달해 일부 내용이 생략되었습니다.`
             : `${providerLabel} Streaming 답변을 완료했습니다. ${done.latency_ms ?? 0}밀리초가 걸렸습니다.`);
         }
-        if (done.message_id && !done.clarification_required) void loadScheduleCandidates(done.message_id);
         return;
       }
       const rawPayload = await response.text();
@@ -1634,7 +1639,6 @@ export function AgentPortal() {
           ? `${providerLabel} 답변이 출력 한도에 도달해 일부 내용이 생략되었습니다.`
           : `${providerLabel} 답변을 준비했습니다. ${payload.latency_ms ?? 0}밀리초가 걸렸습니다.`);
       }
-      if (payload.message_id && !payload.clarification_required) void loadScheduleCandidates(payload.message_id);
     } catch (error) {
       cancelTypewriter?.();
       if (error instanceof DOMException && error.name === "AbortError") {
@@ -1805,16 +1809,22 @@ export function AgentPortal() {
     }
   };
 
-  const submitFeedback = async (messageId: string, rating: 1 | -1) => {
+  const submitFeedback = async (messageId: string, rating: 1 | -1, reason?: FeedbackReason) => {
+    if (rating === -1 && !reason) {
+      setFeedbackReasonMessageId(messageId);
+      setNotice("개선이 필요한 이유를 선택해 주세요.");
+      return;
+    }
     try {
       const response = await fetch(`/api/v1/messages/${encodeURIComponent(messageId)}/feedback`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rating }),
+        body: JSON.stringify({ rating, reason }),
       });
       const payload = await response.json() as { error?: { message?: string } };
       if (!response.ok) throw new Error(payload.error?.message || "평가를 저장하지 못했습니다.");
       setChatMessages((messages) => messages.map((message) => message.messageId === messageId ? { ...message, feedback: rating } : message));
+      setFeedbackReasonMessageId(undefined);
       setNotice(rating === 1 ? "도움됨으로 평가했습니다." : "개선 필요로 평가했습니다.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "평가를 저장하지 못했습니다.");
@@ -1989,8 +1999,9 @@ export function AgentPortal() {
             <HomeView scope={scope} setScope={setScope} cases={visibleUseCases} user={currentUser} activity={activityDashboard} onNavigate={navigate} onOpenConversation={openConversation} onPrompt={(prompt) => { void startUseCaseConversation(prompt); }} />
           )}
           {view === "chat" && (
-            <ChatView messages={chatMessages} query={query} setQuery={setQuery} sensitivity={chatSensitivity} setSensitivity={changeChatSensitivity} searchScope={chatSearchScope} setSearchScope={changeChatSearchScope} answerLength={chatAnswerLength} setAnswerLength={setChatAnswerLength} providerAvailability={providerAvailability} streaming={streaming} generationStage={generationStage} generationElapsedMs={generationElapsedMs} currentUser={currentUser} conversationId={conversationId} suggestedQuestions={activityDashboard.suggestedQuestions} canUpload={canUse("documents.manage", "documents.upload")} onEnsureConversation={ensureConversationForAttachment} onNewConversation={startNewConversation} onOpenConversation={openConversation} onFeedback={submitFeedback} onScheduleCandidateAccept={acceptScheduleCandidate} onSubmit={submitChat} onStop={stopChat} onKeyDown={handleComposerKey} onOpenAgent={() => navigate("tasks")} onFollowUpClick={submitChatWithText} onClarificationSubmit={submitClarification} />
+            <ChatView messages={chatMessages} query={query} setQuery={setQuery} sensitivity={chatSensitivity} setSensitivity={changeChatSensitivity} searchScope={chatSearchScope} setSearchScope={changeChatSearchScope} answerLength={chatAnswerLength} setAnswerLength={setChatAnswerLength} providerAvailability={providerAvailability} streaming={streaming} generationStage={generationStage} generationElapsedMs={generationElapsedMs} currentUser={currentUser} conversationId={conversationId} suggestedQuestions={activityDashboard.suggestedQuestions} canUpload={canUse("documents.manage", "documents.upload")} onEnsureConversation={ensureConversationForAttachment} onNewConversation={startNewConversation} onOpenConversation={openConversation} onFeedback={submitFeedback} onLoadScheduleCandidates={loadScheduleCandidates} onScheduleCandidateAccept={acceptScheduleCandidate} onSubmit={submitChat} onStop={stopChat} onKeyDown={handleComposerKey} onOpenAgent={() => navigate("tasks")} onFollowUpClick={submitChatWithText} onClarificationSubmit={submitClarification} />
           )}
+          {feedbackReasonMessageId && <FeedbackReasonDialog onSelect={(reason) => void submitFeedback(feedbackReasonMessageId, -1, reason)} onClose={() => setFeedbackReasonMessageId(undefined)} />}
           {view === "search" && <SearchView type={searchType} setType={setSearchType} canUpload={canUse("documents.manage", "documents.upload")} onChat={(prompt, nextScope) => { changeChatSearchScope(nextScope); setQuery(prompt); navigate("chat"); }} />}
           {view === "tasks" && <AgentTasksView currentUser={{ role: currentUser.role }} />}
           {view === "approvals" && <ToolApprovalsView currentUser={{ email: currentUser.email, role: currentUser.role }} />}
@@ -2181,7 +2192,25 @@ function ClarificationForm({
   );
 }
 
-function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, searchScope, setSearchScope, answerLength, setAnswerLength, providerAvailability, streaming, generationStage, generationElapsedMs, currentUser, conversationId, suggestedQuestions, canUpload, onEnsureConversation, onNewConversation, onOpenConversation, onFeedback, onScheduleCandidateAccept, onSubmit, onStop, onKeyDown, onOpenAgent, onFollowUpClick, onClarificationSubmit }: {
+function FeedbackReasonDialog({ onSelect, onClose }: { onSelect: (reason: FeedbackReason) => void; onClose: () => void }) {
+  const reasons: Array<[FeedbackReason, string]> = [
+    ["inaccurate", "부정확한 내용"],
+    ["insufficient_evidence", "출처·근거 부족"],
+    ["misunderstood", "질문 의도 오해"],
+    ["missing_key_point", "핵심 내용 누락"],
+    ["format_mismatch", "원하는 형식과 불일치"],
+  ];
+  return <div className="feedback-reason-backdrop" role="presentation" onMouseDown={onClose}>
+    <section className="feedback-reason-dialog" role="dialog" aria-modal="true" aria-labelledby="feedback-reason-title" onMouseDown={(event) => event.stopPropagation()}>
+      <h2 id="feedback-reason-title">어떤 점을 개선해야 하나요?</h2>
+      <p>선택한 사유는 답변 정확도와 품질 회귀 검증에만 사용됩니다.</p>
+      <div>{reasons.map(([reason, label]) => <button key={reason} type="button" onClick={() => onSelect(reason)}>{label}</button>)}</div>
+      <button className="feedback-reason-cancel" type="button" onClick={onClose}>취소</button>
+    </section>
+  </div>;
+}
+
+function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, searchScope, setSearchScope, answerLength, setAnswerLength, providerAvailability, streaming, generationStage, generationElapsedMs, currentUser, conversationId, suggestedQuestions, canUpload, onEnsureConversation, onNewConversation, onOpenConversation, onFeedback, onLoadScheduleCandidates, onScheduleCandidateAccept, onSubmit, onStop, onKeyDown, onOpenAgent, onFollowUpClick, onClarificationSubmit }: {
   messages: ChatMessage[];
   query: string;
   setQuery: (value: string) => void;
@@ -2202,7 +2231,8 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
   onEnsureConversation: () => Promise<string>;
   onNewConversation: () => void | Promise<void>;
   onOpenConversation: (id: string) => void;
-  onFeedback: (messageId: string, rating: 1 | -1) => void;
+  onFeedback: (messageId: string, rating: 1 | -1, reason?: FeedbackReason) => void;
+  onLoadScheduleCandidates: (messageId: string) => Promise<void>;
   onScheduleCandidateAccept: (messageId: string, candidate: ScheduleCandidate) => void;
   onSubmit: (event: FormEvent, agent?: ChatAgent) => void;
   onStop: () => void;
@@ -2452,6 +2482,7 @@ function ChatView({ messages, query, setQuery, sensitivity, setSensitivity, sear
             <article className={`message ${message.role}${message.error ? " error" : ""}`} key={`${message.role}-${index}`}>
               <span className="message-avatar" aria-hidden="true">{message.role === "user" ? currentUser.displayName.slice(0, 1) : "AI"}</span>
               <div><div className={"message-label" + (message.streamingResponse && message.streamingStage ? " streaming-stage" : "")}>{message.role === "user" ? currentUser.displayName : message.streamingResponse && message.streamingStage ? "ILJIN AI · " + message.streamingStage + (message.tokenCount ? " (" + message.tokenCount + " 토큰)" : "") : message.clarificationRequired ? "ILJIN AI · 답변 전 정보 확인" : message.provider === "cloudflare" ? "ILJIN AI · Cloud LLM" : "ILJIN AI · 로컬"}</div>{message.streamingResponse && <GenerationProgress scope={searchScope} stage={message.streamingStage || generationStage} detail={message.streamingDetail} elapsedMs={generationElapsedMs} tokenCount={message.tokenCount} sources={message.citations} />}{message.role === "assistant" && !message.error ? <>{message.streamingResponse && message.streamingSummary && <div className="answer-summary" aria-live="polite"><span>빠른 요약</span><p>{message.streamingSummary}</p></div>}<FormattedAnswer content={message.body} citations={message.citations ? buildCitationLookup(message.citations) : undefined} /></> : <p>{message.body}</p>}{message.role === "assistant" && message.clarificationRequired && message.followUpQuestions?.length && message.clarificationOriginalQuestion ? <ClarificationForm questions={message.followUpQuestions} originalQuestion={message.clarificationOriginalQuestion} disabled={streaming || messages.slice(index + 1).some((item) => item.role === "user")} onSubmit={onClarificationSubmit} /> : message.role === "assistant" && message.followUpQuestions && message.followUpQuestions.length > 0 && <div className="follow-up-questions"><span className="follow-up-label">정확한 답변을 위한 보충 질문</span>{message.followUpQuestions.map((fq, fqIndex) => <button key={fqIndex} type="button" className="follow-up-button" disabled={streaming} onClick={() => onFollowUpClick(fq.question)} title={fq.intent}>{fq.question}</button>)}</div>}{message.role === "assistant" && message.relatedQuestions && message.relatedQuestions.length > 0 && <div className="follow-up-questions related-questions"><span className="follow-up-label">연관 질문 추천</span>{message.relatedQuestions.map((rq, rqIndex) => <button key={rqIndex} type="button" className="follow-up-button related-question-button" disabled={streaming} onClick={() => onFollowUpClick(rq.question)} title={rq.intent}>{rq.question}</button>)}</div>}{message.role === "assistant" && !message.clarificationRequired && <div className="answer-actions"><button type="button" onClick={() => void copyAnswer(message, index)}>{copiedMessage === `${index}` ? "복사됨" : "답변 복사"}</button>{message.error && <button type="button" onClick={() => setQuery([...messages].slice(0, index).reverse().find((item) => item.role === "user")?.body || "")}>질문 다시 입력</button>}{message.messageId && <><button type="button" className={`answer-feedback-button ${message.feedback === 1 ? "selected positive" : ""}`} aria-label="답변 좋아요" title="좋아요" disabled={Boolean(message.feedback)} onClick={() => onFeedback(message.messageId!, 1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v10H4a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1h3Zm0 10h9.6a2 2 0 0 0 1.95-1.58l1.2-6A2 2 0 0 0 17.8 10H14l.7-3.5A2 2 0 0 0 12.75 4L8 10v10Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round" /></svg><span>좋아요</span></button><button type="button" className={`answer-feedback-button ${message.feedback === -1 ? "selected negative" : ""}`} aria-label="답변 싫어요" title="싫어요" disabled={Boolean(message.feedback)} onClick={() => onFeedback(message.messageId!, -1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14V4H4a1 1 0 0 1-1 1v8a1 1 0 0 1 1 1h3Zm0-10h9.6a2 2 0 0 1 1.95 1.58l1.2 6A2 2 0 0 1 17.8 14H14l.7 3.5A2 2 0 0 1 12.75 20L8 14V4Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round" /></svg><span>싫어요</span></button></>}<span className="trace">{message.traceId ? `${message.model ?? "@cf/zai-org/glm-4.7-flash"} · ${message.latencyMs ?? 0}ms · ${message.traceId}` : message.error ? "Gateway 연결 오류" : "저장된 응답"}</span></div>}</div>
+              {message.role === "assistant" && !message.clarificationRequired && message.messageId && !message.scheduleCandidates?.length && !message.scheduleCandidatesLoading && <div className="answer-actions"><button type="button" disabled={streaming} onClick={() => void onLoadScheduleCandidates(message.messageId!)}>일정 후보 추출</button></div>}
               {message.role === "assistant" && !message.clarificationRequired && (message.scheduleCandidatesLoading || message.scheduleCandidates?.length || message.scheduleCandidateError) && <section className="schedule-candidates" aria-live="polite"><header><strong>AI 일정 후보</strong><span>{message.scheduleCandidatesLoading ? "업무를 분석 중입니다..." : "등록 전 내용을 확인하세요"}</span></header>{message.scheduleCandidateError && <p role="alert">{message.scheduleCandidateError}</p>}{message.scheduleCandidates?.map((candidate) => { const saved = message.savedScheduleCandidateIds?.includes(candidate.id); const saving = message.savingScheduleCandidateId === candidate.id; return <article key={candidate.id}><div><strong>{candidate.title}</strong><p>{candidate.description || candidate.evidence}</p><small>{candidate.dueAt ? `마감 ${new Date(candidate.dueAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}` : "마감 미정"} · {candidate.priority === "urgent" ? "긴급" : candidate.priority === "high" ? "높음" : candidate.priority === "low" ? "낮음" : "보통"}</small></div><button type="button" disabled={streaming || saved || saving} onClick={() => { if (message.messageId) onScheduleCandidateAccept(message.messageId, candidate); }}>{saved ? "추가됨" : saving ? "추가 중..." : "일정 추가"}</button></article>; })}</section>}
               {message.role === "assistant" && message.traceId && !message.streamingResponse && <div className="answer-usage">{message.tokenCount?.toLocaleString() ?? "토큰 계산 중"} · {(message.latencyMs ?? 0) >= 1_000 ? `${((message.latencyMs ?? 0) / 1_000).toFixed(1)}초` : `${message.latencyMs ?? 0}ms`}</div>}
             </article>

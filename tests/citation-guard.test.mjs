@@ -82,6 +82,16 @@ test("제공되지 않은 근거 ID는 임베딩 대상에서 제외하고 phant
   assert.match(annotateCitationIssues("설비 정기점검은 분기마다 1회 실시한다. [S9]", report), /근거 검증 경고/);
 });
 
+test("웹 검색 인용도 내부 문서와 같은 주장-근거 규칙으로 검사한다", async () => {
+  const report = await verifyCitations(
+    "산업용 AI 도입 기업은 생산성 향상을 보고했습니다. [W1]",
+    [{ id: "W1", content: "산업용 AI 도입 기업은 생산성 향상을 보고했다." }],
+  );
+
+  assert.equal(report.issues.filter((issue) => issue.kind === "phantom_citation").length, 0);
+  assert.equal(report.cited_sentence_count, 1);
+});
+
 test("인용이 조금 빠진 정도로는 재작성을 돌리지 않는다", () => {
   const mildlyUncited = {
     ok: false,

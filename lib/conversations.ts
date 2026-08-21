@@ -19,6 +19,46 @@ export class ConversationError extends Error {
   }
 }
 
+export type ConversationSummary = {
+  facts: string[];
+  constraints: string[];
+  decisions: string[];
+  openQuestions: string[];
+};
+
+const emptySummary = (): ConversationSummary => ({ facts: [], constraints: [], decisions: [], openQuestions: [] });
+
+function compactSummaryItems(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim().slice(0, 300)).slice(0, 8)
+    : [];
+}
+
+// 기존 배포본은 summary_json에 문자열을 저장한다. 구조화 전환 중에도 이 대화를
+// 잃지 않도록 문자열은 facts 한 건으로 읽어 하위 호환한다.
+export function parseConversationSummary(value: unknown): ConversationSummary {
+  if (typeof value === "string" && value.trim()) return { ...emptySummary(), facts: [value.trim().slice(0, 1_200)] };
+  if (!value || typeof value !== "object") return emptySummary();
+  const source = value as Record<string, unknown>;
+  return {
+    facts: compactSummaryItems(source.facts),
+    constraints: compactSummaryItems(source.constraints),
+    decisions: compactSummaryItems(source.decisions),
+    openQuestions: compactSummaryItems(source.openQuestions),
+  };
+}
+
+export function conversationSummaryContext(summary: ConversationSummary) {
+  const sections = [
+    ["확정 사실", summary.facts],
+    ["사용자 제약", summary.constraints],
+    ["결정 사항", summary.decisions],
+    ["미해결 질문", summary.openQuestions],
+  ].filter(([, values]) => values.length > 0)
+    .map(([label, values]) => `${label}: ${(values as string[]).map((value) => `- ${value}`).join(" ")}`);
+  return sections.join("\n");
+}
+
 export async function ensureConversationSchema() {
   const db = getD1();
   await db.batch([
@@ -36,7 +76,7 @@ export async function ensureConversationSchema() {
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS message_feedback (
       id TEXT PRIMARY KEY, message_id TEXT NOT NULL, owner_email TEXT NOT NULL,
-      rating INTEGER NOT NULL, comment TEXT, created_at TEXT NOT NULL,
+      rating INTEGER NOT NULL, comment TEXT, reason TEXT, created_at TEXT NOT NULL,
       FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS conversation_attachments (
@@ -73,6 +113,12 @@ export async function ensureConversationSchema() {
   } catch {
     // Another request or a managed migration may have completed the additive upgrade.
   }
+  try {
+    const columns = await db.prepare("PRAGMA table_info(message_feedback)").all<{ name: string }>();
+    if (!(columns.results || []).some((column) => column.name === "reason")) {
+      await db.prepare("ALTER TABLE message_feedback ADD COLUMN reason TEXT").run();
+    }
+  } catch { /* additive upgrade may already have completed */ }
   try {
     await db.prepare(`CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
       content, conversation_id UNINDEXED, role UNINDEXED, created_at UNINDEXED,
@@ -253,14 +299,16 @@ export async function conversationContext(principal: Principal, conversationId: 
   const db = getD1();
   const conv = await db.prepare(`SELECT summary_json, summary_message_count FROM conversations WHERE id = ?`)
     .bind(conversationId).first<{ summary_json: string | null; summary_message_count: number }>();
-  const summary = conv?.summary_json ? JSON.parse(conv.summary_json) as string : null;
+  let summary = emptySummary();
+  try { summary = conv?.summary_json ? parseConversationSummary(JSON.parse(conv.summary_json)) : summary; } catch { /* malformed legacy summary is ignored */ }
   const rows = await db.prepare(`SELECT role, content FROM messages
     WHERE conversation_id = ? AND role IN ('user', 'assistant')
     ORDER BY created_at DESC LIMIT 18`).bind(conversationId).all<{ role: "user" | "assistant"; content: string }>();
   const recent = (rows.results || []).reverse();
   const messages: GatewayMessage[] = [];
-  if (summary) {
-    messages.push({ role: "assistant", content: `[이전 대화 요약] ${summary}` });
+  const summaryContext = conversationSummaryContext(summary);
+  if (summaryContext) {
+    messages.push({ role: "assistant", content: `[이전 대화 메모리]\n${summaryContext}\n이 메모리의 확정 사실·제약을 임의로 바꾸지 말고, 새 질문과 충돌하면 확인 질문을 먼저 하세요.` });
   }
   messages.push(...recent);
   return messages;
@@ -292,15 +340,16 @@ export async function maybeSummarizeConversation(principal: Principal, conversat
   const toSummarizeRows = toSummarize.results || [];
   if (toSummarizeRows.length < 3) return;
 
-  const priorSummary = conv.summary_json ? JSON.parse(conv.summary_json) as string : "";
+  let priorSummary = emptySummary();
+  try { priorSummary = conv.summary_json ? parseConversationSummary(JSON.parse(conv.summary_json)) : priorSummary; } catch { /* malformed legacy summary is ignored */ }
   const conversationText = toSummarizeRows
     .map((m) => `${m.role === "user" ? "사용자" : "AI"}: ${m.content.slice(0, 500)}`)
     .join("\n");
-  const prompt = `[CONTEXT SUMMARY] 다음 대화의 핵심 사실, 결정된 사항, 사용자의 의도를 3~5문장으로 요약하세요. 이전 요약이 있으면 통합하세요. 정보 손실 없이 핵심만 간결하게 작성하세요.
+  const prompt = `[CONTEXT SUMMARY] 다음 대화에서 장기 대화에 반드시 보존할 정보만 추출하세요. JSON만 반환하고 설명·마크다운을 추가하지 마세요. 형식은 {"facts":["검증되거나 사용자가 확정한 사실"],"constraints":["사용자 요구 범위·금지 조건·수치"],"decisions":["합의·확정된 결정"],"openQuestions":["아직 확인이 필요한 항목"]} 입니다. AI의 추측은 facts나 decisions에 넣지 마세요. 항목은 각 배열 최대 8개, 각 항목 300자 이내입니다.
 
-${priorSummary ? `이전 요약:\n${priorSummary}\n\n` : ""}대화:\n${conversationText}
+${conversationSummaryContext(priorSummary) ? `이전 구조화 메모리:\n${JSON.stringify(priorSummary)}\n\n` : ""}대화:\n${conversationText}
 
-요약:`;
+JSON:`;
   try {
     const completion = await completeWithGateway(
       [{ role: "user", content: prompt }],
@@ -308,8 +357,16 @@ ${priorSummary ? `이전 요약:\n${priorSummary}\n\n` : ""}대화:\n${conversat
       { maxOutputTokens: 512, sensitivity: "internal" },
       "swift",
     );
+    let structured = emptySummary();
+    try {
+      structured = parseConversationSummary(JSON.parse(completion.content.replace(/^```(?:json)?\s*|\s*```$/g, "").trim()));
+    } catch {
+      // 모델이 JSON 계약을 지키지 않아도 기존 요약을 버리지 않고, 이번 결과를 사실
+      // 후보로 보존한다. 다음 요약 시 정상 JSON으로 다시 정규화된다.
+      structured = { ...priorSummary, facts: [...priorSummary.facts, completion.content.trim().slice(0, 1_200)].filter(Boolean).slice(-8) };
+    }
     await db.prepare(`UPDATE conversations SET summary_json = ?, summary_message_count = ?, updated_at = ? WHERE id = ?`)
-      .bind(JSON.stringify(completion.content), compressibleEnd, nowIso(), conversationId).run();
+      .bind(JSON.stringify(structured), compressibleEnd, nowIso(), conversationId).run();
   } catch (error) {
     console.error("[conversations] summarize failed", { error: error instanceof Error ? error.message : String(error) });
   }
@@ -365,8 +422,12 @@ export async function deleteConversation(principal: Principal, conversationId: s
     .bind(nowIso(), conversationId).run();
 }
 
-export async function addFeedback(principal: Principal, messageId: string, rating: number, comment?: string) {
+export type FeedbackReason = "inaccurate" | "insufficient_evidence" | "misunderstood" | "missing_key_point" | "format_mismatch";
+const FEEDBACK_REASONS = new Set<FeedbackReason>(["inaccurate", "insufficient_evidence", "misunderstood", "missing_key_point", "format_mismatch"]);
+
+export async function addFeedback(principal: Principal, messageId: string, rating: number, comment?: string, reason?: string) {
   if (![1, -1].includes(rating)) throw new ConversationError("rating은 1 또는 -1이어야 합니다.", 400, "INVALID_FEEDBACK");
+  if (reason !== undefined && !FEEDBACK_REASONS.has(reason as FeedbackReason)) throw new ConversationError("유효한 개선 사유를 선택해 주세요.", 400, "INVALID_FEEDBACK_REASON");
   await ensureConversationSchema();
   const message = await getD1().prepare(`SELECT m.id FROM messages m JOIN conversations c ON c.id = m.conversation_id
     WHERE m.id = ? AND c.tenant_id = ? AND c.owner_email = ? AND c.status = 'active'`).bind(
@@ -377,12 +438,13 @@ export async function addFeedback(principal: Principal, messageId: string, ratin
   if (!message) throw new ConversationError("피드백 대상 메시지를 찾을 수 없습니다.", 404, "MESSAGE_NOT_FOUND");
   const feedbackId = id("fb");
   await getD1().prepare(`INSERT INTO message_feedback
-    (id, message_id, owner_email, rating, comment, created_at) VALUES (?, ?, ?, ?, ?, ?)`).bind(
+    (id, message_id, owner_email, rating, comment, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(
       feedbackId,
       messageId,
       principal.email,
       rating,
       comment?.trim().slice(0, 1000) || null,
+      reason || null,
       nowIso(),
     ).run();
   return feedbackId;
