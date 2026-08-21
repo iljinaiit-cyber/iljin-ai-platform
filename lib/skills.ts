@@ -2,6 +2,7 @@ import { getD1 } from "../db";
 import type { Principal } from "./identity";
 import type { GatewayMessage } from "./llm-gateway";
 import { completeWithGateway } from "./llm-gateway";
+import { inspectUserInput } from "./guardrails";
 
 export interface AgentSkill {
   id: string;
@@ -41,7 +42,6 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-const SKILL_EXTRACTION_THRESHOLD = 0.7;
 
 export async function maybeExtractSkill(principal: Principal, conversationId: string, messages: GatewayMessage[], traceId: string, positiveFeedback: boolean): Promise<void> {
   if (!positiveFeedback) return;
@@ -74,7 +74,7 @@ ${conversationText}
     );
     if (completion.content.trim() === "없음" || completion.content.trim().length < 20) return;
     await ensureSkillSchema();
-    const parsed = parseSkillResponse(completion.content, conversationId);
+    const parsed = parseSkillResponse(completion.content);
     if (!parsed) return;
     await getD1().prepare(`INSERT INTO agent_skills
       (id, tenant_id, owner_email, name, trigger_patterns_json, steps_json, evidence_requirements, success_count, failure_count, status, conversation_id, created_at, updated_at)
@@ -95,7 +95,7 @@ interface ParsedSkill {
   evidenceRequirements: string;
 }
 
-function parseSkillResponse(text: string, conversationId: string): ParsedSkill | null {
+function parseSkillResponse(text: string): ParsedSkill | null {
   const nameMatch = text.match(/이름[:\s]+(.+)/);
   const triggerMatch = text.match(/트리거[:\s]+([\s\S]+?)(?=단계:|$)/);
   const stepsMatch = text.match(/단계[:\s]+([\s\S]+?)(?=근거요건:|$)/);
@@ -158,13 +158,49 @@ export async function recordSkillOutcome(principal: Principal, conversationId: s
 
 export async function listSkills(principal: Principal): Promise<AgentSkill[]> {
   await ensureSkillSchema();
-  const rows = await getD1().prepare(`SELECT * FROM agent_skills WHERE tenant_id = ? ORDER BY status, updated_at DESC`)
-    .bind(principal.tenantId).all<AgentSkill & { trigger_patterns_json: string; steps_json: string }>();
+  const rows = principal.role === "admin"
+    ? await getD1().prepare(`SELECT * FROM agent_skills WHERE tenant_id = ? ORDER BY status, updated_at DESC`)
+      .bind(principal.tenantId).all<AgentSkill & { trigger_patterns_json: string; steps_json: string }>()
+    : await getD1().prepare(`SELECT * FROM agent_skills WHERE tenant_id = ? AND owner_email = ? ORDER BY status, updated_at DESC`)
+      .bind(principal.tenantId, principal.email).all<AgentSkill & { trigger_patterns_json: string; steps_json: string }>();
   return (rows.results || []).map((r) => ({
     ...r,
     triggerPatterns: JSON.parse(r.trigger_patterns_json || "[]"),
     stepsJson: r.steps_json,
   })) as AgentSkill[];
+}
+
+export async function createSkill(principal: Principal, input: { name: string; steps: string[]; triggerPatterns?: string[]; evidenceRequirements?: string }) {
+  const name = input.name.trim().replace(/\s+/g, " ").slice(0, 80);
+  const steps = input.steps.map((step) => step.trim()).filter(Boolean).slice(0, 12).map((step) => step.slice(0, 500));
+  const triggerPatterns = (input.triggerPatterns || []).map((pattern) => pattern.trim()).filter(Boolean).slice(0, 5).map((pattern) => pattern.slice(0, 120));
+  const evidenceRequirements = (input.evidenceRequirements || "").trim().slice(0, 500);
+  if (name.length < 2) throw new Error("스킬 이름은 두 글자 이상 입력해 주세요.");
+  if (!steps.length) throw new Error("스킬 절차를 한 단계 이상 입력해 주세요.");
+  inspectUserInput(`${name}\n${steps.join("\n")}\n${triggerPatterns.join("\n")}\n${evidenceRequirements}`);
+  await ensureSkillSchema();
+  const id = skillId();
+  const timestamp = nowIso();
+  await getD1().prepare(`INSERT INTO agent_skills
+    (id, tenant_id, owner_email, name, trigger_patterns_json, steps_json, evidence_requirements, success_count, failure_count, status, conversation_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 'approved', NULL, ?, ?)`).bind(
+      id, principal.tenantId, principal.email, name, JSON.stringify(triggerPatterns), JSON.stringify(steps), evidenceRequirements, timestamp, timestamp,
+    ).run();
+  return { id, name, triggerPatterns, stepsJson: JSON.stringify(steps), evidenceRequirements, status: "approved" as const };
+}
+
+export async function getSkill(principal: Principal, skillId: string): Promise<AgentSkill> {
+  await ensureSkillSchema();
+  const row = principal.role === "admin"
+    ? await getD1().prepare(`SELECT * FROM agent_skills WHERE id = ? AND tenant_id = ?`).bind(skillId, principal.tenantId).first<AgentSkill & { trigger_patterns_json: string; steps_json: string }>()
+    : await getD1().prepare(`SELECT * FROM agent_skills WHERE id = ? AND tenant_id = ? AND owner_email = ?`).bind(skillId, principal.tenantId, principal.email).first<AgentSkill & { trigger_patterns_json: string; steps_json: string }>();
+  if (!row || row.status !== "approved") throw new Error("선택한 스킬을 찾을 수 없습니다.");
+  return { ...row, triggerPatterns: JSON.parse(row.trigger_patterns_json || "[]"), stepsJson: row.steps_json } as AgentSkill;
+}
+
+export function skillContext(skill: Pick<AgentSkill, "name" | "stepsJson" | "evidenceRequirements">) {
+  const steps: string[] = JSON.parse(skill.stepsJson || "[]");
+  return `[선택된 스킬: ${skill.name}]\n다음 절차는 조직 보안 정책 및 사용자 요청과 충돌하지 않는 범위에서 적용하세요.\n${steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}${skill.evidenceRequirements ? `\n근거 조건: ${skill.evidenceRequirements}` : ""}\n`;
 }
 
 export async function approveSkill(principal: Principal, skillId: string): Promise<void> {

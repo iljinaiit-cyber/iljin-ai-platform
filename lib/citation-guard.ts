@@ -45,11 +45,13 @@ function claimText(sentence: string) {
 // 분리된다. 그러면 주장은 미인용으로, 남은 인용 조각은 미근거로 이중 오판된다.
 function splitSentences(answer: string) {
   const merged: string[] = [];
-  for (const raw of answer.match(SENTENCE_RE) || []) {
-    const sentence = raw.trim();
-    if (!sentence) continue;
-    if (CITATION_ONLY_RE.test(sentence) && merged.length) merged[merged.length - 1] += ` ${sentence}`;
-    else merged.push(sentence);
+  for (const line of answer.split(/\r?\n/)) {
+    for (const raw of line.match(SENTENCE_RE) || []) {
+      const sentence = raw.trim();
+      if (!sentence) continue;
+      if (CITATION_ONLY_RE.test(sentence) && merged.length) merged[merged.length - 1] += ` ${sentence}`;
+      else merged.push(sentence);
+    }
   }
   return merged;
 }
@@ -70,7 +72,7 @@ function cosine(left: number[], right: number[]) {
 function lexicalOverlap(sentence: string, evidence: string) {
   const evidenceTokens = new Set((evidence.match(TOKEN_RE) || []).map((token) => token.toLowerCase()));
   const sentenceTokens = (sentence.match(TOKEN_RE) || []).map((token) => token.toLowerCase());
-  if (!evidenceTokens.size || !sentenceTokens.length) return 1;
+  if (!evidenceTokens.size || !sentenceTokens.length) return 0;
   return sentenceTokens.filter((token) => evidenceTokens.has(token)).length / sentenceTokens.length;
 }
 
@@ -120,7 +122,7 @@ export async function verifyCitations(
   let citedCount = 0;
 
   for (const sentence of sentences) {
-    if (sentence.startsWith("|") || sentence.startsWith("#") || sentence.startsWith("⚠️")) continue;
+    if (sentence.startsWith("⚠️")) continue;
 
     const citations = [...sentence.matchAll(CITATION_RE)].map((m) => m[1]);
     const isFactual = FACTUAL_HINT_RE.test(sentence) && !NON_FACTUAL_PREFIX_RE.test(sentence);
@@ -134,7 +136,7 @@ export async function verifyCitations(
           sentence,
           detail: `근거 ${cid}는 제공되지 않았습니다.`,
         });
-      } else if (text && claims.length < MAX_SCORED_CLAIMS) {
+      } else if (text) {
         claims.push({ sentence, citationId: cid, text });
       }
     }
@@ -152,9 +154,14 @@ export async function verifyCitations(
     }
   }
 
-  const { mode, scores } = await scoreClaims(claims, evidenceById, embed);
+  const scoredClaims = claims.length <= MAX_SCORED_CLAIMS
+    ? claims
+    : Array.from({ length: MAX_SCORED_CLAIMS }, (_, index) => (
+      claims[Math.floor(index * (claims.length - 1) / (MAX_SCORED_CLAIMS - 1))]
+    ));
+  const { mode, scores } = await scoreClaims(scoredClaims, evidenceById, embed);
   const threshold = mode === "semantic" ? MIN_SEMANTIC_SIMILARITY : MIN_OVERLAP_RATIO;
-  claims.forEach((claim, index) => {
+  scoredClaims.forEach((claim, index) => {
     if (scores[index] >= threshold) return;
     issues.push({
       kind: "unsupported_claim",
@@ -167,15 +174,15 @@ export async function verifyCitations(
   });
 
   const usedIds = new Set(
-    (answer.match(CITATION_RE) || []).map((m) => m[1]).filter((id) => validIds.has(id)),
+    [...answer.matchAll(CITATION_RE)].map((match) => match[1]).filter((id) => validIds.has(id)),
   );
   const unused = evidence.map((e) => e.id).filter((id) => !usedIds.has(id));
 
-  const hasPhantom = issues.some((i) => i.kind === "phantom_citation");
+  const hasInvalidSupport = issues.some((i) => i.kind === "phantom_citation" || i.kind === "unsupported_claim");
   const coverage = factualCount > 0 ? citedCount / factualCount : 1;
 
   return {
-    ok: !hasPhantom && coverage >= 0.8,
+    ok: !hasInvalidSupport && coverage >= WARN_COVERAGE_FLOOR,
     citation_coverage: coverage,
     factual_sentence_count: factualCount,
     cited_sentence_count: citedCount,
@@ -196,8 +203,20 @@ export function needsCitationRepair(report: CitationReport) {
     || report.citation_coverage < REPAIR_COVERAGE_FLOOR;
 }
 
-// 재작성본을 채택할지 판단하는 단일 기준: 지적 건수가 적을수록, 같으면 커버리지가 높을수록 낫다.
+function citationIssueSeverity(report: CitationReport) {
+  return report.issues.reduce((sum, issue) => sum + (
+    issue.kind === "phantom_citation" ? 3
+      : issue.kind === "unsupported_claim" ? 2
+        : 1
+  ), 0);
+}
+
+// 없는 근거 또는 불일치 근거를 새로 만드는 재작성은 단순 미인용 감소보다 나쁘다.
 export function isCitationReportBetter(candidate: CitationReport, current: CitationReport) {
+  if (candidate.ok !== current.ok) return candidate.ok;
+  const candidateSeverity = citationIssueSeverity(candidate);
+  const currentSeverity = citationIssueSeverity(current);
+  if (candidateSeverity !== currentSeverity) return candidateSeverity < currentSeverity;
   if (candidate.issues.length !== current.issues.length) return candidate.issues.length < current.issues.length;
   return candidate.citation_coverage > current.citation_coverage;
 }

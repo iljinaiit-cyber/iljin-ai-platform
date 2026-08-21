@@ -18,6 +18,7 @@ export const assets = sqliteTable(
     originalUploadedAt: text("original_uploaded_at"),
     embeddingModel: text("embedding_model"),
     embeddingDimensions: integer("embedding_dimensions"),
+    visualSearchEnabled: integer("visual_search_enabled", { mode: "boolean" }).notNull().default(false),
     version: integer("version").notNull().default(1),
     documentStatus: text("document_status").default("effective"),
     effectiveFrom: text("effective_from"),
@@ -227,11 +228,30 @@ export const visualRegions = sqliteTable(
     caption: text("caption"),
     ocrText: text("ocr_text"),
     tableMarkdown: text("table_markdown"),
+    labelsJson: text("labels_json"),
+    chartJson: text("chart_json"),
     createdAt: text("created_at").notNull(),
   },
   (table) => [
     index("visual_regions_asset_idx").on(table.assetId, table.pageNumber),
     index("visual_regions_segment_idx").on(table.segmentId),
+  ],
+);
+
+export const visualEmbeddings = sqliteTable(
+  "visual_embeddings",
+  {
+    id: text("id").primaryKey(),
+    assetId: text("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+    segmentId: text("segment_id").notNull().references(() => segments.id, { onDelete: "cascade" }),
+    embedding: text("embedding").notNull(),
+    embeddingModel: text("embedding_model").notNull(),
+    dimensions: integer("dimensions").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    index("visual_embeddings_asset_idx").on(table.assetId),
+    index("visual_embeddings_segment_idx").on(table.segmentId),
   ],
 );
 
@@ -274,6 +294,9 @@ export const retrievalTraces = sqliteTable(
     rerankCandidateCount: integer("rerank_candidate_count").notNull().default(0),
     evidenceConfidence: integer("evidence_confidence").notNull().default(0),
     verifierStatus: text("verifier_status").notNull().default("not_evaluated"),
+    graphSeedCount: integer("graph_seed_count").notNull().default(0),
+    graphCandidateCount: integer("graph_candidate_count").notNull().default(0),
+    graphBoostedCount: integer("graph_boosted_count").notNull().default(0),
     searchScope: text("search_scope").notNull().default("internal"),
     searchProvider: text("search_provider"),
     createdAt: text("created_at").notNull(),
@@ -509,6 +532,7 @@ export const chatAgents = sqliteTable(
     ownerEmail: text("owner_email").notNull(),
     name: text("name").notNull(),
     instructions: text("instructions").notNull(),
+    defaultToolId: text("default_tool_id"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },

@@ -1,5 +1,6 @@
-import { createIngestionSource, deleteIngestionSource, listIngestionSources, updateIngestionSource } from "../../../../lib/rag";
+import { createIngestionSource, deleteIngestionSource, listIngestionSources, runIngestionSource, updateIngestionSource } from "../../../../lib/rag";
 import { resolvePrincipal, requireRole } from "../../../../lib/identity";
+import { getRuntimeEnv } from "../../../../lib/runtime-env";
 import { fail, newTraceId, ok } from "../../_shared";
 
 export async function GET(request: Request) {
@@ -15,7 +16,11 @@ export async function POST(request: Request) {
   try {
     const p = await resolvePrincipal(request); requireRole(p, ["admin"]);
     const body = await request.json() as Record<string, unknown>;
-    return ok(await createIngestionSource({ ...body, tenantId: p.tenantId } as Parameters<typeof createIngestionSource>[0]), traceId, { status: 201 });
+    if (body.action === "run") {
+      if (typeof body.id !== "string" || !body.id) return ok({ error: { code: "INVALID_INPUT", message: "id 가 필요합니다.", trace_id: traceId } }, traceId, { status: 400 });
+      return ok({ result: await runIngestionSource(body.id, getRuntimeEnv(), p.tenantId) }, traceId);
+    }
+    return ok(await createIngestionSource({ ...body, tenantId: p.tenantId, created_by: p.email } as Parameters<typeof createIngestionSource>[0]), traceId, { status: 201 });
   } catch (error) { return fail(error, traceId); }
 }
 

@@ -156,7 +156,7 @@ export function OrgConsole({ currentEmail }: { currentEmail: string }) {
       {loading ? <p className="agent-ops-note">불러오는 중…</p> : (
         <>
           {tab === "org" && (
-            <div className="governance-grid">
+            <div className="governance-grid organization-workbench">
               <div>
                 <h3>법인 ({corporations.length})</h3>
                 <form className="auth-form" onSubmit={(e) => {
@@ -176,6 +176,8 @@ export function OrgConsole({ currentEmail }: { currentEmail: string }) {
                     <li key={c.id}>
                       <strong>{c.name}</strong>
                       <small>부서 {c.departmentCount} · 인원 {c.memberCount}</small>
+                      <button type="button" className="button" disabled={busy} onClick={() => { const name = window.prompt("법인명을 수정하세요.", c.name); if (name?.trim()) void run(() => postJson("/api/admin/organization", { action: "update_corporation", corpId: c.id, name: name.trim() }), `'${c.name}' 법인명을 수정했습니다.`); }}>수정</button>
+                      <button type="button" className="button" disabled={busy} onClick={() => { if (window.confirm(`'${c.name}' 법인을 삭제할까요? 부서와 사용자가 남아 있으면 삭제할 수 없습니다.`)) void run(() => postJson("/api/admin/organization", { action: "delete_corporation", corpId: c.id }), `'${c.name}' 법인을 삭제했습니다.`); }}>삭제</button>
                     </li>
                   ))}
                   {!corporations.length && <li><small>등록된 법인이 없습니다.</small></li>}
@@ -214,12 +216,14 @@ export function OrgConsole({ currentEmail }: { currentEmail: string }) {
                     <li key={d.id} style={{ paddingLeft: `${d.depth * 16}px` }}>
                       <strong>{d.depth > 0 && "└ "}{d.name}</strong>
                       <small>인원 {d.memberCount}{d.status === "archived" ? " · 보관됨" : ""}</small>
+                      {d.status !== "archived" && <button type="button" className="button" disabled={busy} onClick={() => { const name = window.prompt("부서명을 수정하세요.", d.name); if (name?.trim()) void run(() => postJson("/api/admin/organization", { action: "update_department", deptId: d.id, name: name.trim() }), `'${d.name}' 부서명을 수정했습니다.`); }}>수정</button>}
                       {d.status !== "archived" && (
                         <button type="button" className="button" disabled={busy}
                           onClick={() => void run(
                             () => postJson("/api/admin/organization", { action: "archive_department", deptId: d.id }),
                             `'${d.name}' 및 하위 부서를 보관 처리했습니다.`)}>보관</button>
                       )}
+                      {d.status !== "archived" && <button type="button" className="button" disabled={busy} onClick={() => { if (window.confirm(`'${d.name}' 부서를 삭제할까요? 사용자 또는 하위 부서가 남아 있으면 삭제할 수 없습니다.`)) void run(() => postJson("/api/admin/organization", { action: "delete_department", deptId: d.id }), `'${d.name}' 부서를 삭제했습니다.`); }}>삭제</button>}
                     </li>
                   ))}
                   {!departments.length && <li><small>등록된 부서가 없습니다.</small></li>}
@@ -229,7 +233,7 @@ export function OrgConsole({ currentEmail }: { currentEmail: string }) {
           )}
 
           {tab === "members" && (
-            <div>
+            <div className="organization-members-surface">
               {unassigned > 0 && (
                 <p className="agent-ops-note">조직 미배정 {unassigned}명 — 배정 전까지 조직 단위 한도가 적용되지 않습니다.</p>
               )}

@@ -5,6 +5,9 @@ import { completeWithGateway } from "./llm-gateway";
 import { embedTextsWithProvider } from "./rag";
 
 export interface UserPreferences {
+  locale?: string;
+  country?: string;
+  language?: string;
   memoryEnabled?: boolean;
   answerLength?: "brief" | "standard" | "detailed";
   answerFormat?: "paragraph" | "bullets" | "table";
@@ -12,6 +15,17 @@ export interface UserPreferences {
   frequentTopics?: string[];
   feedbackLearning?: FeedbackLearningProfile;
   lastUpdatedAt?: string;
+}
+
+export function preferredLanguageInstruction(language?: string) {
+  const code = typeof language === "string" && /^[a-z]{2,3}(?:-[A-Z]{2})?$/.test(language) ? language : "ko-KR";
+  let name = code;
+  try {
+    name = new Intl.DisplayNames(["en"], { type: "language" }).of(code.slice(0, 3)) || code;
+  } catch {
+    // The language code remains sufficient for models that do not expose DisplayNames.
+  }
+  return `\nOutput language: ${name} (${code}). Write every user-facing answer, heading, explanation, warning, and follow-up question in this language. Preserve quoted source text, document titles, proper nouns, code, IDs, and citations in their original form.`;
 }
 
 export interface FeedbackLearningSignal {

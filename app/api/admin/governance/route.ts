@@ -1,8 +1,12 @@
 import {
   getGovernanceDashboard,
+  deleteManagedUser,
+  grantUserTokens,
   updateFeatureSetting,
   updateManagedUser,
   updateRolePermission,
+  updateScopedPermission,
+  updateUserTokenPolicy,
   updateUserPermission,
 } from "../../../../lib/admin-governance";
 import { resolvePrincipal } from "../../../../lib/identity";
@@ -50,8 +54,31 @@ export async function POST(request: Request) {
           role: body.role as Parameters<typeof updateManagedUser>[0]["role"],
           status: body.status as Parameters<typeof updateManagedUser>[0]["status"],
           department: String(body.department ?? ""),
+          jobTitle: String(body.jobTitle ?? ""),
           traceId,
         });
+        break;
+      case "scoped_permission":
+        await updateScopedPermission({
+          principal,
+          scope: body.scope as Parameters<typeof updateScopedPermission>[0]["scope"],
+          targetKey: String(body.targetKey ?? ""),
+          permissionKey: String(body.permissionKey ?? ""),
+          allowed: body.allowed === null ? null : body.allowed === true,
+          traceId,
+        });
+        break;
+      case "delete_user":
+        await deleteManagedUser({ principal, email: String(body.email ?? ""), traceId });
+        break;
+      case "token_policy":
+        await updateUserTokenPolicy({
+          principal, email: String(body.email ?? ""), monthlyLimitTokens: body.monthlyLimitTokens,
+          tokenBalance: body.tokenBalance, traceId,
+        });
+        break;
+      case "grant_tokens":
+        await grantUserTokens({ principal, email: String(body.email ?? ""), tokens: body.tokens, traceId });
         break;
       default:
         return ok({ error: { code: "INVALID_ACTION", message: "지원하지 않는 변경 요청입니다." } }, traceId, { status: 400 });

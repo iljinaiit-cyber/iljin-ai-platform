@@ -6,7 +6,8 @@ import "./AgentOperations.css";
 type AgentRun = {
   id: string; title?: string; objective?: string; status: string;
   current_state?: string; created_at?: string; updated_at?: string;
-  error_message?: string; owner_email?: string;
+  error_message?: string; owner_email?: string; selectedToolId?: string;
+  output?: { answer?: string; summary?: string };
 };
 
 type ChatAgent = {
@@ -28,6 +29,12 @@ const STATUS_LABEL: Record<string, string> = {
   completed: "완료", failed: "실패", cancelled: "취소",
   pending: "대기", approved: "승인", rejected: "거절", expired: "만료", consumed: "실행됨",
 };
+
+const WORK_AGENT_TEMPLATES = [
+  { id: "meeting", label: "회의 정리", objective: "회의 메모를 결정 사항, 실행 항목, 담당자와 기한으로 정리해줘." },
+  { id: "briefing", label: "업무 브리핑", objective: "아래 업무 내용을 경영진이 바로 판단할 수 있는 핵심 브리핑으로 정리해줘." },
+  { id: "action", label: "실행 계획", objective: "업무 목표를 우선순위, 실행 단계, 위험 요소와 확인 항목으로 구체화해줘." },
+] as const;
 
 function useEndpoint<T>(url: string, pick: (payload: Record<string, unknown>) => T[]) {
   const [items, setItems] = useState<T[]>([]);
@@ -66,7 +73,7 @@ function useEndpoint<T>(url: string, pick: (payload: Record<string, unknown>) =>
 export function AgentTasksView({ currentUser }: { currentUser: { role: string } }) {
   const pickAgentRuns = useCallback((payload: Record<string, unknown>) => (payload.runs as AgentRun[]) ?? [], []);
   const pickChatAgents = useCallback((payload: Record<string, unknown>) => (payload.agents as ChatAgent[]) ?? [], []);
-  const { items, loading, error } = useEndpoint<AgentRun>(
+  const { items, loading, error, reload: reloadRuns } = useEndpoint<AgentRun>(
     "/api/v1/agent/runs?limit=50",
     pickAgentRuns,
   );
@@ -78,6 +85,11 @@ export function AgentTasksView({ currentUser }: { currentUser: { role: string } 
   const [editingAgent, setEditingAgent] = useState<ChatAgent | null>(null);
   const [createError, setCreateError] = useState("");
   const [createNotice, setCreateNotice] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<(typeof WORK_AGENT_TEMPLATES)[number]["id"]>("meeting");
+  const [workInput, setWorkInput] = useState("");
+  const [workRunning, setWorkRunning] = useState(false);
+  const [workNotice, setWorkNotice] = useState("");
+  const [workError, setWorkError] = useState("");
   const canManageAgents = currentUser.role === "admin";
 
   const saveAgent = async (event: FormEvent<HTMLFormElement>) => {
@@ -143,6 +155,34 @@ export function AgentTasksView({ currentUser }: { currentUser: { role: string } 
     }
   };
 
+  const runWorkAssistant = async () => {
+    if (workRunning) return;
+    const template = WORK_AGENT_TEMPLATES.find((item) => item.id === selectedTemplateId) ?? WORK_AGENT_TEMPLATES[0];
+    const objective = [template.objective, workInput.trim()].filter(Boolean).join("\n\n");
+    const selectedTool = { id: "work.assistant" };
+    // Tool마다 입력 계약은 분리한다. 업무 Agent는 임의의 검색어가 아니라 작업 원문을 받는다.
+    const toolInput = selectedTool.id === "knowledge.search"
+      ? { query: workInput.trim() }
+      : selectedTool.id === "work.assistant"
+        ? { task: objective }
+        : {};
+    setWorkRunning(true); setWorkError(""); setWorkNotice("");
+    try {
+      const response = await fetch("/api/v1/agent/runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ objective, tool_id: selectedTool.id, tool_input: toolInput }),
+      });
+      const payload = await response.json() as { run?: AgentRun; error?: { message?: string } };
+      if (!response.ok) throw new Error(payload.error?.message || "업무 Agent를 실행하지 못했습니다.");
+      setWorkNotice(`업무 Agent 실행을 ${payload.run?.status === "completed" ? "완료" : "시작"}했습니다.`);
+      setWorkInput("");
+      reloadRuns();
+    } catch (cause) {
+      setWorkError(cause instanceof Error ? cause.message : "업무 Agent를 실행하지 못했습니다.");
+    } finally { setWorkRunning(false); }
+  };
+
   return (
     <div className="view-stack agent-ops agent-ops-page">
       <div className="page-heading agent-ops-heading">
@@ -152,6 +192,15 @@ export function AgentTasksView({ currentUser }: { currentUser: { role: string } 
         </div>
         <span className="agent-ops-count">{items.length}건</span>
       </div>
+      <section className="panel agent-workbench" aria-labelledby="work-assistant-title">
+        <div className="agent-create-heading"><div><span className="section-kicker">WORK ASSISTANT</span><h2 id="work-assistant-title">업무 Agent 실행</h2><p>작업 원문을 바탕으로 실행 가능한 초안을 만들고, 결과는 아래 실행 기록에 남습니다.</p></div></div>
+        <div className="agent-work-template-list" role="list" aria-label="업무 Agent 템플릿">
+          {WORK_AGENT_TEMPLATES.map((template) => <button key={template.id} type="button" role="listitem" className={selectedTemplateId === template.id ? "selected" : ""} onClick={() => setSelectedTemplateId(template.id)}>{template.label}</button>)}
+        </div>
+        <label className="agent-create-objective"><span>업무 내용</span><textarea value={workInput} onChange={(event) => setWorkInput(event.target.value)} rows={4} maxLength={6000} placeholder="회의 메모, 현재 상황, 원하는 결과를 입력하세요." /></label>
+        <div className="agent-create-actions"><button className="primary-button" type="button" disabled={workRunning} onClick={() => void runWorkAssistant()}>{workRunning ? "실행 중…" : "work.assistant 실행"}</button></div>
+        <div aria-live="polite">{workError ? <p className="agent-ops-error" role="alert">{workError}</p> : null}{workNotice ? <p className="agent-create-success">{workNotice}</p> : null}</div>
+      </section>
       <section className="panel agent-create-panel" aria-labelledby="agent-create-title">
         <div className="agent-create-heading">
           <div>
@@ -227,6 +276,7 @@ export function AgentTasksView({ currentUser }: { currentUser: { role: string } 
                   </div>
                   {/* 실패는 감추지 않는다. 원인과 Trace 를 함께 보여야 문의가 성립한다. */}
                   {run.error_message ? <p className="agent-run-error">{run.error_message}</p> : null}
+                  {run.selectedToolId === "work.assistant" && run.output ? <section className="agent-run-result"><strong>업무 Agent 결과</strong><p>{run.output.answer || run.output.summary || "결과를 정리하고 있습니다."}</p></section> : null}
                 </li>
               ))}
             </ol>

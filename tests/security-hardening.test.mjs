@@ -43,3 +43,20 @@ test("production indexer has no public workers.dev route", async () => {
   assert.match(config, /"workers_dev": false/);
   assert.match(config, /"preview_urls": false/);
 });
+
+test("activity CSV renders spreadsheet formulas as literal text", async () => {
+  const activity = await source("lib/activity.ts");
+  assert.match(activity, /\^\[\\t\\r\\n \]\*\[=\+\\-@\]/);
+  assert.match(activity, /\? `'\$\{text\}` : text/);
+});
+
+test("a stale DLQ message cannot finalize a superseded ingestion job", async () => {
+  const rag = await source("lib/rag.ts");
+  const start = rag.indexOf("export async function failQueuedIngest");
+  const end = rag.indexOf("export async function repairVectorIndexBatch", start);
+  const failQueued = rag.slice(start, end);
+  assert.match(failQueued, /UPDATE index_jobs SET status = 'finalizing', stage = 'finalizing'/);
+  assert.match(failQueued, /WHERE id = \? AND asset_id = \? AND status IN \('queued', 'running', 'finalizing'\)/);
+  assert.match(failQueued, /if \(!claim\.meta\.changes\) return \{ finalized: false as const \}/);
+  assert.match(failQueued, /WHERE id = \? AND asset_id = \? AND status = 'finalizing'/);
+});

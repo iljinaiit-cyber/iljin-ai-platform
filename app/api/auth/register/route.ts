@@ -1,4 +1,4 @@
-import { registerEmailAccount } from "../../../../lib/identity";
+import { registerEmailAccount, sessionCookie } from "../../../../lib/identity";
 import { fail, newTraceId, ok } from "../../_shared";
 
 export async function POST(request: Request) {
@@ -9,17 +9,16 @@ export async function POST(request: Request) {
       department?: string; note?: string; adminCode?: string;
     };
     // 신뢰 경계다. 빈 값은 registerEmailAccount 가 AuthError 로 되돌려 준다.
-    const result = await registerEmailAccount({
+    const { user, token } = await registerEmailAccount({
       email: body.email ?? "",
       password: body.password ?? "",
       displayName: body.displayName ?? "",
       department: body.department ?? "",
       note: body.note,
       adminCode: body.adminCode,
-      verificationUrl: new URL("/verify-email", request.url).toString(),
       traceId,
     });
-    return ok(result, traceId, { status: 202 });
+    return ok({ user }, traceId, { status: 201, headers: { "Set-Cookie": sessionCookie(token, request) } });
   } catch (error) {
     return fail(error, traceId);
   }

@@ -20,6 +20,7 @@ export type RuntimeEnv = {
   DB?: D1Database;
   BUCKET?: R2Bucket;
   VECTOR_INDEX?: VectorizeIndex;
+  VISUAL_VECTOR_INDEX?: VectorizeIndex;
   // Absent in environments without the queue binding; callers fall back to
   // synchronous indexing when it is missing.
   INDEX_QUEUE?: QueueProducer<IndexJobMessage>;
@@ -86,12 +87,12 @@ export type RuntimeEnv = {
   WEBPILOT_API_URL?: string;
   WEBPILOT_API_KEY?: string;
   JINA_API_KEY?: string;
+  COHERE_API_KEY?: string;
   INTERNET_SEARCH_PROVIDER_ORDER?: string;
   LOCAL_LLM_TIMEOUT_MS?: string;
   LLM_TIMEOUT_MS?: string;
   DEFAULT_TENANT_ID?: string;
   DEFAULT_DEPARTMENT?: string;
-  DEFAULT_USER_ROLE?: string;
   APP_ENV?: string;
   EDGE_RATE_LIMIT_REQUIRED?: string;
   ALLOW_DEV_IDENTITY?: string;
@@ -146,12 +147,12 @@ export function getRuntimeEnv(): RuntimeEnv {
       WEBPILOT_API_URL: process.env.WEBPILOT_API_URL,
       WEBPILOT_API_KEY: process.env.WEBPILOT_API_KEY,
       JINA_API_KEY: process.env.JINA_API_KEY,
+      COHERE_API_KEY: process.env.COHERE_API_KEY,
       INTERNET_SEARCH_PROVIDER_ORDER: process.env.INTERNET_SEARCH_PROVIDER_ORDER,
       LOCAL_LLM_TIMEOUT_MS: process.env.LOCAL_LLM_TIMEOUT_MS,
       LLM_TIMEOUT_MS: process.env.LLM_TIMEOUT_MS,
       DEFAULT_TENANT_ID: process.env.DEFAULT_TENANT_ID,
       DEFAULT_DEPARTMENT: process.env.DEFAULT_DEPARTMENT,
-      DEFAULT_USER_ROLE: process.env.DEFAULT_USER_ROLE,
       APP_ENV: process.env.APP_ENV,
       EDGE_RATE_LIMIT_REQUIRED: process.env.EDGE_RATE_LIMIT_REQUIRED,
       ALLOW_DEV_IDENTITY: process.env.ALLOW_DEV_IDENTITY,

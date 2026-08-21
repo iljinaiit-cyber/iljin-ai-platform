@@ -44,7 +44,11 @@ await writeFile(
 
 // This file configures `vinext start`/Workers development. Leaving it inside
 // `_worker.js` makes Wrangler treat it as the Pages project configuration.
+await rm(resolve(serverDirectory, "wrangler.json"), { force: true });
 await rm(resolve(workerDirectory, "wrangler.json"), { force: true });
+// `.dev.vars` is local-only input. Advanced Mode uploads this directory, so it
+// must never be carried from the server build into the Pages artifact.
+await rm(resolve(workerDirectory, ".dev.vars"), { force: true });
 await rm(redirectedWranglerConfig, { force: true });
 
 await writeFile(

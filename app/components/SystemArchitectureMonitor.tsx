@@ -164,7 +164,7 @@ export function SystemArchitectureMonitor() {
             <button type="button" onClick={() => setSelectedNode(undefined)} aria-label="상세 현황 닫기">닫기</button>
           </header>
           <p className="system-modal__status"><i />{selectedNode.state === "ready" ? "정상 운영 중" : selectedNode.state === "offline" ? "상태 확인 중" : "점검이 필요합니다"}</p>
-          <dl>{selectedDetails.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+          <dl>{(selectedDetails || []).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
           <footer><span>자동 갱신: {paused ? "일시정지" : "20초 간격"}</span><span>{lastUpdated ? `기준 ${lastUpdated.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "갱신 중"}</span></footer>
         </section>
       </div>}

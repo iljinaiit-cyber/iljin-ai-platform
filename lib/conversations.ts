@@ -267,7 +267,6 @@ export async function conversationContext(principal: Principal, conversationId: 
 }
 
 const SUMMARY_TRIGGER_COUNT = 12;
-const SUMMARY_KEEP_RECENT = 6;
 const SUMMARY_PROTECT_HEAD = 4;
 const SUMMARY_PROTECT_TAIL = 4;
 
@@ -322,6 +321,7 @@ export async function recordExchange(input: {
   userContent: string;
   completion: GatewayCompletion;
   citations: RagCitation[] | WebRagCitation[];
+  deepResearch?: boolean;
 }) {
   await assertConversationOwner(input.principal, input.conversationId);
   const userMessageId = id("msg");
@@ -341,7 +341,7 @@ export async function recordExchange(input: {
         input.completion.content,
         input.completion.provider,
         input.completion.model,
-        JSON.stringify(input.completion.usage || {}),
+        JSON.stringify({ ...(input.completion.usage || {}), deep_research: input.deepResearch === true }),
         JSON.stringify(input.citations),
         timestamp,
       ),

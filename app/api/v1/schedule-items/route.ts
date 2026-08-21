@@ -23,10 +23,11 @@ export async function GET(request: Request) {
   const traceId = newTraceId();
   try {
     const principal = await resolvePrincipal(request);
-    const status = new URL(request.url).searchParams.get("status") as ScheduleWorkItemStatus | "all" | null;
+    const url = new URL(request.url);
+    const status = url.searchParams.get("status") as ScheduleWorkItemStatus | "all" | null;
     if (status && status !== "all" && !statuses.has(status)) return invalid(traceId, "업무 상태 필터가 올바르지 않습니다.");
     const requestedStatus = status && status !== "all" ? status : "all";
-    return ok({ items: await listScheduleWorkItems(principal, { status: requestedStatus }), notifications: await listScheduleAlerts(principal) }, traceId);
+    return ok({ items: await listScheduleWorkItems(principal, { status: requestedStatus, projectId: url.searchParams.get("project_id") || undefined }), notifications: await listScheduleAlerts(principal) }, traceId);
   } catch (error) { return fail(error, traceId); }
 }
 
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
     const principal = await resolvePrincipal(request);
     const body = await request.json() as {
       title?: string; description?: string; kind?: ScheduleWorkItemKind; priority?: ScheduleWorkItemPriority;
-      due_at?: string | null; notify_enabled?: boolean;
+      due_at?: string | null; notify_enabled?: boolean; project_id?: string | null; parent_id?: string | null;
     };
     if (typeof body.title !== "string" || body.title.trim().length < 2 || body.title.trim().length > 240) {
       return invalid(traceId, "업무 제목은 2~240자로 입력해 주세요.");
@@ -56,6 +57,8 @@ export async function POST(request: Request) {
     if (body.notify_enabled !== undefined && typeof body.notify_enabled !== "boolean") {
       return invalid(traceId, "알림 설정 형식이 올바르지 않습니다.");
     }
+    if ((body.project_id !== undefined && body.project_id !== null && (typeof body.project_id !== "string" || body.project_id.length > 200))
+      || (body.parent_id !== undefined && body.parent_id !== null && (typeof body.parent_id !== "string" || body.parent_id.length > 200))) return invalid(traceId, "프로젝트 또는 상위 업무 형식이 올바르지 않습니다.");
     const id = await createScheduleWorkItem({
       principal,
       title: body.title,
@@ -64,6 +67,8 @@ export async function POST(request: Request) {
       priority: body.priority,
       dueAt: body.due_at,
       notifyEnabled: body.notify_enabled !== false,
+      projectId: body.project_id,
+      parentId: body.parent_id,
     });
     return ok({ id }, traceId, { status: 201 });
   } catch (error) { return fail(error, traceId); }
@@ -75,7 +80,8 @@ export async function PATCH(request: Request) {
     const principal = await resolvePrincipal(request);
     const body = await request.json() as {
       id?: string; title?: string; description?: string; status?: ScheduleWorkItemStatus;
-      kind?: ScheduleWorkItemKind; priority?: ScheduleWorkItemPriority; due_at?: string | null; notify_enabled?: boolean;
+      kind?: ScheduleWorkItemKind; priority?: ScheduleWorkItemPriority; due_at?: string | null; notify_enabled?: boolean; project_id?: string | null; parent_id?: string | null;
+      detail_content?: string; image_asset_ids?: string[];
     };
     if (typeof body.id !== "string" || !body.id.trim()) {
       return invalid(traceId, "업무 항목 ID가 필요합니다.");
@@ -85,6 +91,13 @@ export async function PATCH(request: Request) {
     }
     if (body.description !== undefined && typeof body.description !== "string") {
       return invalid(traceId, "업무 설명 형식이 올바르지 않습니다.");
+    }
+    if (body.detail_content !== undefined && (typeof body.detail_content !== "string" || body.detail_content.length > 12_000)) {
+      return invalid(traceId, "세부 업무 내용은 12,000자 이내로 입력해 주세요.");
+    }
+    if (body.image_asset_ids !== undefined && (!Array.isArray(body.image_asset_ids) || body.image_asset_ids.length > 8
+      || body.image_asset_ids.some((id) => typeof id !== "string" || !id.trim() || id.length > 200))) {
+      return invalid(traceId, "업무 이미지는 최대 8개까지 첨부할 수 있습니다.");
     }
     if (body.status !== undefined && !statuses.has(body.status)) {
       return invalid(traceId, "업무 상태가 올바르지 않습니다.");
@@ -101,9 +114,12 @@ export async function PATCH(request: Request) {
     if (body.notify_enabled !== undefined && typeof body.notify_enabled !== "boolean") {
       return invalid(traceId, "알림 설정 형식이 올바르지 않습니다.");
     }
+    if ((body.project_id !== undefined && body.project_id !== null && (typeof body.project_id !== "string" || body.project_id.length > 200))
+      || (body.parent_id !== undefined && body.parent_id !== null && (typeof body.parent_id !== "string" || body.parent_id.length > 200))) return invalid(traceId, "프로젝트 또는 상위 업무 형식이 올바르지 않습니다.");
     await updateScheduleWorkItem(principal, body.id, {
       title: body.title, description: body.description, status: body.status, kind: body.kind, priority: body.priority,
-      dueAt: body.due_at, notifyEnabled: body.notify_enabled,
+      dueAt: body.due_at, notifyEnabled: body.notify_enabled, projectId: body.project_id, parentId: body.parent_id,
+      detailContent: body.detail_content, detailImageAssetIds: body.image_asset_ids,
     });
     return ok({ ok: true }, traceId);
   } catch (error) { return fail(error, traceId); }

@@ -1,5 +1,6 @@
 import { listTools } from "../../../../lib/agent-orchestrator";
 import { resolvePrincipal } from "../../../../lib/identity";
+import { authorizeFeature } from "../../../../lib/admin-governance";
 import { fail, newTraceId, ok } from "../../_shared";
 
 // MCP Tool 목록 노출 지점. 실행은 /api/v1/agent/runs 를 거친다 —
@@ -8,6 +9,7 @@ export async function GET(request: Request) {
   const traceId = newTraceId();
   try {
     const principal = await resolvePrincipal(request);
+    await authorizeFeature(principal, "agent.run", "agent");
     return ok({ tools: await listTools(principal), execution_endpoint: "/api/v1/agent/runs" }, traceId);
   } catch (error) { return fail(error, traceId); }
 }

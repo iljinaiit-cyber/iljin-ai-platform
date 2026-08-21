@@ -19,6 +19,9 @@ export async function PATCH(request: Request) {
     const body = await request.json() as {
       displayName?: string;
       department?: string;
+      locale?: string;
+      country?: string;
+      language?: string;
       currentPassword?: string;
       newPassword?: string;
     };
@@ -26,6 +29,9 @@ export async function PATCH(request: Request) {
       request,
       displayName: body.displayName ?? "",
       department: body.department ?? "",
+      locale: body.locale,
+      country: body.country,
+      language: body.language,
       currentPassword: body.currentPassword,
       newPassword: body.newPassword,
       traceId,

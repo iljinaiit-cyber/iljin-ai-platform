@@ -3,6 +3,7 @@ import type { Principal } from "./identity";
 import { ensureRagSchema, RagError } from "./rag";
 import { getRuntimeEnv, type RuntimeEnv } from "./runtime-env";
 import { COMPANY_INDUSTRY, COMPANY_NAME } from "./company-profile";
+import { referenceYearInSeoul } from "./reference-date";
 
 export type InternetSearchProvider = "tavily" | "exa" | "google" | "naver" | "youtube" | "brave" | "webpilot" | "duckduckgo" | "jina" | "wikimedia";
 export type InternetSourceCategory = "government" | "academic" | "reference" | "web";
@@ -221,19 +222,27 @@ function searchLanguage(query: string) {
 }
 
 function freshnessForQuery(query: string) {
-  const currentYear = new Date().getUTCFullYear();
+  const currentYear = referenceYearInSeoul();
   if (!FRESHNESS_PATTERN.test(query) && !new RegExp(`\\b${currentYear}\\b`).test(query)) return undefined;
   if (/오늘|today|24\s*hours?/i.test(query)) return "pd" as const;
   if (/이번\s*주|week|주간/i.test(query)) return "pw" as const;
   if (/이번\s*달|month|월간/i.test(query)) return "pm" as const;
-  return "py" as const;
+  return "pw" as const;
 }
 
 function isExplicitHistoricalQuery(query: string) {
   if (HISTORICAL_PATTERN.test(query)) return true;
-  const currentYear = new Date().getUTCFullYear();
+  const currentYear = referenceYearInSeoul();
   const years = [...query.matchAll(/\b(?:19|20)\d{2}\b/g)].map((match) => Number(match[0]));
   return years.some((year) => year !== currentYear) && !FRESHNESS_PATTERN.test(query);
+}
+
+function requiresCurrentYearEvidence(query: string) {
+  const currentYear = referenceYearInSeoul();
+  const years = [...query.matchAll(/\b(?:19|20)\d{2}\b/g)].map((match) => Number(match[0]));
+  return !isExplicitHistoricalQuery(query)
+    && !years.some((year) => year !== currentYear)
+    && (FRESHNESS_PATTERN.test(query) || years.includes(currentYear));
 }
 
 function optimizeSearchQuery(value: string) {
@@ -275,7 +284,7 @@ function prioritizeCompanySearchQuery(query: string) {
   return `${COMPANY_NAME} ${COMPANY_INDUSTRY} ${query}`;
 }
 
-function buildSearchPlan(query: string, context: string[] = []): InternetSearchPlan {
+export function buildSearchPlan(query: string, context: string[] = []): InternetSearchPlan {
   const searchQuery = contextualSearchQuery(prioritizeCompanySearchQuery(query), context);
   const requestedFreshness = freshnessForQuery(searchQuery);
   const latestRequired = Boolean(requestedFreshness) || !isExplicitHistoricalQuery(searchQuery);
@@ -293,20 +302,24 @@ function buildSearchPlan(query: string, context: string[] = []): InternetSearchP
       : latestRequired
         ? "current"
         : "fact";
-  const currentYear = new Date().getUTCFullYear();
+  const currentYear = referenceYearInSeoul();
+  const currentYearRequired = requiresCurrentYearEvidence(searchQuery);
+  const queryWithCurrentYear = currentYearRequired && !new RegExp(`\\b${currentYear}\\b`).test(searchQuery)
+    ? `${searchQuery} ${currentYear}`
+    : searchQuery;
   const variants: string[] = [];
   if (intent === "research") {
-    variants.push(searchQuery);
-    variants.push(`${searchQuery} ${locale.language === "ko" ? "글로벌 국내 기업 사례 정책 ROI" : "global enterprise cases policy ROI"}`);
+    variants.push(queryWithCurrentYear);
+    variants.push(`${queryWithCurrentYear} ${locale.language === "ko" ? "글로벌 국내 기업 사례 정책 ROI" : "global enterprise cases policy ROI"}`);
   } else if (intent === "comparison") {
     variants.push(searchQuery);
     variants.push(`${searchQuery} ${locale.language === "ko" ? "공식 자료 사양" : "official specifications"}`);
   } else if (intent === "how-to") {
     variants.push(searchQuery);
     variants.push(`${searchQuery} ${locale.language === "ko" ? "공식 가이드" : "official guide"}`);
-  } else if (latestRequired && !new RegExp(`\\b${currentYear}\\b`).test(searchQuery)) {
+  } else if (currentYearRequired) {
     variants.push(searchQuery);
-    variants.push(`${searchQuery} ${currentYear}`);
+    variants.push(queryWithCurrentYear);
   } else {
     variants.push(searchQuery);
   }
@@ -370,24 +383,46 @@ function relevanceScore(query: string, result: InternetSearchResult) {
           : ageDays <= 1_095
             ? 0.03
             : 0;
-  return Math.min(1, result.score * 0.5 + overlap * 0.32 + authority + exactTitle + recency);
+  const currentYear = referenceYearInSeoul();
+  const publishedYear = Number.isFinite(publishedAt) ? referenceYearInSeoul(new Date(publishedAt)) : undefined;
+  const currentYearWeight = requiresCurrentYearEvidence(query)
+    ? publishedYear === currentYear ? 0.08 : publishedYear && publishedYear < currentYear ? -0.08 : 0
+    : 0;
+  return Math.max(0, Math.min(1, result.score * 0.5 + overlap * 0.32 + authority + exactTitle + recency + currentYearWeight));
 }
 
-function rerankResults(query: string, input: InternetSearchResult[], limit: number) {
+function isSyndicatedDuplicate(left: InternetSearchResult, right: InternetSearchResult) {
+  const leftTokens = tokenize(`${left.title} ${left.snippet}`);
+  const rightTokens = tokenize(`${right.title} ${right.snippet}`);
+  const smaller = Math.min(leftTokens.size, rightTokens.size);
+  if (smaller < 10) return false;
+  const shared = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  return shared / smaller >= 0.86;
+}
+
+function isWithinRecentWeek(result: InternetSearchResult) {
+  const publishedAt = result.publishedAt ? Date.parse(result.publishedAt) : Number.NaN;
+  return Number.isFinite(publishedAt) && publishedAt <= Date.now() && Date.now() - publishedAt <= 7 * 86_400_000;
+}
+
+export function rerankResults(query: string, input: InternetSearchResult[], limit: number, freshness?: InternetSearchPlan["freshness"]) {
   const seenUrls = new Set<string>();
   const hostCounts = new Map<string, number>();
+  const selected: InternetSearchResult[] = [];
   const uniqueHosts = new Set(input.map((result) => result.source)).size;
   const maxPerHost = uniqueHosts <= 1 ? limit : uniqueHosts === 2 ? Math.ceil(limit / 2) : 2;
-  return input
+  return (freshness === "pw" ? input.filter(isWithinRecentWeek) : input)
     .map((result) => ({ ...result, score: Number(relevanceScore(query, result).toFixed(4)) }))
     .sort((left, right) => right.score - left.score)
     .filter((result) => {
       const normalized = result.url.replace(/[?#].*$/, "").replace(/\/$/, "").toLowerCase();
       if (seenUrls.has(normalized)) return false;
+      if (selected.some((current) => isSyndicatedDuplicate(current, result))) return false;
       const hostCount = hostCounts.get(result.source) || 0;
       if (hostCount >= maxPerHost) return false;
       seenUrls.add(normalized);
       hostCounts.set(result.source, hostCount + 1);
+      selected.push(result);
       return true;
     })
     .slice(0, limit);
@@ -1010,9 +1045,9 @@ async function runProviderBatch(
       const providerResults: InternetSearchResult[] = [];
       for (const query of plan.queries) {
         providerResults.push(...await adapter.search(query, limit, runtime));
-        if (!plan.latestRequired && rerankResults(plan.searchQuery, providerResults, limit).length >= Math.min(4, limit)) break;
+        if (!plan.latestRequired && rerankResults(plan.searchQuery, providerResults, limit, plan.freshness).length >= Math.min(4, limit)) break;
       }
-      const deduplicated = rerankResults(plan.searchQuery, providerResults, limit);
+      const deduplicated = rerankResults(plan.searchQuery, providerResults, limit, plan.freshness);
       return {
         providerId,
         results: deduplicated,
@@ -1071,10 +1106,10 @@ async function executeInternetSearch(plan: InternetSearchPlan, limit: number) {
       collected.push(...results);
       if (results.length) successfulProviders.push(providerId);
     }
-    if (rerankResults(plan.searchQuery, collected, limit).length >= minimumResults) break;
+    if (rerankResults(plan.searchQuery, collected, limit, plan.freshness).length >= minimumResults) break;
   }
 
-  const results = rerankResults(plan.searchQuery, collected, limit);
+  const results = rerankResults(plan.searchQuery, collected, limit, plan.freshness);
   // 실제로 최종 결과에 살아남은 출처만 "사용됨"으로 센다 — 응답은 왔지만
   // 중복·저관련으로 rerankResults 에서 전부 걸러진 Provider 는 제외한다.
   const providersUsed = [...new Set(results.map(providerOfResult).filter((id): id is InternetSearchProvider => Boolean(id)))];

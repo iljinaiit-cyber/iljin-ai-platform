@@ -23,7 +23,7 @@ export async function GET(request: Request) {
       seeds.length
         ? neighbors({ tenantId: principal.tenantId, entityIds: seeds.map((s) => s.id), maxHops: 2, limit: 40 })
         : Promise.resolve([]),
-      graphRelatedSegments({ tenantId: principal.tenantId, query, limit: 20 }),
+      graphRelatedSegments({ tenantId: principal.tenantId, department: principal.department, query, limit: 20 }),
     ]);
     return ok({ stats, query, seeds, neighbors: related, segments: graph.segments }, traceId);
   } catch (error) { return fail(error, traceId); }

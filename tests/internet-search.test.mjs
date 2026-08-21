@@ -77,12 +77,12 @@ test("Google, NAVER, and YouTube results are merged in one provider batch", asyn
   const requestHeaders = [];
   const calls = stubFetch([
     ["customsearch.googleapis.com", () => jsonResponse({
-      items: [{ title: "Google result", link: "https://google-source.example/a", snippet: "Google web result" }],
+      items: [{ title: "Google result", link: "https://google-source.example/a", snippet: "Google web result", pagemap: { metatags: [{ "article:published_time": "2026-08-19T01:00:00Z" }] } }],
     })],
     ["naverapihub.apigw.ntruss.com/search/v1/news", (_href, init) => {
       requestHeaders.push(init?.headers);
       return jsonResponse({
-        items: [{ title: "NAVER news", originallink: "https://naver-source.example/b", description: "NAVER news result", pubDate: "Mon, 10 Aug 2026 09:00:00 +0900" }],
+        items: [{ title: "NAVER news", originallink: "https://naver-source.example/b", description: "NAVER news result", pubDate: "Wed, 19 Aug 2026 09:00:00 +0900" }],
       });
     }],
     ["naverapihub.apigw.ntruss.com/search/v1/webkr", (_href, init) => {
@@ -92,7 +92,7 @@ test("Google, NAVER, and YouTube results are merged in one provider batch", asyn
     ["www.googleapis.com/youtube/v3/search", () => jsonResponse({
       items: [{
         id: { videoId: "video-1" },
-        snippet: { title: "YouTube result", description: "Video explanation", channelTitle: "Example channel", publishedAt: "2026-08-10T01:00:00Z" },
+        snippet: { title: "YouTube result", description: "Video explanation", channelTitle: "Example channel", publishedAt: "2026-08-19T01:00:00Z" },
       }],
     })],
   ]);
@@ -127,10 +127,10 @@ test("Tavily 와 Exa 를 병렬로 불러 결과를 합친다", async (t) => {
   globalThis.__ILJIN_RUNTIME_ENV__ = { TAVILY_API_KEY: "k1", EXA_API_KEY: "k2" };
   const calls = stubFetch([
     ["api.tavily.com", () => jsonResponse({
-      results: [{ title: "Tavily 결과", url: "https://tavily-source.example/a", content: "타빌리 본문", score: 0.9 }],
+      results: [{ title: "Tavily 결과", url: "https://tavily-source.example/a", content: "타빌리 본문", score: 0.9, published_date: "2026-08-19" }],
     })],
     ["api.exa.ai", () => jsonResponse({
-      results: [{ title: "Exa 결과", url: "https://exa-source.example/b", text: "엑사 의미 검색 본문", score: 0.88, publishedDate: "2026-08-01" }],
+      results: [{ title: "Exa 결과", url: "https://exa-source.example/b", text: "엑사 의미 검색 본문", score: 0.88, publishedDate: "2026-08-19" }],
     })],
   ]);
 
@@ -149,7 +149,7 @@ test("첫 배치로 충분하면 다음 배치의 Provider는 부르지 않는�
     GOOGLE_SEARCH_API_KEY: "k3", GOOGLE_SEARCH_ENGINE_ID: "cx",
     BRAVE_SEARCH_API_KEY: "k4",
   };
-  const many = (n) => Array.from({ length: n }, (_, i) => ({ title: `결과 ${i}`, url: `https://source.example/${i}`, content: "충분한 본문 내용", score: 0.8 - i * 0.01 }));
+  const many = (n) => Array.from({ length: n }, (_, i) => ({ title: `결과 ${i}`, url: `https://source.example/${i}`, content: "충분한 본문 내용", score: 0.8 - i * 0.01, published_date: "2026-08-19" }));
   const calls = stubFetch([
     ["api.tavily.com", () => jsonResponse({ results: many(6) })],
     ["api.exa.ai", () => jsonResponse({ results: many(6).map((r) => ({ ...r, text: r.content })) })],
@@ -192,7 +192,7 @@ test("Wikimedia는 검색 공급자와 폴백에서 모두 비활성화된다", 
     ["wikipedia.org/w/api.php", () => jsonResponse({ query: { pages: [{ pageid: 1, title: "Wikipedia", fullurl: "https://ko.wikipedia.org/wiki/Test", extract: "백과사전 본문" }] } })],
   ]);
 
-  const response = await internetSearch.searchInternet("현재 확인할 내용", { principal, traceId: "TRC-4", limit: 6 });
+  const response = await internetSearch.searchInternet("검증할 제품 설명", { principal, traceId: "TRC-4", limit: 6 });
 
   assert.equal(response.provider, "duckduckgo");
   assert.ok(response.results.every((result) => result.source !== "ko.wikipedia.org"));

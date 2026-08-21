@@ -32,7 +32,8 @@
     { "binding": "BUCKET", "bucket_name": "iljin-ai-originals-preview" }
   ],
   "vectorize": [
-    { "binding": "VECTOR_INDEX", "index_name": "iljin-ai-vectors-preview" }
+    { "binding": "VECTOR_INDEX", "index_name": "iljin-ai-vectors-preview" },
+    { "binding": "VISUAL_VECTOR_INDEX", "index_name": "iljin-ai-visual-vectors-preview" }
   ],
   // Producer 전용. Pages Functions 는 Queue Consumer 가 될 수 없으므로
   // Consumer 는 별도 Worker(iljin-ai-indexer)에 있다.
@@ -53,7 +54,6 @@
     "LOCAL_LLM_TIMEOUT_MS": "90000",
     "DEFAULT_TENANT_ID": "iljin",
     "DEFAULT_DEPARTMENT": "AX전략팀",
-    "DEFAULT_USER_ROLE": "user",
     "ALLOW_DEV_IDENTITY": "false",
     "TRUSTED_IDENTITY_MODE": "session",
     "TRUSTED_IDENTITY_HOSTS": "",
@@ -61,12 +61,11 @@
     "ADMIN_EMAILS": "iljin.ai.it@iljin.com",
     "RESEND_FROM_EMAIL": "ILJIN AI Works <no-reply@notify.iljin.com>",
 
-    // ── hardening 배선 대기 변수 ──────────────────────────────────────
-    // 아직 이 값을 읽는 코드가 없다. 배선(10 §H.5) 전까지는 무효다.
-    // 미리 두는 이유는 배선 시점에 설정 변경과 코드 변경이 겹치지 않게 하기 위함이다.
+    // ── 런타임 정책 변수 ──────────────────────────────────────────────
+    // 아래는 모두 코드가 실제로 읽는 값이다(guardrails.ts · llm-gateway.ts).
+    // 2026-08-18: 읽는 코드가 없던 COST_PROFILE·MAX_SENSITIVITY 는 제거했다 —
+    // 설정에만 존재하는 값은 통제가 걸린 것처럼 보이게 만들어 판단을 흐린다.
     "APP_ENV": "preview",
-    "COST_PROFILE": "test",
-    "MAX_SENSITIVITY": "public",
     "MAX_EGRESS_SENSITIVITY": "public",
     "DAILY_BUDGET_PER_USER": "50",
     "DAILY_BUDGET_PER_TENANT": "200",
@@ -93,7 +92,8 @@
         { "binding": "BUCKET", "bucket_name": "iljin-ai-originals-preview" }
       ],
       "vectorize": [
-        { "binding": "VECTOR_INDEX", "index_name": "iljin-ai-vectors-preview" }
+        { "binding": "VECTOR_INDEX", "index_name": "iljin-ai-vectors-preview" },
+        { "binding": "VISUAL_VECTOR_INDEX", "index_name": "iljin-ai-visual-vectors-preview" }
       ],
       "queues": {
         "producers": [{ "binding": "INDEX_QUEUE", "queue": "iljin-ai-index-jobs-preview" }]
@@ -102,6 +102,7 @@
         "LOCAL_LLM_MODEL": "gemma4:latest",
         "CLOUDFLARE_AI_MODEL": "@cf/zai-org/glm-4.7-flash",
         "CLOUDFLARE_AI_PREMIUM_MODEL": "@cf/zai-org/glm-4.7-flash",
+        "CLOUDFLARE_ACCOUNT_ID": "de5ce3bbf2cba1f463e952104b4ab47f",
         "CLOUDFLARE_AI_GATEWAY_ID": "iljin-ai-gateway",
         "CLOUDFLARE_EMBED_MODEL": "@cf/baai/bge-m3",
         "CLOUDFLARE_RERANK_MODEL": "@cf/baai/bge-reranker-base",
@@ -112,7 +113,6 @@
         "LOCAL_LLM_TIMEOUT_MS": "90000",
         "DEFAULT_TENANT_ID": "iljin",
         "DEFAULT_DEPARTMENT": "AX전략팀",
-        "DEFAULT_USER_ROLE": "user",
         "ALLOW_DEV_IDENTITY": "false",
         "TRUSTED_IDENTITY_MODE": "session",
         "TRUSTED_IDENTITY_HOSTS": "",
@@ -120,10 +120,8 @@
         "ADMIN_EMAILS": "iljin.ai.it@iljin.com",
         "RESEND_FROM_EMAIL": "ILJIN AI Works <no-reply@notify.iljin.com>",
         "APP_ENV": "preview",
-        "COST_PROFILE": "test",
-        "MAX_SENSITIVITY": "public",
         "MAX_EGRESS_SENSITIVITY": "public",
-        "DISABLED_AI_KINDS": "image_gen,tts",
+        "DISABLED_AI_KINDS": "image_gen,tts,visual_search",
         "DAILY_BUDGET_PER_USER": "50",
         "DAILY_BUDGET_PER_TENANT": "200"
       }
@@ -148,7 +146,8 @@
         { "binding": "BUCKET", "bucket_name": "iljin-ai-originals" }
       ],
       "vectorize": [
-        { "binding": "VECTOR_INDEX", "index_name": "iljin-ai-vectors" }
+        { "binding": "VECTOR_INDEX", "index_name": "iljin-ai-vectors" },
+        { "binding": "VISUAL_VECTOR_INDEX", "index_name": "iljin-ai-visual-vectors" }
       ],
       "queues": {
         "producers": [{ "binding": "INDEX_QUEUE", "queue": "iljin-ai-index-jobs" }]
@@ -167,7 +166,6 @@
         "LOCAL_LLM_TIMEOUT_MS": "90000",
         "DEFAULT_TENANT_ID": "iljin",
         "DEFAULT_DEPARTMENT": "AX전략팀",
-        "DEFAULT_USER_ROLE": "user",
         "ALLOW_DEV_IDENTITY": "false",
         "TRUSTED_IDENTITY_MODE": "session",
         "TRUSTED_IDENTITY_HOSTS": "",
@@ -175,11 +173,9 @@
         "ADMIN_EMAILS": "iljin.ai.it@iljin.com",
         "RESEND_FROM_EMAIL": "ILJIN AI Works <no-reply@notify.iljin.com>",
         "APP_ENV": "production",
-        "COST_PROFILE": "prod",
-        "MAX_SENSITIVITY": "confidential",
         "MAX_EGRESS_SENSITIVITY": "internal",
         // 이미지 생성은 채팅의 ~12배 비용이고 현재 업무 요구가 없다. 필요해지면 연다.
-        "DISABLED_AI_KINDS": "image_gen",
+        "DISABLED_AI_KINDS": "image_gen,visual_search",
         "DAILY_BUDGET_PER_USER": "400",
         "DAILY_BUDGET_PER_TENANT": "5000"
       }
@@ -194,6 +190,7 @@
   //   npx wrangler pages secret put LOCAL_LLM_ACCESS_CLIENT_SECRET --project-name iljin-ai
   //   npx wrangler pages secret put CLOUDFLARE_ACCOUNT_ID --project-name iljin-ai
   //   npx wrangler pages secret put CLOUDFLARE_API_TOKEN --project-name iljin-ai
+  //   npx wrangler pages secret put COHERE_API_KEY --project-name iljin-ai
   //   npx wrangler pages secret put TAVILY_API_KEY --project-name iljin-ai
   //   npx wrangler pages secret put EXA_API_KEY --project-name iljin-ai
   //   npx wrangler pages secret put RESEND_API_KEY --project-name iljin-ai

@@ -155,6 +155,9 @@ export const COST_WEIGHT = Object.freeze({
   chat: 1,
   tts: 2,
   image_gen: 12,
+  // 화면 문구 번역. 1회 입력 상한 7,000자 · 출력 2,400토큰으로 채팅 1건보다 무겁다.
+  // 화면 진입 시 배치로 나가므로 분당 한도는 넉넉히 두되 일일 예산에는 반드시 계상한다.
+  ui_translation: 2,
 });
 
 function dailyLimits() {

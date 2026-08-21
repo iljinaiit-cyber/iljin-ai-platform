@@ -9,7 +9,7 @@ async function source(path) {
 }
 
 test("keeps Iljin Global company identity consistent across the system", async () => {
-  const [profile, portal, gateway, layout, page, activity, internetSearch] = await Promise.all([
+  const [profile, portal, gateway, layout, page, activity, internetSearch, suggestions] = await Promise.all([
     source("lib/company-profile.ts"),
     source("app/AgentPortal.tsx"),
     source("lib/llm-gateway.ts"),
@@ -17,6 +17,7 @@ test("keeps Iljin Global company identity consistent across the system", async (
     source("app/page.tsx"),
     source("lib/activity.ts"),
     source("lib/internet-search.ts"),
+    source("lib/chat-suggestions.ts"),
   ]);
 
   assert.match(profile, /일진글로벌/);
@@ -31,7 +32,8 @@ test("keeps Iljin Global company identity consistent across the system", async (
   assert.doesNotMatch(portal, /일진글로벌은 베어링 전문 제조 기업입니다/);
   assert.doesNotMatch(layout, /일진글로벌은 베어링 전문 제조 기업입니다/);
   assert.doesNotMatch(page, /일진글로벌은 베어링 전문 제조 기업입니다/);
-  assert.match(activity, /베어링 제조 업무에 적용할 수 있는/);
+  assert.match(activity, /FALLBACK_CHAT_SUGGESTIONS/);
+  assert.match(suggestions, /베어링 제조 업무에 적용할 수 있는/);
   assert.match(internetSearch, /베어링 제조 최신 기술 동향/);
   assert.match(internetSearch, /prioritizeCompanySearchQuery/);
 });

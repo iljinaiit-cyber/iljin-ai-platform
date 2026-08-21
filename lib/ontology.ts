@@ -72,12 +72,20 @@ export function ensureOntologySchema() {
           PRIMARY KEY (entity_id, segment_id, char_start),
           FOREIGN KEY (entity_id) REFERENCES ontology_entities(id) ON DELETE CASCADE
         )`),
+        db.prepare(`CREATE TABLE IF NOT EXISTS ontology_relation_evidence (
+          tenant_id TEXT NOT NULL, src_id TEXT NOT NULL, dst_id TEXT NOT NULL,
+          asset_id TEXT NOT NULL, segment_id TEXT NOT NULL, created_at TEXT NOT NULL,
+          PRIMARY KEY (tenant_id, src_id, dst_id, segment_id)
+        )`),
         db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS ontology_entities_key_idx ON ontology_entities(tenant_id, kind, normalized_name)"),
         db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS ontology_relations_edge_idx ON ontology_relations(tenant_id, src_id, rel_type, dst_id)"),
         db.prepare("CREATE INDEX IF NOT EXISTS ontology_relations_src_idx ON ontology_relations(src_id, rel_type)"),
         db.prepare("CREATE INDEX IF NOT EXISTS ontology_relations_dst_idx ON ontology_relations(dst_id, rel_type)"),
         db.prepare("CREATE INDEX IF NOT EXISTS ontology_mentions_segment_idx ON ontology_mentions(segment_id)"),
         db.prepare("CREATE INDEX IF NOT EXISTS ontology_mentions_asset_idx ON ontology_mentions(asset_id)"),
+        db.prepare("CREATE INDEX IF NOT EXISTS ontology_mentions_tenant_entity_idx ON ontology_mentions(tenant_id, entity_id)"),
+        db.prepare("CREATE INDEX IF NOT EXISTS ontology_relation_evidence_asset_idx ON ontology_relation_evidence(tenant_id, asset_id)"),
+        db.prepare("CREATE INDEX IF NOT EXISTS ontology_relation_evidence_edge_idx ON ontology_relation_evidence(tenant_id, src_id, dst_id)"),
       ]);
     })().catch((error) => {
       ontologySchemaPromise = undefined;
@@ -270,10 +278,17 @@ export async function persistMentions(input: {
   for (let i = 0; i < ids.length; i += 1) {
     for (let j = i + 1; j < ids.length; j += 1) {
       const [a, b] = ids[i] < ids[j] ? [ids[i], ids[j]] : [ids[j], ids[i]];
+      statements.push(db.prepare(`INSERT OR IGNORE INTO ontology_relation_evidence
+        (tenant_id, src_id, dst_id, asset_id, segment_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)`)
+        .bind(input.tenantId, a, b, input.assetId, input.segmentId, now));
       statements.push(db.prepare(`INSERT INTO ontology_relations
         (id, tenant_id, src_id, rel_type, dst_id, weight, evidence_segment_id, created_at)
         VALUES (?, ?, ?, 'co_occurs', ?, 1, ?, ?)
-        ON CONFLICT(tenant_id, src_id, rel_type, dst_id) DO UPDATE SET weight = weight + 1`)
+        ON CONFLICT(tenant_id, src_id, rel_type, dst_id) DO UPDATE SET
+          weight = (SELECT COUNT(*) FROM ontology_relation_evidence evidence
+            WHERE evidence.tenant_id = excluded.tenant_id
+              AND evidence.src_id = excluded.src_id AND evidence.dst_id = excluded.dst_id)`)
         .bind(`rel_${a}_${b}`.slice(0, 200), input.tenantId, a, b, input.segmentId, now));
     }
   }
@@ -295,6 +310,35 @@ export async function indexSegmentOntology(input: {
 }) {
   const mentions = [...extractL1(input.text), ...extractL2(input.text, input.dictionary)];
   return persistMentions({ ...input, mentions });
+}
+
+/**
+ * Removes one asset's graph evidence without rebuilding the tenant-wide graph.
+ * Relation weights are derived from idempotent per-segment evidence rows.
+ */
+export async function removeAssetOntology(tenantId: string, assetId: string) {
+  await ensureOntologySchema();
+  const db = getD1();
+  await db.batch([
+    db.prepare("DELETE FROM ontology_relation_evidence WHERE tenant_id = ? AND asset_id = ?").bind(tenantId, assetId),
+    db.prepare("DELETE FROM ontology_mentions WHERE tenant_id = ? AND asset_id = ?").bind(tenantId, assetId),
+  ]);
+  await db.prepare(`DELETE FROM ontology_relations
+    WHERE tenant_id = ? AND rel_type = 'co_occurs'
+      AND NOT EXISTS (SELECT 1 FROM ontology_relation_evidence evidence
+        WHERE evidence.tenant_id = ontology_relations.tenant_id
+          AND evidence.src_id = ontology_relations.src_id AND evidence.dst_id = ontology_relations.dst_id)`)
+    .bind(tenantId).run();
+  await db.prepare(`UPDATE ontology_relations SET weight = (
+      SELECT COUNT(*) FROM ontology_relation_evidence evidence
+      WHERE evidence.tenant_id = ontology_relations.tenant_id
+        AND evidence.src_id = ontology_relations.src_id AND evidence.dst_id = ontology_relations.dst_id)
+    WHERE tenant_id = ? AND rel_type = 'co_occurs'`).bind(tenantId).run();
+  await db.prepare(`DELETE FROM ontology_entities
+    WHERE tenant_id = ?
+      AND NOT EXISTS (SELECT 1 FROM ontology_mentions m WHERE m.entity_id = ontology_entities.id)
+      AND NOT EXISTS (SELECT 1 FROM ontology_relations r WHERE r.src_id = ontology_entities.id OR r.dst_id = ontology_entities.id)`)
+    .bind(tenantId).run();
 }
 
 // ── 조회 · 순회 ─────────────────────────────────────────────────────────
@@ -358,12 +402,11 @@ export async function resolveQueryEntities(tenantId: string, query: string) {
   const dictionary = await buildOrganizationDictionary(tenantId);
   const mentions = [...extractL1(query), ...extractL2(query, dictionary)];
   if (!mentions.length) return [];
-  const keys = Array.from(new Set(mentions.map((m) => normalizeKey(m.kind, m.value))));
-  const placeholders = keys.map(() => "?").join(",");
+  const keys = Array.from(new Set(mentions.map((m) => normalizeKey(m.kind, m.value)))).slice(0, 20);
   const rows = await getD1().prepare(
     `SELECT id, kind, canonical_name FROM ontology_entities
-     WHERE tenant_id = ? AND normalized_name IN (${placeholders})`,
-  ).bind(tenantId, ...keys).all<{ id: string; kind: string; canonical_name: string }>();
+     WHERE tenant_id = ? AND normalized_name IN (SELECT value FROM json_each(?))`,
+  ).bind(tenantId, JSON.stringify(keys)).all<{ id: string; kind: string; canonical_name: string }>();
   return (rows.results ?? []).map((r) => ({
     id: r.id, kind: r.kind as EntityKind, canonicalName: r.canonical_name,
   }));
@@ -375,29 +418,46 @@ export async function resolveQueryEntities(tenantId: string, query: string) {
  */
 export async function graphRelatedSegments(input: {
   tenantId: string;
+  department: string;
   query: string;
   limit?: number;
 }) {
   const seeds = await resolveQueryEntities(input.tenantId, input.query);
   if (!seeds.length) return { seeds: [], segments: [] };
-  const related = await neighbors({
-    tenantId: input.tenantId,
-    entityIds: seeds.map((s) => s.id),
-    maxHops: 2,
-    limit: 30,
-  });
-  const ids = [...seeds.map((s) => s.id), ...related.map((r) => r.id)];
+  const seedIds = seeds.map((seed) => seed.id);
+  const relatedRows = await getD1().prepare(`SELECT DISTINCT
+      CASE WHEN evidence.src_id IN (SELECT value FROM json_each(?)) THEN evidence.dst_id ELSE evidence.src_id END AS id
+    FROM ontology_relation_evidence evidence
+    JOIN segments proof_segment ON proof_segment.id = evidence.segment_id
+    JOIN assets proof_asset ON proof_asset.id = proof_segment.asset_id
+    WHERE evidence.tenant_id = ?
+      AND (evidence.src_id IN (SELECT value FROM json_each(?)) OR evidence.dst_id IN (SELECT value FROM json_each(?)))
+      AND proof_asset.tenant_id = ? AND proof_asset.status = 'indexed' AND proof_asset.deleted_at IS NULL
+      AND (proof_asset.document_status IS NULL OR proof_asset.document_status = 'effective')
+      AND (proof_asset.classification = 'public' OR proof_asset.department_scope = '*'
+        OR instr(',' || proof_asset.department_scope || ',', ',' || ? || ',') > 0)
+    LIMIT 30`).bind(
+      JSON.stringify(seedIds), input.tenantId, JSON.stringify(seedIds), JSON.stringify(seedIds),
+      input.tenantId, input.department,
+    ).all<{ id: string }>();
+  const ids = [...seedIds, ...(relatedRows.results ?? []).map((row) => row.id)];
   if (!ids.length) return { seeds, segments: [] };
-  const placeholders = ids.map(() => "?").join(",");
   const limit = Math.min(input.limit ?? 20, 50);
   const rows = await getD1().prepare(`
     SELECT m.segment_id, m.asset_id, COUNT(DISTINCT m.entity_id) AS hits
     FROM ontology_mentions m
-    WHERE m.tenant_id = ? AND m.entity_id IN (${placeholders})
+    JOIN segments s ON s.id = m.segment_id
+    JOIN assets a ON a.id = s.asset_id
+    WHERE m.tenant_id = ? AND m.entity_id IN (SELECT value FROM json_each(?))
+      AND a.tenant_id = ? AND a.status = 'indexed' AND a.deleted_at IS NULL
+      AND (a.document_status IS NULL OR a.document_status = 'effective')
+      AND (a.classification = 'public' OR a.department_scope = '*'
+        OR instr(',' || a.department_scope || ',', ',' || ? || ',') > 0)
     GROUP BY m.segment_id
     ORDER BY hits DESC
     LIMIT ${limit}
-  `).bind(input.tenantId, ...ids).all<{ segment_id: string; asset_id: string; hits: number }>();
+  `).bind(input.tenantId, JSON.stringify(ids), input.tenantId, input.department)
+    .all<{ segment_id: string; asset_id: string; hits: number }>();
   return {
     seeds,
     segments: (rows.results ?? []).map((r) => ({

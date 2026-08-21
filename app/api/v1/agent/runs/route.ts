@@ -24,14 +24,21 @@ export async function POST(request: Request) {
   try {
     const principal = await resolvePrincipal(request);
     await authorizeFeature(principal, "agent.run", "agent");
-    const body = await request.json() as { objective?: string; tool_id?: string; tool_input?: Record<string, unknown> };
-    return ok(await createAgentRun({
+    const body = await request.json() as { objective?: string; tool_id?: string; tool_input?: Record<string, unknown>; agent_id?: string; project_id?: string; parent_id?: string };
+    const result = await createAgentRun({
       principal,
       objective: body.objective ?? "",
       toolId: body.tool_id,
       toolInput: body.tool_input,
+      agentId: body.agent_id,
+      projectId: body.project_id,
+      parentId: body.parent_id,
       idempotencyKey: request.headers.get("Idempotency-Key") ?? "",
       traceId,
-    }), traceId, { status: 201 });
+    });
+    return ok(result, traceId, {
+      status: result.reused ? 200 : result.run.status === "awaiting_approval" ? 202 : 201,
+      headers: result.reused ? { "Idempotency-Replayed": "true" } : undefined,
+    });
   } catch (error) { return fail(error, traceId); }
 }

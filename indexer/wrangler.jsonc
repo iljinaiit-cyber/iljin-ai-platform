@@ -56,7 +56,8 @@
         { "binding": "BUCKET", "bucket_name": "iljin-ai-originals-preview" }
       ],
       "vectorize": [
-        { "binding": "VECTOR_INDEX", "index_name": "iljin-ai-vectors-preview" }
+        { "binding": "VECTOR_INDEX", "index_name": "iljin-ai-vectors-preview" },
+        { "binding": "VISUAL_VECTOR_INDEX", "index_name": "iljin-ai-visual-vectors-preview" }
       ],
       "queues": {
         "producers": [{ "binding": "INDEX_QUEUE", "queue": "iljin-ai-index-jobs-preview" }],
@@ -69,6 +70,15 @@
             "max_batch_timeout": 5,
             "max_retries": 5,
             "dead_letter_queue": "iljin-ai-index-jobs-dlq-preview"
+          },
+          {
+            // DLQ 소비자가 없으면 메시지가 4일 뒤 삭제되어 진단 근거가 사라진다.
+            // 이 소비자는 D1 에 영구 실패 상태와 원인을 남기는 역할만 한다.
+            // 재시도하지 않는다 — 이미 주 큐에서 소진된 메시지다.
+            "queue": "iljin-ai-index-jobs-dlq-preview",
+            "max_batch_size": 10,
+            "max_batch_timeout": 30,
+            "max_retries": 3
           }
         ]
       },
@@ -80,9 +90,8 @@
         "CLOUDFLARE_RERANK_MODEL": "@cf/baai/bge-reranker-base",
         "LLM_TIMEOUT_MS": "60000",
         "DEFAULT_TENANT_ID": "iljin",
-        "COST_PROFILE": "test",
-        "MAX_SENSITIVITY": "public",
-        "MAX_EGRESS_SENSITIVITY": "public"
+        "MAX_EGRESS_SENSITIVITY": "public",
+        "DISABLED_AI_KINDS": "visual_search"
       },
       // preview 는 정기 색인을 돌리지 않는다. 브랜치 배포마다 크론이 붙으면
       // 아무도 안 보는 색인이 계속 돌면서 뉴런만 태운다.
@@ -107,7 +116,8 @@
         { "binding": "BUCKET", "bucket_name": "iljin-ai-originals" }
       ],
       "vectorize": [
-        { "binding": "VECTOR_INDEX", "index_name": "iljin-ai-vectors" }
+        { "binding": "VECTOR_INDEX", "index_name": "iljin-ai-vectors" },
+        { "binding": "VISUAL_VECTOR_INDEX", "index_name": "iljin-ai-visual-vectors" }
       ],
       "queues": {
         "producers": [{ "binding": "INDEX_QUEUE", "queue": "iljin-ai-index-jobs" }],
@@ -118,20 +128,29 @@
             "max_batch_timeout": 5,
             "max_retries": 5,
             "dead_letter_queue": "iljin-ai-index-jobs-dlq"
+          },
+          {
+            // DLQ 소비자가 없으면 메시지가 4일 뒤 삭제되어 진단 근거가 사라진다.
+            // 이 소비자는 D1 에 영구 실패 상태와 원인을 남기는 역할만 한다.
+            // 재시도하지 않는다 — 이미 주 큐에서 소진된 메시지다.
+            "queue": "iljin-ai-index-jobs-dlq",
+            "max_batch_size": 10,
+            "max_batch_timeout": 30,
+            "max_retries": 3
           }
         ]
       },
       "vars": {
         "APP_ENV": "production",
+        "CLOUDFLARE_ACCOUNT_ID": "de5ce3bbf2cba1f463e952104b4ab47f",
         "CLOUDFLARE_AI_MODEL": "@cf/zai-org/glm-4.7-flash",
         "CLOUDFLARE_AI_GATEWAY_ID": "iljin-ai-gateway",
         "CLOUDFLARE_EMBED_MODEL": "@cf/baai/bge-m3",
         "CLOUDFLARE_RERANK_MODEL": "@cf/baai/bge-reranker-base",
         "LLM_TIMEOUT_MS": "60000",
         "DEFAULT_TENANT_ID": "iljin",
-        "COST_PROFILE": "prod",
-        "MAX_SENSITIVITY": "confidential",
-        "MAX_EGRESS_SENSITIVITY": "internal"
+        "MAX_EGRESS_SENSITIVITY": "internal",
+        "DISABLED_AI_KINDS": "visual_search"
       },
       // 매시 정각. 수집 소스 폴링과 감사 체인 검증이 여기 붙는다.
       "triggers": { "crons": ["*/5 * * * *"] }

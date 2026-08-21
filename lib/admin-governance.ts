@@ -1,5 +1,9 @@
 import { getD1 } from "../db";
 import { AuthError, type Principal, type UserRole } from "./identity";
+import { ensureLlmTelemetrySchema } from "./llm-telemetry";
+import { ensureTokenUsageSchema, listUserTokenUsage, parseTokenAmount } from "./token-usage";
+import { ensureOrganizationSchema } from "./organization";
+import { verifyD1Schema } from "./d1-schema";
 
 export type PermissionKey =
   | "workspace.home"
@@ -101,29 +105,12 @@ let governanceSchemaPromise: Promise<void> | undefined;
 
 export function ensureGovernanceSchema() {
   if (!governanceSchemaPromise) {
-    governanceSchemaPromise = (async () => {
-      const db = getD1();
-      await db.batch([
-        db.prepare(`CREATE TABLE IF NOT EXISTS role_permissions (
-          tenant_id TEXT NOT NULL, role TEXT NOT NULL, permission_key TEXT NOT NULL,
-          allowed INTEGER NOT NULL, updated_by TEXT NOT NULL, updated_at TEXT NOT NULL,
-          PRIMARY KEY (tenant_id, role, permission_key)
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS user_permission_overrides (
-          tenant_id TEXT NOT NULL, email TEXT NOT NULL, permission_key TEXT NOT NULL,
-          allowed INTEGER NOT NULL, updated_by TEXT NOT NULL, updated_at TEXT NOT NULL,
-          PRIMARY KEY (tenant_id, email, permission_key),
-          FOREIGN KEY (email) REFERENCES user_profiles(email) ON DELETE CASCADE
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS feature_settings (
-          tenant_id TEXT NOT NULL, feature_key TEXT NOT NULL, enabled INTEGER NOT NULL,
-          config_json TEXT NOT NULL DEFAULT '{}', updated_by TEXT NOT NULL, updated_at TEXT NOT NULL,
-          PRIMARY KEY (tenant_id, feature_key)
-        )`),
-        db.prepare("CREATE INDEX IF NOT EXISTS user_permission_overrides_email_idx ON user_permission_overrides(tenant_id, email)"),
-        db.prepare("CREATE INDEX IF NOT EXISTS feature_settings_tenant_idx ON feature_settings(tenant_id, feature_key)"),
-      ]);
-    })().catch((error) => {
+    governanceSchemaPromise = verifyD1Schema({
+      role_permissions: ["tenant_id", "role", "permission_key", "allowed", "updated_by", "updated_at"],
+      user_permission_overrides: ["tenant_id", "email", "permission_key", "allowed", "updated_by", "updated_at"],
+      feature_settings: ["tenant_id", "feature_key", "enabled", "config_json", "updated_by", "updated_at"],
+      scoped_permission_policies: ["tenant_id", "scope", "target_key", "permission_key", "allowed", "updated_by", "updated_at"],
+    }).catch((error) => {
       governanceSchemaPromise = undefined;
       throw error;
     });
@@ -142,21 +129,32 @@ function featureExists(value: string): value is FeatureKey {
 type PermissionRow = { permission_key: string; allowed: number };
 type FeatureRow = { feature_key: string; enabled: number; config_json: string; updated_by: string; updated_at: string };
 type OverrideRow = PermissionRow & { email: string };
+type ScopedPolicyRow = PermissionRow & { scope: "corporation" | "department" | "job_title"; target_key: string };
+export type PermissionPolicyScope = ScopedPolicyRow["scope"] | "user";
 
 export async function getEffectivePermissions(principal: Principal) {
   await ensureGovernanceSchema();
   const db = getD1();
-  const [roleResult, overrideResult] = await Promise.all([
+  const [roleResult, overrideResult, scopedResult] = await Promise.all([
     db.prepare(`SELECT permission_key, allowed FROM role_permissions
       WHERE tenant_id = ? AND role = ?`).bind(principal.tenantId, principal.role).all<PermissionRow>(),
     db.prepare(`SELECT permission_key, allowed FROM user_permission_overrides
       WHERE tenant_id = ? AND email = ?`).bind(principal.tenantId, principal.email).all<PermissionRow>(),
+    db.prepare(`SELECT scope, target_key, permission_key, allowed FROM scoped_permission_policies
+      WHERE tenant_id = ? AND (
+        (scope = 'corporation' AND target_key = ?) OR (scope = 'department' AND target_key = ?) OR (scope = 'job_title' AND target_key = ?)
+      )`).bind(principal.tenantId, principal.corpId || "", principal.deptId || "", principal.jobTitle).all<ScopedPolicyRow>(),
   ]);
   const permissions = new Map<PermissionKey, boolean>(
     PERMISSION_CATALOG.map(({ key }) => [key, ROLE_DEFAULTS[principal.role].has(key)]),
   );
   for (const row of roleResult.results || []) {
     if (permissionExists(row.permission_key)) permissions.set(row.permission_key, Boolean(row.allowed));
+  }
+  for (const scope of ["corporation", "department", "job_title"] as const) {
+    for (const row of (scopedResult.results || []).filter((item) => item.scope === scope)) {
+      if (permissionExists(row.permission_key)) permissions.set(row.permission_key, Boolean(row.allowed));
+    }
   }
   for (const row of overrideResult.results || []) {
     if (permissionExists(row.permission_key)) permissions.set(row.permission_key, Boolean(row.allowed));
@@ -234,9 +232,9 @@ export async function writeAudit(input: {
 
 export async function getGovernanceDashboard(principal: Principal) {
   await requirePermission(principal, "admin.permissions");
-  await ensureGovernanceSchema();
+  await Promise.all([ensureGovernanceSchema(), ensureLlmTelemetrySchema(), ensureTokenUsageSchema(), ensureOrganizationSchema()]);
   const db = getD1();
-  const [roleResult, overrideResult, userResult, auditResult, features] = await Promise.all([
+  const [roleResult, overrideResult, userResult, auditResult, features, scopedResult, corporationResult, departmentResult] = await Promise.all([
     db.prepare(`SELECT role, permission_key, allowed, updated_by, updated_at
       FROM role_permissions WHERE tenant_id = ?`).bind(principal.tenantId).all<{
         role: UserRole;
@@ -247,13 +245,14 @@ export async function getGovernanceDashboard(principal: Principal) {
       }>(),
     db.prepare(`SELECT email, permission_key, allowed FROM user_permission_overrides
       WHERE tenant_id = ?`).bind(principal.tenantId).all<OverrideRow>(),
-    db.prepare(`SELECT email, display_name, department, corp_id, dept_id, role, status, approved_at, updated_at
+    db.prepare(`SELECT email, display_name, department, job_title, corp_id, dept_id, role, status, approved_at, updated_at
       FROM user_profiles WHERE tenant_id = ? ORDER BY
       CASE role WHEN 'admin' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END, display_name, email
       LIMIT 500`).bind(principal.tenantId).all<{
         email: string;
         display_name: string;
         department: string;
+        job_title: string;
         corp_id: string | null;
         dept_id: string | null;
         role: UserRole;
@@ -275,6 +274,12 @@ export async function getGovernanceDashboard(principal: Principal) {
         created_at: string;
       }>(),
     getFeatureSettings(principal.tenantId),
+    db.prepare("SELECT scope, target_key, permission_key, allowed FROM scoped_permission_policies WHERE tenant_id = ?")
+      .bind(principal.tenantId).all<ScopedPolicyRow>(),
+    db.prepare("SELECT id, name FROM corporations WHERE tenant_id = ? AND status = 'active' ORDER BY name")
+      .bind(principal.tenantId).all<{ id: string; name: string }>(),
+    db.prepare("SELECT id, name FROM departments WHERE tenant_id = ? AND status = 'active' ORDER BY name")
+      .bind(principal.tenantId).all<{ id: string; name: string }>(),
   ]);
   const savedRoles = new Map(
     (roleResult.results || []).map((row) => [`${row.role}:${row.permission_key}`, Boolean(row.allowed)]),
@@ -295,19 +300,39 @@ export async function getGovernanceDashboard(principal: Principal) {
       [row.permission_key]: Boolean(row.allowed),
     });
   }
+  const users = (userResult.results || []).map((row) => ({
+    email: row.email,
+    displayName: row.display_name,
+    department: row.department,
+    jobTitle: row.job_title || "미지정",
+    role: row.role,
+    status: row.status,
+    approvedAt: row.approved_at,
+    updatedAt: row.updated_at,
+    overrides: overridesByEmail.get(row.email) || {},
+  }));
+  const tokenUsage = await listUserTokenUsage(principal.tenantId, users.map((user) => user.email));
   return {
     permissions: PERMISSION_CATALOG,
     rolePermissions,
-    users: (userResult.results || []).map((row) => ({
-      email: row.email,
-      displayName: row.display_name,
-      department: row.department,
-      role: row.role,
-      status: row.status,
-      approvedAt: row.approved_at,
-      updatedAt: row.updated_at,
-      overrides: overridesByEmail.get(row.email) || {},
-    })),
+    users,
+    tokenUsage: {
+      totalThisMonth: tokenUsage.reduce((sum, item) => sum + item.usedThisMonth, 0),
+      users: tokenUsage,
+    },
+    scopedPolicies: [
+      ...(scopedResult.results || []).map((row) => ({
+        scope: row.scope, targetKey: row.target_key, permissionKey: row.permission_key, allowed: Boolean(row.allowed),
+      })),
+      ...(overrideResult.results || []).map((row) => ({
+        scope: "user" as const, targetKey: row.email, permissionKey: row.permission_key, allowed: Boolean(row.allowed),
+      })),
+    ],
+    policyTargets: {
+      corporations: corporationResult.results || [],
+      departments: departmentResult.results || [],
+      jobTitles: [...new Set(users.map((user) => user.jobTitle).filter(Boolean))].sort(),
+    },
     features,
     audit: (auditResult.results || []).map((row) => ({
       id: row.id,
@@ -407,6 +432,54 @@ export async function updateUserPermission(input: {
   });
 }
 
+export async function updateScopedPermission(input: {
+  principal: Principal;
+  scope: PermissionPolicyScope;
+  targetKey: string;
+  permissionKey: string;
+  allowed: boolean | null;
+  traceId: string;
+}) {
+  await requirePermission(input.principal, "admin.permissions");
+  if (!permissionExists(input.permissionKey)) throw new AuthError("알 수 없는 권한 항목입니다.", 400, "AUTH_INVALID_INPUT");
+  if (input.scope === "user") {
+    return updateUserPermission({ principal: input.principal, email: input.targetKey, permissionKey: input.permissionKey, allowed: input.allowed, traceId: input.traceId });
+  }
+  if (!["corporation", "department", "job_title"].includes(input.scope)) {
+    throw new AuthError("알 수 없는 권한 범위입니다.", 400, "AUTH_INVALID_INPUT");
+  }
+  const targetKey = input.targetKey.trim();
+  if (!targetKey) throw new AuthError("권한을 적용할 대상을 선택해 주세요.", 400, "AUTH_INVALID_INPUT");
+  const db = getD1();
+  if (input.scope === "corporation" || input.scope === "department") {
+    const table = input.scope === "corporation" ? "corporations" : "departments";
+    const target = await db.prepare(`SELECT id FROM ${table} WHERE id = ? AND tenant_id = ? AND status = 'active'`)
+      .bind(targetKey, input.principal.tenantId).first<{ id: string }>();
+    if (!target) throw new AuthError("선택한 조직을 찾을 수 없습니다.", 400, "AUTH_INVALID_INPUT");
+  }
+  if (input.allowed === null) {
+    await db.prepare(`DELETE FROM scoped_permission_policies
+      WHERE tenant_id = ? AND scope = ? AND target_key = ? AND permission_key = ?`).bind(
+        input.principal.tenantId, input.scope, targetKey, input.permissionKey,
+      ).run();
+  } else {
+    const now = new Date().toISOString();
+    await db.prepare(`INSERT INTO scoped_permission_policies
+      (tenant_id, scope, target_key, permission_key, allowed, updated_by, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(tenant_id, scope, target_key, permission_key) DO UPDATE SET allowed = excluded.allowed,
+        updated_by = excluded.updated_by, updated_at = excluded.updated_at`).bind(
+          input.principal.tenantId, input.scope, targetKey, input.permissionKey, input.allowed ? 1 : 0,
+          input.principal.email, now,
+        ).run();
+  }
+  await writeAudit({
+    principal: input.principal, action: "governance.scoped_permission.updated", resourceType: "scoped_permission",
+    resourceId: `${input.scope}:${targetKey}:${input.permissionKey}`, traceId: input.traceId,
+    details: { scope: input.scope, targetKey, permissionKey: input.permissionKey, allowed: input.allowed },
+  });
+}
+
 export async function updateFeatureSetting(input: {
   principal: Principal;
   featureKey: string;
@@ -439,13 +512,67 @@ export async function updateFeatureSetting(input: {
   });
 }
 
+async function requireTokenTarget(principal: Principal, value: string) {
+  await requirePermission(principal, "admin.users");
+  const email = value.trim().toLowerCase();
+  const target = await getD1().prepare("SELECT email FROM user_profiles WHERE tenant_id = ? AND email = ?")
+    .bind(principal.tenantId, email).first<{ email: string }>();
+  if (!target) throw new AuthError("토큰 정책을 변경할 사용자를 찾을 수 없습니다.", 400, "AUTH_INVALID_INPUT");
+  return email;
+}
+
+export async function updateUserTokenPolicy(input: {
+  principal: Principal;
+  email: string;
+  monthlyLimitTokens: unknown;
+  tokenBalance: unknown;
+  traceId: string;
+}) {
+  await ensureTokenUsageSchema();
+  const email = await requireTokenTarget(input.principal, input.email);
+  const monthlyLimitTokens = parseTokenAmount(input.monthlyLimitTokens, "월간 한도", true);
+  const tokenBalance = parseTokenAmount(input.tokenBalance, "잔여 토큰", true);
+  const now = new Date().toISOString();
+  await getD1().prepare(`INSERT INTO user_token_allocations
+    (tenant_id, email, monthly_limit_tokens, token_balance, updated_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(tenant_id, email) DO UPDATE SET monthly_limit_tokens = excluded.monthly_limit_tokens,
+      token_balance = excluded.token_balance, updated_by = excluded.updated_by, updated_at = excluded.updated_at`).bind(
+        input.principal.tenantId, email, monthlyLimitTokens, tokenBalance, input.principal.email, now,
+      ).run();
+  await writeAudit({
+    principal: input.principal, action: "governance.token_policy.updated", resourceType: "user_token_allocation",
+    resourceId: email, traceId: input.traceId, details: { email, monthlyLimitTokens, tokenBalance },
+  });
+}
+
+export async function grantUserTokens(input: { principal: Principal; email: string; tokens: unknown; traceId: string }) {
+  await ensureTokenUsageSchema();
+  const email = await requireTokenTarget(input.principal, input.email);
+  const tokens = parseTokenAmount(input.tokens, "부여 토큰");
+  if (!tokens) throw new AuthError("부여할 토큰 수를 1 이상 입력해 주세요.", 400, "AUTH_INVALID_INPUT");
+  const now = new Date().toISOString();
+  await getD1().prepare(`INSERT INTO user_token_allocations
+    (tenant_id, email, monthly_limit_tokens, token_balance, updated_by, updated_at)
+    VALUES (?, ?, NULL, ?, ?, ?)
+    ON CONFLICT(tenant_id, email) DO UPDATE SET token_balance = COALESCE(user_token_allocations.token_balance, 0) + excluded.token_balance,
+      updated_by = excluded.updated_by, updated_at = excluded.updated_at`).bind(
+        input.principal.tenantId, email, tokens, input.principal.email, now,
+      ).run();
+  await writeAudit({
+    principal: input.principal, action: "governance.token.granted", resourceType: "user_token_allocation",
+    resourceId: email, traceId: input.traceId, details: { email, tokens },
+  });
+}
+
 export async function updateManagedUser(input: {
   principal: Principal;
   email: string;
   displayName: string;
   role: UserRole;
-  status: "approved" | "rejected";
+  status: "pending" | "approved" | "rejected";
   department: string;
+  jobTitle: string;
   traceId: string;
 }) {
   await requirePermission(input.principal, "admin.users");
@@ -454,30 +581,33 @@ export async function updateManagedUser(input: {
     throw new AuthError("현재 로그인한 관리자 자신의 권한이나 승인 상태는 낮출 수 없습니다.", 403, "AUTH_FORBIDDEN");
   }
   const db = getD1();
-  const target = await db.prepare("SELECT display_name, role, status, department FROM user_profiles WHERE tenant_id = ? AND email = ?")
-    .bind(input.principal.tenantId, email).first<{ display_name: string; role: UserRole; status: string; department: string }>();
+  const target = await db.prepare("SELECT display_name, role, status, department, job_title FROM user_profiles WHERE tenant_id = ? AND email = ?")
+    .bind(input.principal.tenantId, email).first<{ display_name: string; role: UserRole; status: string; department: string; job_title: string }>();
   if (!target) throw new AuthError("관리할 사용자를 찾을 수 없습니다.", 400, "AUTH_INVALID_INPUT");
-  if (target.role === "admin" && input.role !== "admin") {
-    const admins = await db.prepare(`SELECT COUNT(*) AS count FROM user_profiles
-      WHERE tenant_id = ? AND role = 'admin' AND status = 'approved'`).bind(input.principal.tenantId)
-      .first<{ count: number }>();
-    if ((admins?.count || 0) <= 1) {
-      throw new AuthError("마지막 관리자는 일반 역할로 변경할 수 없습니다.", 403, "AUTH_FORBIDDEN");
-    }
-  }
+  const removesApprovedAdmin = target.role === "admin" && target.status === "approved"
+    && (input.role !== "admin" || input.status !== "approved");
   const department = input.department.trim().slice(0, 120);
   if (!department) throw new AuthError("부서를 입력해 주세요.", 400, "AUTH_INVALID_INPUT");
+  const jobTitle = input.jobTitle.trim().slice(0, 80) || "미지정";
   const displayName = input.displayName.trim().slice(0, 120);
   if (!displayName) throw new AuthError("Display name is required.", 400, "AUTH_INVALID_INPUT");
   const now = new Date().toISOString();
-  await db.prepare(`UPDATE user_profiles SET display_name = ?, role = ?, status = ?, department = ?,
-    approved_by = ?, approved_at = CASE WHEN ? = 'approved' THEN ? ELSE approved_at END,
+  const updateResult = await db.prepare(`UPDATE user_profiles SET display_name = ?, role = ?, status = ?, department = ?, job_title = ?,
+    approved_by = CASE WHEN ? = 'pending' THEN NULL ELSE ? END,
+    approved_at = CASE WHEN ? = 'approved' THEN ? ELSE NULL END,
     rejection_reason = CASE WHEN ? = 'rejected' THEN '관리자 계정 관리에서 접근이 중지되었습니다.' ELSE NULL END,
-    updated_at = ? WHERE tenant_id = ? AND email = ?`).bind(
+    updated_at = ? WHERE tenant_id = ? AND email = ?
+    AND (? = 0 OR EXISTS (
+      SELECT 1 FROM user_profiles AS remaining_admin
+      WHERE remaining_admin.tenant_id = ? AND remaining_admin.role = 'admin'
+        AND remaining_admin.status = 'approved' AND remaining_admin.email <> ?
+    ))`).bind(
       displayName,
       input.role,
       input.status,
       department,
+      jobTitle,
+      input.status,
       input.principal.email,
       input.status,
       now,
@@ -485,7 +615,13 @@ export async function updateManagedUser(input: {
       now,
       input.principal.tenantId,
       email,
+      removesApprovedAdmin ? 1 : 0,
+      input.principal.tenantId,
+      email,
     ).run();
+  if (removesApprovedAdmin && Number(updateResult.meta.changes || 0) !== 1) {
+    throw new AuthError("마지막 관리자는 일반 역할로 변경할 수 없습니다.", 403, "AUTH_FORBIDDEN");
+  }
   await writeAudit({
     principal: input.principal,
     action: "governance.user.updated",
@@ -494,9 +630,63 @@ export async function updateManagedUser(input: {
     traceId: input.traceId,
     details: {
       email,
-      before: { displayName: target.display_name, department: target.department, role: target.role, status: target.status },
-      after: { displayName, department, role: input.role, status: input.status },
+      before: { displayName: target.display_name, department: target.department, jobTitle: target.job_title, role: target.role, status: target.status },
+      after: { displayName, department, jobTitle, role: input.role, status: input.status },
     },
+  });
+}
+
+export async function deleteManagedUser(input: { principal: Principal; email: string; traceId: string }) {
+  await requirePermission(input.principal, "admin.users");
+  const email = input.email.trim().toLowerCase();
+  if (email === input.principal.email) {
+    throw new AuthError("현재 로그인한 관리자 계정은 삭제할 수 없습니다.", 403, "AUTH_FORBIDDEN");
+  }
+  const db = getD1();
+  const target = await db.prepare("SELECT role, status FROM user_profiles WHERE tenant_id = ? AND email = ?")
+    .bind(input.principal.tenantId, email).first<{ role: UserRole; status: string }>();
+  if (!target) throw new AuthError("삭제할 사용자를 찾을 수 없습니다.", 400, "AUTH_INVALID_INPUT");
+  if (target.status === "deleting") {
+    throw new AuthError("다른 관리자가 이 사용자 삭제를 처리하고 있습니다.", 403, "AUTH_FORBIDDEN");
+  }
+  // 먼저 상태를 원자적으로 claim 한다. 두 관리자가 동시에 마지막 두 관리자를 삭제해도
+  // 두 번째 UPDATE는 남은 승인 관리자가 없어서 0건이 되며, 부수 데이터 삭제로 진행하지 않는다.
+  const claim = await db.prepare(`UPDATE user_profiles SET status = 'deleting', updated_at = ?
+    WHERE tenant_id = ? AND email = ? AND role = ? AND status = ?
+    AND (? = 0 OR EXISTS (
+      SELECT 1 FROM user_profiles AS remaining_admin
+      WHERE remaining_admin.tenant_id = ? AND remaining_admin.role = 'admin'
+        AND remaining_admin.status = 'approved' AND remaining_admin.email <> ?
+    ))`).bind(
+      new Date().toISOString(), input.principal.tenantId, email, target.role, target.status,
+      target.role === "admin" && target.status === "approved" ? 1 : 0,
+      input.principal.tenantId, email,
+    ).run();
+  if (Number(claim.meta.changes || 0) !== 1) {
+    throw new AuthError(target.role === "admin" && target.status === "approved"
+      ? "마지막 관리자는 삭제할 수 없습니다."
+      : "사용자 상태가 변경되어 삭제를 완료하지 못했습니다.", 403, "AUTH_FORBIDDEN");
+  }
+  try {
+    await db.batch([
+      db.prepare("DELETE FROM user_permission_overrides WHERE tenant_id = ? AND email = ?").bind(input.principal.tenantId, email),
+      db.prepare("DELETE FROM auth_sessions WHERE email = ?").bind(email),
+      db.prepare("DELETE FROM auth_credentials WHERE email = ?").bind(email),
+      db.prepare("DELETE FROM email_verification_requests WHERE email = ?").bind(email),
+      db.prepare("DELETE FROM user_profiles WHERE tenant_id = ? AND email = ? AND status = 'deleting'").bind(input.principal.tenantId, email),
+    ]);
+  } catch (error) {
+    await db.prepare("UPDATE user_profiles SET status = ?, updated_at = ? WHERE tenant_id = ? AND email = ? AND status = 'deleting'")
+      .bind(target.status, new Date().toISOString(), input.principal.tenantId, email).run();
+    throw error;
+  }
+  await writeAudit({
+    principal: input.principal,
+    action: "governance.user.deleted",
+    resourceType: "user_profile",
+    resourceId: email,
+    traceId: input.traceId,
+    details: { email },
   });
 }
 

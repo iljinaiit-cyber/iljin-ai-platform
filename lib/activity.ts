@@ -1,6 +1,6 @@
 import { getD1 } from "../db";
-import { COMPANY_NAME } from "./company-profile";
 import { authorizeFeature } from "./admin-governance";
+import { FALLBACK_CHAT_SUGGESTIONS } from "./chat-suggestions";
 import type { Principal } from "./identity";
 import { ensureAgentSchema } from "./agent-orchestrator";
 import { ensureConversationSchema } from "./conversations";
@@ -222,36 +222,7 @@ export async function getActivityDashboard(principal: Principal, limit = 50) {
     if (recentSuggestions.length === 3) break;
   }
 
-  const fallbackSuggestions: SuggestedQuestion[] = [
-    {
-      id: "frequent-fallback-safety",
-      category: "frequent",
-      label: "최신 안전 수칙 핵심 내용",
-      question: "최신 안전 수칙의 핵심 내용과 현장 적용 항목을 요약해줘.",
-      meta: "자주 찾는 업무 주제",
-    },
-    {
-      id: "frequent-fallback-maintenance",
-      category: "frequent",
-      label: "설비 정기 점검 기준",
-      question: "설비 정기 점검 주기와 필수 확인 항목을 알려줘.",
-      meta: "자주 찾는 업무 주제",
-    },
-    {
-      id: "recent-fallback-risk",
-      category: "recent",
-      label: "최근 공급망 리스크",
-      question: "최근 공급망 리스크 이슈와 우리 업무에 미치는 영향을 분석해줘.",
-      meta: "최근 업무 이슈",
-    },
-    {
-      id: "recent-fallback-ai",
-      category: "recent",
-      label: "AI 활용 동향",
-      question: `${COMPANY_NAME} 베어링 제조 업무에 적용할 수 있는 최근 AI 활용 동향과 실무 사례를 정리해줘.`,
-      meta: "최근 업무 이슈",
-    },
-  ];
+  const fallbackSuggestions: SuggestedQuestion[] = FALLBACK_CHAT_SUGGESTIONS;
   const suggestions = [...frequentSuggestions, ...recentSuggestions];
   for (const fallback of fallbackSuggestions) {
     if (suggestions.length >= 6) break;
@@ -274,7 +245,14 @@ export async function getActivityDashboard(principal: Principal, limit = 50) {
 }
 
 export function activityCsv(items: ActivityItem[]) {
-  const escape = (value: unknown) => `"${String(value ?? "").replaceAll("\"", "\"\"")}"`;
+  const escape = (value: unknown) => {
+    const text = String(value ?? "");
+    // Spreadsheet programs evaluate cells whose first meaningful character is a
+    // formula sigil.  Activity titles and details originate outside this module,
+    // so preserve them as literal text before CSV escaping.
+    const literal = /^[\t\r\n ]*[=+\-@]/.test(text) ? `'${text}` : text;
+    return `"${literal.replaceAll("\"", "\"\"")}"`;
+  };
   return [
     ["유형", "활동", "상태", "일시", "상세"].map(escape).join(","),
     ...items.map((item) => [item.typeLabel, item.title, item.status, item.createdAt, item.detail || ""].map(escape).join(",")),

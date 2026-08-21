@@ -1,5 +1,6 @@
 import { getD1 } from "../db";
 import { AuthError, type Principal } from "./identity";
+import { verifyD1Schema } from "./d1-schema";
 
 /**
  * 법인·부서 조직 마스터 (2026-08-06)
@@ -40,41 +41,11 @@ let orgSchemaPromise: Promise<void> | undefined;
 
 export function ensureOrganizationSchema() {
   if (!orgSchemaPromise) {
-    orgSchemaPromise = (async () => {
-      const db = getD1();
-      await db.batch([
-        db.prepare(`CREATE TABLE IF NOT EXISTS corporations (
-          id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL,
-          code TEXT, status TEXT NOT NULL DEFAULT 'active',
-          created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS departments (
-          id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, corp_id TEXT NOT NULL,
-          parent_id TEXT, name TEXT NOT NULL, code TEXT,
-          status TEXT NOT NULL DEFAULT 'active',
-          created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-          FOREIGN KEY (corp_id) REFERENCES corporations(id) ON DELETE CASCADE
-        )`),
-        db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS corporations_name_idx ON corporations(tenant_id, name)"),
-        db.prepare("CREATE INDEX IF NOT EXISTS departments_corp_idx ON departments(tenant_id, corp_id)"),
-        db.prepare("CREATE INDEX IF NOT EXISTS departments_parent_idx ON departments(parent_id)"),
-        db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS departments_name_idx
-          ON departments(tenant_id, corp_id, COALESCE(parent_id, ''), name)`),
-      ]);
-      // user_profiles 는 이미 운영 중이라 ALTER 로 붙인다. 기존 행은 NULL 로 남고
-      // 관리자가 배정하기 전까지 "미배정"으로 취급된다 — 임의 추측 배정은 하지 않는다.
-      const columns = await db.prepare("PRAGMA table_info(user_profiles)").all<{ name: string }>();
-      const existing = new Set((columns.results ?? []).map((c) => c.name));
-      if (!existing.has("corp_id")) {
-        await db.prepare("ALTER TABLE user_profiles ADD COLUMN corp_id TEXT").run();
-      }
-      if (!existing.has("dept_id")) {
-        await db.prepare("ALTER TABLE user_profiles ADD COLUMN dept_id TEXT").run();
-      }
-      await db.prepare(
-        "CREATE INDEX IF NOT EXISTS user_profiles_org_idx ON user_profiles(tenant_id, corp_id, dept_id)",
-      ).run();
-    })().catch((error) => {
+    orgSchemaPromise = verifyD1Schema({
+      corporations: ["id", "tenant_id", "name", "code", "status", "created_at", "updated_at"],
+      departments: ["id", "tenant_id", "corp_id", "parent_id", "name", "code", "status", "created_at", "updated_at"],
+      user_profiles: ["email", "tenant_id", "department", "corp_id", "dept_id"],
+    }).catch((error) => {
       orgSchemaPromise = undefined;
       throw error;
     });
@@ -235,6 +206,53 @@ export async function createDepartment(input: {
     id, corpId: input.corpId, parentId: input.parentId || null, name,
     code: input.code?.trim() || null, status: "active", memberCount: 0, depth: 0, path: name,
   };
+}
+
+export async function updateCorporation(input: { principal: Principal; corpId: string; name: string }) {
+  await ensureOrganizationSchema();
+  const name = assertName(input.name, "법인");
+  const result = await getD1().prepare(`UPDATE corporations SET name = ?, updated_at = ?
+    WHERE id = ? AND tenant_id = ?`).bind(name, new Date().toISOString(), input.corpId, input.principal.tenantId).run();
+  if (!result.meta.changes) throw new AuthError("법인을 찾을 수 없습니다.", 400, "AUTH_INVALID_INPUT");
+  return { id: input.corpId, name };
+}
+
+export async function deleteCorporation(input: { principal: Principal; corpId: string }) {
+  await ensureOrganizationSchema();
+  const db = getD1();
+  const [departments, members] = await Promise.all([
+    db.prepare("SELECT COUNT(*) AS count FROM departments WHERE tenant_id = ? AND corp_id = ?").bind(input.principal.tenantId, input.corpId).first<{ count: number }>(),
+    db.prepare("SELECT COUNT(*) AS count FROM user_profiles WHERE tenant_id = ? AND corp_id = ?").bind(input.principal.tenantId, input.corpId).first<{ count: number }>(),
+  ]);
+  if ((departments?.count || 0) || (members?.count || 0)) {
+    throw new AuthError("부서 또는 사용자가 남아 있는 법인은 삭제할 수 없습니다.", 409, "AUTH_INVALID_INPUT");
+  }
+  const result = await db.prepare("DELETE FROM corporations WHERE id = ? AND tenant_id = ?")
+    .bind(input.corpId, input.principal.tenantId).run();
+  if (!result.meta.changes) throw new AuthError("법인을 찾을 수 없습니다.", 400, "AUTH_INVALID_INPUT");
+}
+
+export async function updateDepartment(input: { principal: Principal; deptId: string; name: string }) {
+  await ensureOrganizationSchema();
+  const name = assertName(input.name, "부서");
+  const result = await getD1().prepare(`UPDATE departments SET name = ?, updated_at = ?
+    WHERE id = ? AND tenant_id = ?`).bind(name, new Date().toISOString(), input.deptId, input.principal.tenantId).run();
+  if (!result.meta.changes) throw new AuthError("부서를 찾을 수 없습니다.", 400, "AUTH_INVALID_INPUT");
+  return { id: input.deptId, name };
+}
+
+export async function deleteDepartment(input: { principal: Principal; deptId: string }) {
+  await ensureOrganizationSchema();
+  const ids = await departmentSubtreeIds(input.principal.tenantId, input.deptId);
+  if (!ids.length) throw new AuthError("부서를 찾을 수 없습니다.", 400, "AUTH_INVALID_INPUT");
+  const db = getD1();
+  const placeholders = ids.map(() => "?").join(",");
+  const members = await db.prepare(`SELECT COUNT(*) AS count FROM user_profiles
+    WHERE tenant_id = ? AND dept_id IN (${placeholders})`).bind(input.principal.tenantId, ...ids).first<{ count: number }>();
+  if (members?.count) throw new AuthError("사용자가 배정된 부서는 삭제할 수 없습니다. 사용자를 먼저 이동해 주세요.", 409, "AUTH_INVALID_INPUT");
+  await db.prepare(`DELETE FROM departments WHERE tenant_id = ? AND id IN (${placeholders})`)
+    .bind(input.principal.tenantId, ...ids).run();
+  return { deleted: ids.length };
 }
 
 /**

@@ -9,6 +9,7 @@ export type Principal = {
   displayName: string;
   tenantId: string;
   department: string;
+  jobTitle: string;
   /** 조직 마스터 참조. 미배정 사용자는 null 이다(추측 배정하지 않는다). */
   corpId: string | null;
   deptId: string | null;
@@ -17,6 +18,7 @@ export type Principal = {
 };
 
 export type AccessIdentity = Principal & {
+  locale: string;
   status: UserApprovalStatus;
   approvalRequestedAt?: string;
   applicationNote?: string;
@@ -99,7 +101,7 @@ export function ensureIdentitySchema() {
       await db.batch([
         db.prepare(`CREATE TABLE IF NOT EXISTS user_profiles (
           email TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, display_name TEXT NOT NULL,
-          department TEXT NOT NULL, groups_json TEXT NOT NULL DEFAULT '[]',
+          department TEXT NOT NULL, job_title TEXT NOT NULL DEFAULT '미지정', groups_json TEXT NOT NULL DEFAULT '[]',
           role TEXT NOT NULL DEFAULT 'user', status TEXT NOT NULL DEFAULT 'pending',
           approval_requested_at TEXT, application_note TEXT, approved_by TEXT, approved_at TEXT,
           rejection_reason TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -141,6 +143,7 @@ export function ensureIdentitySchema() {
         // 로딩 순서와 무관하게 여기서 보장한다.
         ["corp_id", "ALTER TABLE user_profiles ADD COLUMN corp_id TEXT"],
         ["dept_id", "ALTER TABLE user_profiles ADD COLUMN dept_id TEXT"],
+        ["job_title", "ALTER TABLE user_profiles ADD COLUMN job_title TEXT NOT NULL DEFAULT '미지정'"],
       ] as const;
       const missing = additions.filter(([name]) => !names.has(name));
       if (missing.length) await db.batch(missing.map(([, sql]) => db.prepare(sql)));
@@ -169,6 +172,7 @@ type ProfileRow = {
   tenant_id: string;
   display_name: string;
   department: string;
+  job_title: string;
   corp_id: string | null;
   dept_id: string | null;
   groups_json: string;
@@ -179,16 +183,55 @@ type ProfileRow = {
   approved_by: string | null;
   approved_at: string | null;
   rejection_reason: string | null;
+  preferences_json: string | null;
   created_at: string;
   updated_at: string;
 };
 
+type ProfilePreferences = Record<string, unknown>;
+
+function parseProfilePreferences(value: string | null) {
+  if (!value) return {} as ProfilePreferences;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as ProfilePreferences : {};
+  } catch {
+    return {};
+  }
+}
+
+function profileCountry(preferences: ProfilePreferences) {
+  const value = preferences.country;
+  return typeof value === "string" && /^[A-Z]{2}$/.test(value) ? value : "KR";
+}
+
+function profileLanguage(preferences: ProfilePreferences) {
+  const value = preferences.language;
+  return typeof value === "string" && /^[a-z]{2,3}$/.test(value) ? value : "ko";
+}
+
+function normalizeProfileLocale(value: string) {
+  const match = value.trim().match(/^([a-z]{2,3})[-_]([a-z]{2})$/i);
+  if (!match) throw new AuthError("언어·지역 형식이 올바르지 않습니다.", 400, "AUTH_INVALID_INPUT");
+  return `${match[1].toLowerCase()}-${match[2].toUpperCase()}`;
+}
+
+function profileLocale(preferences: ProfilePreferences) {
+  if (typeof preferences.locale === "string") {
+    try { return normalizeProfileLocale(preferences.locale); } catch { /* legacy values below */ }
+  }
+  return `${profileLanguage(preferences)}-${profileCountry(preferences)}`;
+}
+
 function toAccessIdentity(row: ProfileRow): AccessIdentity {
+  const preferences = parseProfilePreferences(row.preferences_json);
   return {
     email: row.email,
     tenantId: row.tenant_id,
     displayName: row.display_name,
     department: row.department,
+    jobTitle: row.job_title || "미지정",
+    locale: profileLocale(preferences),
     corpId: row.corp_id ?? null,
     deptId: row.dept_id ?? null,
     groups: JSON.parse(row.groups_json || "[]") as string[],
@@ -205,8 +248,8 @@ function toAccessIdentity(row: ProfileRow): AccessIdentity {
 }
 
 async function findProfile(email: string) {
-  return getD1().prepare(`SELECT email, tenant_id, display_name, department, groups_json, role, status,
-    approval_requested_at, application_note, approved_by, approved_at, rejection_reason, created_at, updated_at,
+  return getD1().prepare(`SELECT email, tenant_id, display_name, department, job_title, groups_json, role, status,
+    approval_requested_at, application_note, approved_by, approved_at, rejection_reason, preferences_json, created_at, updated_at,
     corp_id, dept_id
     FROM user_profiles WHERE email = ?`).bind(email).first<ProfileRow>();
 }
@@ -414,7 +457,6 @@ export async function registerEmailAccount(input: {
   department: string;
   note?: string;
   adminCode?: string;
-  verificationUrl: string;
   traceId: string;
 }) {
   const email = normalizeEmail(input.email);
@@ -460,47 +502,48 @@ export async function registerEmailAccount(input: {
   } catch (error) {
     throw new RegistrationSystemError("password_hash", error);
   }
-  const now = new Date();
-  const timestamp = now.toISOString();
-  const previous = await db.prepare(`SELECT email, display_name, department, note, password_hash, password_salt,
-    password_iterations, token_hash, expires_at, sent_count, last_sent_at, bootstrap_admin, created_at
-    FROM email_verification_requests WHERE email = ?`).bind(email).first<EmailVerificationRow>();
-  const lastSentAt = previous?.last_sent_at ? Date.parse(previous.last_sent_at) : 0;
-  const recentSendCount = lastSentAt && now.getTime() - lastSentAt < 24 * 60 * 60 * 1000 ? previous!.sent_count : 0;
-  if (lastSentAt && now.getTime() - lastSentAt < VERIFICATION_RESEND_COOLDOWN_MS) {
-    throw new AuthError("인증 메일은 1분 후 다시 요청할 수 있습니다.", 429, "AUTH_RATE_LIMITED");
-  }
-  if (recentSendCount >= VERIFICATION_MAX_SENDS_PER_DAY) {
-    throw new AuthError("오늘의 인증 메일 재발송 횟수를 초과했습니다.", 429, "AUTH_RATE_LIMITED");
-  }
-  const token = bytesToBase64Url(randomBytes(32));
-  const tokenHash = await digest(token);
-  const expiresAt = new Date(now.getTime() + VERIFICATION_TTL_MS).toISOString();
+  const timestamp = new Date().toISOString();
+  const tenantId = getRuntimeEnv().DEFAULT_TENANT_ID || "iljin";
+  const role: UserRole = bootstrapAdmin ? "admin" : "user";
+  const status: UserApprovalStatus = bootstrapAdmin ? "approved" : "pending";
   try {
-    await db.prepare(`INSERT INTO email_verification_requests
-      (email, display_name, department, note, password_hash, password_salt, password_iterations,
-       token_hash, expires_at, sent_count, last_sent_at, bootstrap_admin, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(email) DO UPDATE SET display_name = excluded.display_name, department = excluded.department,
-        note = excluded.note, password_hash = excluded.password_hash, password_salt = excluded.password_salt,
-        password_iterations = excluded.password_iterations, token_hash = excluded.token_hash,
-        expires_at = excluded.expires_at, bootstrap_admin = excluded.bootstrap_admin, updated_at = excluded.updated_at`).bind(
-          email, displayName, department, note, passwordHash, bytesToBase64Url(salt), PASSWORD_ITERATIONS,
-          tokenHash, expiresAt, previous?.sent_count || 0, previous?.last_sent_at || null,
-          bootstrapAdmin ? 1 : 0, previous?.created_at || timestamp, timestamp,
-        ).run();
+    await db.batch([
+      db.prepare(`INSERT INTO user_profiles
+        (email, tenant_id, display_name, department, groups_json, role, status,
+         approval_requested_at, application_note, approved_by, approved_at, rejection_reason, created_at, updated_at)
+        VALUES (?, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+        ON CONFLICT(email) DO UPDATE SET display_name = excluded.display_name, department = excluded.department,
+          role = excluded.role, status = excluded.status, approval_requested_at = excluded.approval_requested_at,
+          application_note = excluded.application_note, approved_by = excluded.approved_by,
+          approved_at = excluded.approved_at, rejection_reason = NULL, updated_at = excluded.updated_at`).bind(
+            email, tenantId, displayName, department, role, status, timestamp, note,
+            bootstrapAdmin ? "system:bootstrap" : null, bootstrapAdmin ? timestamp : null, timestamp, timestamp,
+          ),
+      db.prepare(`INSERT INTO auth_credentials
+        (email, password_hash, password_salt, password_iterations, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)`).bind(
+          email, passwordHash, bytesToBase64Url(salt), PASSWORD_ITERATIONS, timestamp, timestamp,
+        ),
+      db.prepare(`INSERT INTO audit_logs
+        (id, tenant_id, actor_email, action, resource_type, resource_id, trace_id, outcome, details_json, created_at)
+        VALUES (?, ?, ?, ?, 'user_profile', ?, ?, 'success', ?, ?)`).bind(
+          `aud_${crypto.randomUUID().replaceAll("-", "")}`,
+          tenantId,
+          email,
+          bootstrapAdmin ? "access.bootstrap_admin" : "access.requested",
+          email,
+          input.traceId,
+          JSON.stringify({ department, role, selfRegistration: true, emailVerification: "not_required" }),
+          timestamp,
+        ),
+      db.prepare("DELETE FROM email_verification_requests WHERE email = ?").bind(email),
+    ]);
   } catch (error) {
     throw new RegistrationSystemError("account_write", error);
   }
-  try {
-    await sendVerificationEmail({ email, token, verificationUrl: input.verificationUrl });
-    await db.prepare(`UPDATE email_verification_requests SET sent_count = ?, last_sent_at = ?, updated_at = ?
-      WHERE email = ? AND token_hash = ?`).bind(recentSendCount + 1, timestamp, timestamp, email, tokenHash).run();
-  } catch (error) {
-    if (error instanceof AuthError) throw error;
-    throw new RegistrationSystemError("account_write", error);
-  }
-  return { verificationRequired: true as const };
+  const profile = await findProfile(email);
+  if (!profile) throw new RegistrationSystemError("profile_read", new Error("Registered profile was not found."));
+  return { user: toAccessIdentity(profile), token: await createSession(email) };
 }
 
 export async function verifyEmailRegistration(input: { token: string; traceId: string }) {
@@ -653,11 +696,13 @@ export async function resolveAccessIdentity(request: Request): Promise<AccessIde
       tenantId,
       displayName,
       department: "미지정",
+      jobTitle: "미지정",
       corpId: null,
       deptId: null,
       groups: [],
       role: "user",
       status: "unrequested",
+      locale: "ko-KR",
       createdAt: now,
       updatedAt: now,
     };
@@ -693,6 +738,9 @@ export async function updateOwnProfile(input: {
   request: Request;
   displayName: string;
   department: string;
+  locale?: string;
+  country?: string;
+  language?: string;
   currentPassword?: string;
   newPassword?: string;
   traceId: string;
@@ -705,10 +753,23 @@ export async function updateOwnProfile(input: {
   }
 
   const displayName = input.displayName.trim().slice(0, 120);
-  const department = input.department.trim().slice(0, 120);
-  if (!displayName || !department) {
-    throw new AuthError("이름과 소속 부서를 입력해 주세요.", 400, "AUTH_INVALID_INPUT");
+  const requestedDepartment = input.department.trim().slice(0, 120);
+  if (requestedDepartment && requestedDepartment !== existing.department) {
+    throw new AuthError("소속 부서는 관리자 또는 사내 인증 정보로만 변경할 수 있습니다.", 403, "AUTH_FORBIDDEN");
   }
+  const department = existing.department;
+  if (!displayName || !department) {
+    throw new AuthError("이름을 입력해 주세요.", 400, "AUTH_INVALID_INPUT");
+  }
+  const preferences = parseProfilePreferences(existing.preferences_json);
+  const currentLocale = profileLocale(preferences);
+  const legacyLanguage = input.language === undefined ? currentLocale.slice(0, currentLocale.indexOf("-")) : input.language.trim().toLowerCase();
+  const legacyCountry = input.country === undefined ? currentLocale.slice(currentLocale.indexOf("-") + 1) : input.country.trim().toUpperCase();
+  const locale = input.locale === undefined ? normalizeProfileLocale(`${legacyLanguage}-${legacyCountry}`) : normalizeProfileLocale(input.locale);
+  const [language, country] = locale.split("-");
+  preferences.locale = locale;
+  preferences.country = country;
+  preferences.language = language;
 
   const currentPassword = input.currentPassword || "";
   const newPassword = input.newPassword || "";
@@ -738,8 +799,8 @@ export async function updateOwnProfile(input: {
   const now = new Date().toISOString();
   const db = getD1();
   const statements = [
-    db.prepare(`UPDATE user_profiles SET display_name = ?, department = ?, updated_at = ?
-      WHERE email = ? AND tenant_id = ?`).bind(displayName, department, now, identity.email, identity.tenantId),
+    db.prepare(`UPDATE user_profiles SET display_name = ?, department = ?, preferences_json = ?, updated_at = ?
+      WHERE email = ? AND tenant_id = ?`).bind(displayName, department, JSON.stringify(preferences), now, identity.email, identity.tenantId),
     db.prepare(`INSERT INTO audit_logs
       (id, tenant_id, actor_email, action, resource_type, resource_id, trace_id, outcome, details_json, created_at)
       VALUES (?, ?, ?, 'profile.updated', 'user_profile', ?, ?, 'success', ?, ?)`).bind(
@@ -748,7 +809,7 @@ export async function updateOwnProfile(input: {
         identity.email,
         identity.email,
         input.traceId,
-        JSON.stringify({ displayName, department, passwordChanged: changingPassword }),
+        JSON.stringify({ displayName, department, locale, passwordChanged: changingPassword }),
         now,
       ),
   ];
@@ -789,6 +850,7 @@ export async function resolvePrincipal(request: Request): Promise<Principal> {
     displayName: identity.displayName,
     tenantId: identity.tenantId,
     department: identity.department,
+    jobTitle: identity.jobTitle,
     corpId: identity.corpId,
     deptId: identity.deptId,
     groups: identity.groups,
@@ -805,7 +867,7 @@ export function requireRole(principal: Principal, allowed: UserRole[]) {
 export async function listAccessRequests(principal: Principal) {
   requireRole(principal, ["admin"]);
   await ensureIdentitySchema();
-  const rows = await getD1().prepare(`SELECT email, tenant_id, display_name, department, groups_json, role, status,
+  const rows = await getD1().prepare(`SELECT email, tenant_id, display_name, department, job_title, groups_json, role, status,
     approval_requested_at, application_note, approved_by, approved_at, rejection_reason, created_at, updated_at
     FROM user_profiles WHERE tenant_id = ? AND role != 'admin' AND approval_requested_at IS NOT NULL
     ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 ELSE 2 END,

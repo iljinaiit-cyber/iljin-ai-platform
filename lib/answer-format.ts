@@ -41,6 +41,10 @@ export function answerLengthInstruction(length: AnswerLength | undefined) {
   return "표준 답변으로 작성하세요. 한 줄 결론을 먼저 제시한 뒤 5~7개의 짧은 섹션으로 현황·핵심 근거·원인 또는 영향·대안 비교·실무 적용·리스크와 한계·다음 행동을 질문에 맞게 다각도로 설명하세요. 근거가 있는 수치·조건·시점은 빠뜨리지 말고, 근거와 분석·권고를 구분하세요.";
 }
 
+export function deepInternetFirstPassInstruction() {
+  return "심층 인터넷 조사 1차 작성 규칙: 제공된 웹 검색 근거만 사용해 4,500~7,000자 수준의 독립적인 근거 중심 보고서를 작성하세요. 데이터·사례·현장 적용 시사점·리스크·실행 우선순위를 빠뜨리지 말고, 핵심 주장마다 [Wn] 인용을 붙이세요. 참고 출처 목록은 마지막 단계에서 시스템이 정리하므로 본문에 별도 출처 목록을 만들지 마세요.";
+}
+
 export function answerOutputTokenBudget(length: AnswerLength | undefined) {
   return length === "brief" ? 600 : length === "detailed" ? 4_800 : 1_800;
 }

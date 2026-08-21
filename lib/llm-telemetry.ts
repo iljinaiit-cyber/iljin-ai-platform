@@ -1,6 +1,7 @@
 import { getD1 } from "../db";
 import type { Principal } from "./identity";
 import type { GatewayCompletion, GatewaySensitivity } from "./llm-gateway";
+import { consumeUserTokens } from "./token-usage";
 
 export async function ensureLlmTelemetrySchema() {
   const db = getD1();
@@ -65,6 +66,11 @@ export async function recordLlmInvocation(input: {
       input.completion.latencyMs,
       new Date().toISOString(),
     ).run();
+  await consumeUserTokens({
+    tenantId: input.principal.tenantId,
+    email: input.principal.email,
+    tokens: Number(input.completion.usage?.total_tokens || 0),
+  });
 }
 
 export async function getConversationSensitivity(

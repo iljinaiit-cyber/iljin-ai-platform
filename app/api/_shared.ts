@@ -7,6 +7,7 @@ import { guardrailResponse } from "../../lib/guardrails";
 import { RagError } from "../../lib/rag";
 import { GatewayError } from "../../lib/llm-gateway";
 import { RuntimeBindingError } from "../../db";
+import { AgentError } from "../../lib/agent-orchestrator";
 
 export const newTraceId = () => `trc_${crypto.randomUUID().replaceAll("-", "")}`;
 
@@ -54,6 +55,12 @@ export function fail(error: unknown, traceId: string) {
   if (error instanceof GatewayError) {
     return Response.json(
       { error: { code: error.code, message: error.message, trace_id: traceId, retryable: error.retryable } },
+      { status: error.status, headers: noStore(traceId) },
+    );
+  }
+  if (error instanceof AgentError) {
+    return Response.json(
+      { error: { code: error.code, message: error.message, trace_id: traceId } },
       { status: error.status, headers: noStore(traceId) },
     );
   }

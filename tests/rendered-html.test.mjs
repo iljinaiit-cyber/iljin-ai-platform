@@ -65,8 +65,8 @@ test("implements D1 email-password login and administrator approval before busin
   assert.doesNotMatch(portal, /ChatGPT|signin-with-chatgpt/i);
   assert.match(meRoute, /resolveAccessIdentity/);
   assert.match(registerRoute, /registerEmailAccount/);
-  assert.match(registerRoute, /verificationUrl/);
-  assert.doesNotMatch(registerRoute, /sessionCookie/);
+  assert.match(registerRoute, /sessionCookie/);
+  assert.match(registerRoute, /status: 201/);
   assert.match(identity, /email_verification_requests/);
   assert.match(identity, /RESEND_API_KEY/);
   assert.match(portal, /verificationRequired/);
@@ -87,6 +87,32 @@ test("implements D1 email-password login and administrator approval before busin
   assert.match(schema, /authSessions/);
   assert.match(migration, /CREATE TABLE `auth_credentials`/);
   assert.match(migration, /CREATE TABLE `auth_sessions`/);
+});
+
+test("uses the selected appearance for the home workspace", async () => {
+  const [portal, styles] = await Promise.all([
+    readFile(new URL("app/AgentPortal.tsx", root), "utf8"),
+    readFile(new URL("app/page-display.css", root), "utf8"),
+  ]);
+  assert.match(portal, /const appearance = \{ color: themeColor, mode: resolvedThemeMode \};/);
+  assert.match(portal, /theme-\$\{appearance\.color\} mode-\$\{appearance\.mode\}/);
+  assert.doesNotMatch(portal, /industrial-layout\.css|operation-console/);
+  assert.match(styles, /\.app-shell\.mode-light \.workspace-home \.section-block/);
+  assert.doesNotMatch(styles, /^\.workspace-home \.section-block\s*\{[^}]*background:\s*#fff/m);
+});
+
+test("keeps fallback chat questions and answer guidance aligned with current chat behavior", async () => {
+  const [suggestions, activity, portal] = await Promise.all([
+    readFile(new URL("lib/chat-suggestions.ts", root), "utf8"),
+    readFile(new URL("lib/activity.ts", root), "utf8"),
+    readFile(new URL("app/AgentPortal.tsx", root), "utf8"),
+  ]);
+  assert.match(suggestions, /최신 문서 변경사항/);
+  assert.match(suggestions, /공개 자료 기준으로 교차 검토/);
+  assert.match(activity, /FALLBACK_CHAT_SUGGESTIONS/);
+  assert.match(portal, /FALLBACK_CHAT_SUGGESTIONS/);
+  assert.match(portal, /인터넷 검색으로 공개 웹의 최신 근거를 여러 출처로 교차 검토해 답합니다/);
+  assert.match(portal, /권한이 있는 최신 사내 문서만 근거로 답합니다/);
 });
 
 test("returns a recoverable configuration error when the authentication database binding is unavailable", async () => {
@@ -164,7 +190,7 @@ test("implements administrator governance for roles, users, features, and audit"
 });
 
 test("implements evidence-backed AI Control Tower, SLO gate, and tenant-safe retrieval telemetry", async () => {
-  const [tower, route, component, portal, schema, migration, rag, observability] = await Promise.all([
+  const [tower, route, component, portal, schema, migration, rag, observability, operations] = await Promise.all([
     readFile(new URL("lib/control-tower.ts", root), "utf8"),
     readFile(new URL("app/api/admin/control-tower/route.ts", root), "utf8"),
     readFile(new URL("app/components/AiControlTower.tsx", root), "utf8"),
@@ -173,6 +199,7 @@ test("implements evidence-backed AI Control Tower, SLO gate, and tenant-safe ret
     readFile(new URL("drizzle/0007_ai_control_tower.sql", root), "utf8"),
     readFile(new URL("lib/rag.ts", root), "utf8"),
     readFile(new URL("app/api/admin/observability/route.ts", root), "utf8"),
+    readFile(new URL("app/components/PlatformOperationsConsole.tsx", root), "utf8"),
   ]);
   assert.match(tower, /CONTROL_CATALOG/);
   assert.match(tower, /NIST AI RMF/);
@@ -184,10 +211,9 @@ test("implements evidence-backed AI Control Tower, SLO gate, and tenant-safe ret
   assert.match(tower, /control\.slo\.updated/);
   assert.match(route, /updateControlAssessment/);
   assert.match(route, /updateSloPolicy/);
-  assert.match(component, /\/api\/admin\/readiness/);
-  assert.match(component, /\/api\/admin\/providers/);
-  assert.match(component, /\/api\/admin\/observability/);
-  assert.match(component, /PRODUCTION GATE/);
+  assert.match(component, /RELEASE GATE/);
+  assert.match(operations, /\/api\/admin\/providers/);
+  assert.match(operations, /\/api\/admin\/rag-pipeline/);
   assert.match(portal, /<AiControlTower currentEmail=\{currentEmail\}/);
   assert.match(schema, /aiControlAssessments/);
   assert.match(schema, /aiSloPolicies/);
@@ -290,10 +316,7 @@ test("routes chat through Cloudflare GLM 4.7 Flash with local fallback", async (
   assert.match(providersRoute, /recordProviderProbe/);
   assert.match(resourceProbes, /provider_resource_probes/);
   assert.match(resourceMigration, /CREATE TABLE IF NOT EXISTS `provider_resource_probes`/);
-  assert.match(controlTower, /전체 연결 테스트/);
-  assert.match(controlTower, /LLM 모델 리소스 연동/);
-  assert.match(controlTower, /2단계 LLM 라우팅/);
-  assert.match(controlTower, /Provider 사용량·폴백·지연/);
+  assert.match(controlTower, /RELEASE GATE/);
   assert.match(app, /공개 · 인터넷/);
   assert.match(app, /내부 · Cloudflare/);
   assert.match(app, /useState<ChatSensitivity>\("public"\)/);
@@ -312,8 +335,7 @@ test("routes chat through Cloudflare GLM 4.7 Flash with local fallback", async (
   assert.match(telemetry, /fallback_path_json/);
   assert.match(telemetry, /prompt_tokens/);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS `llm_invocations`/);
-  assert.match(controlTower, /연결 테스트/);
-  assert.match(controlTower, /Circuit 초기화/);
+  assert.match(controlTower, /통제 증적과 운영 SLO/);
   assert.match(envExample, /vLLM example/);
   assert.match(envExample, /CLOUDFLARE_AI_MODEL=@cf\/zai-org\/glm-4\.7-flash/);
   assert.match(envExample, /CLOUDFLARE_ACCOUNT_ID=/);
@@ -595,7 +617,8 @@ test("uses the latest available dates and document versions as the default answe
   assert.match(rag, /이전 버전은 현재 기준 사실처럼 사용하지 않습니다/);
   assert.match(internetSearch, /latestRequired: boolean/);
   assert.match(internetSearch, /isExplicitHistoricalQuery/);
-  assert.match(internetSearch, /variants\.push\(`\$\{searchQuery\} \$\{currentYear\}`\)/);
+  assert.match(internetSearch, /const queryWithCurrentYear = currentYearRequired/);
+  assert.match(internetSearch, /variants\.push\(queryWithCurrentYear\)/);
   assert.match(internetSearch, /datedResults/);
   assert.match(internetSearch, /ageDays <= 30/);
   // 이 문구를 보여주던 워크스페이스 안내 문단은 채팅 화면 리디자인으로 제거됐다
@@ -660,9 +683,7 @@ test("uses Cloudflare AI, Database, and Storage terminology in user-facing surfa
   assert.match(ingest, /Object Storage/);
   assert.match(ingest, /Metadata Database/);
   assert.doesNotMatch(ingest, /\bD1\b|\bR2\b|Cloudflare/);
-  assert.match(controlTower, /Cloud LLM/);
-  assert.match(controlTower, /Query Rewrite · Hybrid RRF · Reranker · Verifier/);
-  assert.doesNotMatch(controlTower, /Cloudflare R2|D1 RUN/);
+  assert.match(controlTower, /CONTROL TOWER/);
   assert.match(operations, /AGENT RUNS/);
   assert.match(governance, /label: "Cloudflare GLM 4\.7 Flash 기본"/);
   assert.match(pipeline, /name: "Object Storage"/);
@@ -703,8 +724,7 @@ test("implements query planning, RRF fusion, reranking, evidence verification, a
   assert.match(observability, /avg_evidence_confidence/);
   assert.match(observability, /verifier_insufficient/);
   assert.match(observability, /rrf_applied/);
-  assert.match(controlTower, /RRF 융합/);
-  assert.match(controlTower, /근거 부족 차단/);
+  assert.match(portal, /Dense·BM25 결과를 RRF로 융합/);
   assert.match(portal, /Hybrid · RRF/);
   assert.match(portal, /근거 검증/);
   assert.match(evaluator, /context_precision_at_10/);
@@ -730,9 +750,10 @@ test("implements multimodal document analysis, visual indexing, and image citati
   assert.match(assetRoute, /analyzeMultimodalFile/);
   // The upload is read once and reused for analysis and R2 storage.
   assert.match(assetRoute, /const originalData = await file\.arrayBuffer\(\)/);
-  assert.match(assetRoute, /analyzeMultimodalFile\(file, originalData\)/);
+  assert.match(assetRoute, /analyzeMultimodalFile\(file, originalData, classification\)/);
   assert.match(assetRoute, /originalData,/);
-  assert.match(rag, /CREATE TABLE IF NOT EXISTS visual_regions/);
+  assert.match(rag, /visual_regions: \[[\s\S]*"ordinal"[\s\S]*"labels_json"[\s\S]*"chart_json"/);
+  assert.match(rag, /D1_SCHEMA_OUTDATED/);
   assert.match(rag, /group_concat\(DISTINCT vr\.region_type\)/);
   assert.match(rag, /originalUrl/);
   assert.match(rag, /queryModality/);
@@ -749,13 +770,13 @@ test("implements multimodal document analysis, visual indexing, and image citati
 });
 
 test("stores and queries current embeddings through tenant-filtered Cloudflare Vectorize", async () => {
-  const [rag, runtime, pagesConfig, indexerConfig, pipeline, controlTower, migration] = await Promise.all([
+  const [rag, runtime, pagesConfig, indexerConfig, pipeline, portal, migration] = await Promise.all([
     readFile(new URL("lib/rag.ts", root), "utf8"),
     readFile(new URL("lib/runtime-env.ts", root), "utf8"),
     readFile(new URL("wrangler.jsonc", root), "utf8"),
     readFile(new URL("indexer/wrangler.jsonc", root), "utf8"),
     readFile(new URL("app/api/admin/rag-pipeline/route.ts", root), "utf8"),
-    readFile(new URL("app/components/AiControlTower.tsx", root), "utf8"),
+    readFile(new URL("app/AgentPortal.tsx", root), "utf8"),
     readFile(new URL("drizzle/0019_vectorize_index.sql", root), "utf8"),
   ]);
   assert.match(runtime, /VECTOR_INDEX\?: VectorizeIndex/);
@@ -767,7 +788,8 @@ test("stores and queries current embeddings through tenant-filtered Cloudflare V
   assert.match(rag, /tenant_id: \{ \$eq: tenantId \}/);
   assert.match(rag, /repairVectorIndexBatch/);
   assert.match(pipeline, /name: "Vector DB"/);
-  assert.match(controlTower, /임베딩·Vector DB 복구/);
+  assert.match(portal, /Cloudflare Vectorize/);
+  assert.match(portal, /Vector DB 파일 목록/);
   assert.match(migration, /vector_indexed_at/);
 });
 

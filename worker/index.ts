@@ -37,7 +37,12 @@ const CONTENT_SECURITY_POLICY = [
 function withResponsePolicy(response: Response, url: URL, traceId: string) {
   const headers = new Headers(response.headers);
   headers.set("X-Trace-Id", headers.get("X-Trace-Id") || traceId);
-  headers.set("Content-Security-Policy", CONTENT_SECURITY_POLICY);
+  // 라우트가 이미 CSP 를 정했다면 그것이 이긴다. 종전에는 set() 이 무조건 덮어써서
+  // 자산 원본 라우트의 sandbox CSP 같은 **더 엄격한** 정책이 전역 기본값으로 완화됐다.
+  // 전역값은 어디까지나 기본값이지 상한이 아니다.
+  if (!headers.has("Content-Security-Policy")) {
+    headers.set("Content-Security-Policy", CONTENT_SECURITY_POLICY);
+  }
   headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   headers.set("X-Content-Type-Options", "nosniff");

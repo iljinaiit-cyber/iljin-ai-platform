@@ -45,13 +45,16 @@ export async function POST(request: Request) {
       scopeId?: string;
       dailyLimit?: number;
     };
+    // 오류 본문은 { error: { code, message, trace_id } } 다. 화면은 전부
+    // payload.error?.message 를 읽으므로 error 에 문자열을 넣으면 메시지가
+    // undefined 가 되고 일반 문구로 대체된다 — 어떤 값이 잘못됐는지 사라진다.
     if (body.scope !== "corporation" && body.scope !== "department") {
-      return ok({ error: "scope 는 corporation 또는 department 여야 합니다." }, traceId, { status: 400 });
+      return ok({ error: { code: "INVALID_SCOPE", message: "scope 는 corporation 또는 department 여야 합니다.", trace_id: traceId } }, traceId, { status: 400 });
     }
     const scopeId = (body.scopeId || "").trim();
     const limit = Number(body.dailyLimit);
     if (!scopeId || !Number.isFinite(limit) || limit < 0 || limit > 1_000_000) {
-      return ok({ error: "조직과 한도(0~1,000,000)를 확인해 주세요." }, traceId, { status: 400 });
+      return ok({ error: { code: "INVALID_BUDGET", message: "조직과 한도(0~1,000,000)를 확인해 주세요.", trace_id: traceId } }, traceId, { status: 400 });
     }
     await ensureBudgetPolicySchema();
     const now = new Date().toISOString();

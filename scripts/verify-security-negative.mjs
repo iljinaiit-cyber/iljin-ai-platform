@@ -28,8 +28,8 @@ const [identity, guardrails, searchRoute, chatRoute, rag] = await Promise.all([
 
 result(
   "SEC-ACL-SPOOF-001",
-  containsAll(searchRoute, [/resolvePrincipal/, /searchRag\(body\.query/, /principal/]) &&
-    !/department:\s*body\.department/.test(searchRoute) &&
+  containsAll(searchRoute, [/resolvePrincipal/, /searchRag\(url\.searchParams\.get\("q"\)/, /principal/]) &&
+    !/department:\s*url\.searchParams/.test(searchRoute) &&
     containsAll(rag, [/options\.principal\.department/, /department_scope/]) ? "pass" : "fail",
   "Search scope is derived from the resolved Principal; body.department is not forwarded to retrieval.",
   { files: ["app/api/v1/search/route.ts", "lib/rag.ts"] },
@@ -43,13 +43,13 @@ result(
 );
 result(
   "SEC-APPROVAL-001",
-  containsAll(identity, [/const email = sessionEmail \|\| developmentEmail/, /usingDevelopmentIdentity = !sessionEmail/, /AUTH_APPLICATION_REQUIRED/, /identity\.status === "unrequested"/]) ? "pass" : "fail",
+  containsAll(identity, [/const email = sessionEmail \|\| forwardedEmail \|\| developmentEmail/, /usingDevelopmentIdentity = !sessionEmail && !forwardedEmail/, /AUTH_APPLICATION_REQUIRED/, /identity\.status === "unrequested"/]) ? "pass" : "fail",
   "Forwarded identity takes precedence over development headers and unrequested users are blocked.",
   { files: ["lib/identity.ts"] },
 );
 result(
   "SEC-IDEMPOTENCY-001",
-  containsAll(rag, [/checksum/, /deduplicated:\s*true/, /jobId:\s*null/]) ? "pass" : "fail",
+  containsAll(rag, [/checksum/, /deduplicated:\s*true/, /jobId: duplicate\.job_id/]) ? "pass" : "fail",
   "Document checksum deduplication provides the implemented ingest idempotency contract.",
   { files: ["lib/rag.ts"] },
 );
@@ -107,7 +107,7 @@ async function liveChecks() {
     assetId = first.body.assetId;
     const second = await jsonRequest("/api/v1/assets", admin, payload);
     const idempotent = second.response.status === 201 && second.body?.deduplicated === true &&
-      second.body?.assetId === assetId && second.body?.jobId === null;
+      second.body?.assetId === assetId && second.body?.jobId === first.body?.jobId;
 
     const spoof = await jsonRequest("/api/v1/search", denied, {
       query: `qa-sec-${runId}`,

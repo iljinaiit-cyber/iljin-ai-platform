@@ -44,7 +44,7 @@ test("completeWithRag accepts reasoningTier and preserves conversation history",
 test("completeWithRag runs post-hoc citation verification", async () => {
   const source = await readFile(new URL("lib/rag.ts", root), "utf8");
   assert.match(source, /verifyCitations/);
-  assert.match(source, /annotateCitationIssues/);
+  assert.match(source, /verifyCitationsForAnswer/);
   assert.match(source, /citationReport/);
 });
 

@@ -90,6 +90,20 @@ export function PlatformOperationsConsole() {
     }
   };
 
+  const runAllProviders = async () => {
+    setBusy("provider:all"); setMessage(""); setError("");
+    try {
+      await json("/api/admin/providers", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "probe_all" }),
+      });
+      await load();
+      setMessage("LLM 공급자 전체 연결 점검을 완료했습니다.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "공급자 전체 연결 점검을 완료하지 못했습니다.");
+    } finally { setBusy(""); }
+  };
+
   const probeOnePipelineComponent = async (component: { id: string; name: string }) => {
     const payload = await json<{ probe?: ProbeResult }>(`/api/admin/rag-pipeline?component=${encodeURIComponent(component.id)}`);
     if (payload.probe) setPipelineProbes((items) => ({ ...items, [component.id]: payload.probe! }));
@@ -107,9 +121,7 @@ export function PlatformOperationsConsole() {
     }
   };
 
-  // LLM 공급자는 Control Tower 의 "전체 연결 테스트"가 이미 일괄 점검을 제공한다
-  // (/api/admin/providers probe_all). RAG 파이프라인은 그 범위 밖이라 동일한
-  // 일괄 점검이 어디에도 없었다 — 구성요소 수만큼 하나씩 눌러야 했다.
+  // LLM 공급자와 RAG 파이프라인은 각각의 실제 연결 경로를 점검한다.
   const runAllPipelineProbes = async () => {
     const components = pipeline.components ?? [];
     if (!components.length) return;
@@ -143,7 +155,7 @@ export function PlatformOperationsConsole() {
 
       <div className="platform-console__grid">
         <section>
-          <div className="platform-console__section-head"><h3>LLM 공급자</h3><span>{health?.gateway?.model || "모델 미확인"}</span></div>
+          <div className="platform-console__section-head"><h3>LLM 공급자</h3><div className="platform-console__section-actions"><span>{health?.gateway?.model || "모델 미확인"}</span><button type="button" onClick={() => void runAllProviders()} disabled={Boolean(busy)}>{busy === "provider:all" ? "전체 연결 점검 중" : "전체 연결 점검"}</button></div></div>
           <ul className="platform-console__list">
             {providers.map((probe) => {
               const provider = probe.provider || "unknown";
@@ -159,7 +171,7 @@ export function PlatformOperationsConsole() {
                 </div>
               </li>;
             })}
-            {!providers.length && <li><small>공급자 진단 기록이 없습니다. 제어 타워에서 전체 연결 점검을 실행할 수 있습니다.</small></li>}
+            {!providers.length && <li><small>공급자 진단 기록이 없습니다. 위의 전체 연결 점검으로 상태를 확인할 수 있습니다.</small></li>}
           </ul>
         </section>
 

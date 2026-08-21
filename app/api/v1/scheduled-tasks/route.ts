@@ -1,4 +1,4 @@
-import { createScheduledTask, deleteScheduledTask, isValidCronExpression, listScheduledTasks, parseNaturalLanguageSchedule, toggleScheduledTask } from "../../../../lib/scheduled-tasks";
+import { createScheduledTask, deleteScheduledTask, isValidCronExpression, listScheduledTasks, parseNaturalLanguageSchedule, toggleScheduledTask, updateScheduledTask } from "../../../../lib/scheduled-tasks";
 import { resolvePrincipal } from "../../../../lib/identity";
 import { fail, newTraceId, ok } from "../../_shared";
 
@@ -28,11 +28,11 @@ export async function PATCH(request: Request) {
   const traceId = newTraceId();
   try {
     const principal = await resolvePrincipal(request);
-    const body = await request.json() as { id?: string; enabled?: boolean };
-    if (!body.id || typeof body.enabled !== "boolean") {
-      return ok({ error: { code: "INVALID_INPUT", message: "id 와 enabled 가 필요합니다.", trace_id: traceId } }, traceId, { status: 400 });
-    }
-    await toggleScheduledTask(principal, body.id, body.enabled);
+    const body = await request.json() as { id?: string; enabled?: boolean; prompt?: string; cron?: string };
+    if (!body.id) return ok({ error: { code: "INVALID_INPUT", message: "id 가 필요합니다.", trace_id: traceId } }, traceId, { status: 400 });
+    if (typeof body.enabled === "boolean") await toggleScheduledTask(principal, body.id, body.enabled);
+    else if (typeof body.prompt === "string" && typeof body.cron === "string" && body.prompt.trim() && body.prompt.trim().length <= 4000 && isValidCronExpression(body.cron)) await updateScheduledTask(principal, body.id, body.prompt, body.cron);
+    else return ok({ error: { code: "INVALID_INPUT", message: "수정할 프롬프트와 cron 또는 enabled 값이 필요합니다.", trace_id: traceId } }, traceId, { status: 400 });
     return ok({ ok: true }, traceId);
   } catch (error) { return fail(error, traceId); }
 }

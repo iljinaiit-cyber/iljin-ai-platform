@@ -101,6 +101,13 @@ export async function toggleScheduledTask(principal: Principal, taskId: string, 
     .bind(enabled ? 1 : 0, nowIso(), taskId, principal.tenantId, principal.email).run();
 }
 
+export async function updateScheduledTask(principal: Principal, taskId: string, prompt: string, cronExpression: string): Promise<void> {
+  await ensureScheduledTaskSchema();
+  if (!prompt.trim() || prompt.trim().length > 4000 || !isValidCronExpression(cronExpression)) throw new Error("Invalid scheduled task input");
+  await getD1().prepare("UPDATE scheduled_tasks SET prompt = ?, cron_expression = ?, next_run_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ? AND owner_email = ?")
+    .bind(prompt.trim(), cronExpression.trim(), computeNextRun(cronExpression.trim()), nowIso(), taskId, principal.tenantId, principal.email).run();
+}
+
 export async function deleteScheduledTask(principal: Principal, taskId: string): Promise<void> {
   await ensureScheduledTaskSchema();
   await getD1().prepare("DELETE FROM scheduled_tasks WHERE id = ? AND tenant_id = ? AND owner_email = ?")

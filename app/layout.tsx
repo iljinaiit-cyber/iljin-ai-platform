@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
+import { InteractionFeedback } from "./components/InteractionFeedback";
 
 const description = "임직원의 개인·부서 업무를 연결하는 Enterprise AI Agent Portal";
 
@@ -17,11 +18,8 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     description,
     icons: {
-      icon: [
-        { url: "/favicon.svg", type: "image/svg+xml" },
-        { url: "/brand-symbol.png", type: "image/png" },
-      ],
-      shortcut: "/favicon.svg",
+      icon: { url: "/favicon.svg?v=4", type: "image/svg+xml" },
+      shortcut: "/favicon.svg?v=4",
     },
     openGraph: {
       title: "ILJIN AI Works",
@@ -40,7 +38,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body><InteractionFeedback />{children}</body>
     </html>
   );
 }

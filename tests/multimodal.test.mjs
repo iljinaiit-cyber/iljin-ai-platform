@@ -49,21 +49,20 @@ test("segments INSERT includes time_start_ms, time_end_ms, speaker, modality", a
   }
 });
 
-test("segments CREATE TABLE includes time_start_ms, time_end_ms, speaker, modality", async () => {
+test("segments schema is preflighted before multimodal inserts", async () => {
   const source = await readFile(new URL("lib/rag.ts", root), "utf8");
-  const createMatch = source.match(/CREATE TABLE IF NOT EXISTS segments[\s\S]*?\)/);
-  assert.ok(createMatch, "CREATE TABLE segments not found");
-  const ddl = createMatch[0];
-  assert.ok(ddl.includes("time_start_ms"), "CREATE TABLE missing time_start_ms");
-  assert.ok(ddl.includes("time_end_ms"), "CREATE TABLE missing time_end_ms");
-  assert.ok(ddl.includes("speaker"), "CREATE TABLE missing speaker");
-  assert.ok(ddl.includes("modality"), "CREATE TABLE missing modality");
+  const columns = source.match(/segments: \[[^\]]*\]/)?.[0] || "";
+  for (const column of ["time_start_ms", "time_end_ms", "speaker", "modality", "vector_indexed_at"]) {
+    assert.match(columns, new RegExp(`"${column}"`));
+  }
+  assert.match(source, /D1_SCHEMA_OUTDATED/);
+  assert.doesNotMatch(source, /CREATE TABLE IF NOT EXISTS segments/);
 });
 
-test("allowedMimeTypes includes audio and video", async () => {
+test("ALLOWED_RAG_MIME_TYPES includes audio and video", async () => {
   const source = await readFile(new URL("lib/rag.ts", root), "utf8");
-  const mimeMatch = source.match(/allowedMimeTypes\s*=\s*new Set\(\[[\s\S]*?\]\)/);
-  assert.ok(mimeMatch, "allowedMimeTypes not found");
+  const mimeMatch = source.match(/ALLOWED_RAG_MIME_TYPES\s*=\s*new Set\(\[[\s\S]*?\]\)/);
+  assert.ok(mimeMatch, "ALLOWED_RAG_MIME_TYPES not found");
   const mimeBlock = mimeMatch[0];
   assert.ok(mimeBlock.includes("audio/wav"), "allowedMimeTypes missing audio/wav");
   assert.ok(mimeBlock.includes("audio/mpeg"), "allowedMimeTypes missing audio/mpeg");

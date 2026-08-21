@@ -1,5 +1,4 @@
 import { completeWithGateway, type GatewayMessage } from "./llm-gateway";
-import { getRuntimeEnv } from "./runtime-env";
 
 export type FollowUpQuestion = {
   question: string;
@@ -8,6 +7,18 @@ export type FollowUpQuestion = {
 
 const FOLLOW_UP_PATTERN = /(?:^|\n)\s*(?:#{1,3}\s*)?(?:\[)?\s*보충\s*질문\s*(?:\])?\s*(?=\n|$)/i;
 const RELATED_PATTERN = /##\s*연관\s*질문/i;
+
+export function normalizeRewrittenQuery(content: string, original: string) {
+  const rewritten = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean)
+    ?.replace(/^(?:재작성(?:된)?\s*(?:질의|질문)|검색\s*질의)\s*[:：]\s*/i, "")
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .trim();
+  if (!rewritten || rewritten.length > 500 || /^(?:설명|답변|이유)\s*[:：]/i.test(rewritten)) return original;
+  return rewritten;
+}
 
 /**
  * Extract follow-up questions from LLM completion content.
@@ -123,8 +134,7 @@ ${historyText}
       { maxOutputTokens: 200, reasoningTier: "swift" },
       "swift",
     );
-    const rewritten = completion.content.trim();
-    return rewritten || userQuery;
+    return normalizeRewrittenQuery(completion.content, userQuery);
   } catch {
     return userQuery;
   }
@@ -134,12 +144,13 @@ ${historyText}
  * Generate follow-up questions when RAG retrieval is insufficient.
  *
  * Called when the search finds no grounded evidence. Asks the LLM to produce
- * 1-3 clarifying questions that would help narrow down the user's intent.
+ * one clarifying question that would help narrow down the user's intent.
  */
 export async function generateInsufficiencyQuestions(
   userQuery: string,
   conversationHistory: GatewayMessage[],
   traceId: string,
+  languageInstruction = "",
 ): Promise<FollowUpQuestion[]> {
   const recent = conversationHistory.slice(-4);
   const historyText = recent.length > 0
@@ -153,7 +164,7 @@ export async function generateInsufficiencyQuestions(
 대화:
 ${historyText}
 
-질문: ${userQuery}`;
+질문: ${userQuery}${languageInstruction}`;
 
   try {
     const completion = await completeWithGateway(
@@ -175,7 +186,7 @@ ${historyText}
         });
       }
     }
-    return questions.slice(0, 3);
+    return questions.slice(0, 1);
   } catch {
     return [];
   }

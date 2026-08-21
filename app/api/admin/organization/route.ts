@@ -5,8 +5,12 @@ import {
   assignUserOrganization,
   createCorporation,
   createDepartment,
+  deleteCorporation,
+  deleteDepartment,
   listCorporations,
   listDepartments,
+  updateCorporation,
+  updateDepartment,
 } from "../../../../lib/organization";
 import { fail, newTraceId, ok } from "../../_shared";
 
@@ -27,6 +31,10 @@ export async function GET(request: Request) {
 type Body =
   | { action: "create_corporation"; name: string; code?: string }
   | { action: "create_department"; corpId: string; name: string; parentId?: string; code?: string }
+  | { action: "update_corporation"; corpId: string; name: string }
+  | { action: "delete_corporation"; corpId: string }
+  | { action: "update_department"; deptId: string; name: string }
+  | { action: "delete_department"; deptId: string }
   | { action: "archive_department"; deptId: string }
   | { action: "assign_user"; email: string; corpId?: string | null; deptId?: string | null };
 
@@ -59,6 +67,26 @@ export async function POST(request: Request) {
         });
         return ok({ department }, traceId, { status: 201 });
       }
+      case "update_corporation": {
+        const corporation = await updateCorporation({ principal, corpId: body.corpId, name: body.name });
+        await writeAudit({ principal, traceId, action: "organization.corporation.updated", resourceType: "corporation", resourceId: body.corpId, details: { name: corporation.name } });
+        return ok({ corporation }, traceId);
+      }
+      case "delete_corporation": {
+        await deleteCorporation({ principal, corpId: body.corpId });
+        await writeAudit({ principal, traceId, action: "organization.corporation.deleted", resourceType: "corporation", resourceId: body.corpId, details: {} });
+        return ok({ deleted: true }, traceId);
+      }
+      case "update_department": {
+        const department = await updateDepartment({ principal, deptId: body.deptId, name: body.name });
+        await writeAudit({ principal, traceId, action: "organization.department.updated", resourceType: "department", resourceId: body.deptId, details: { name: department.name } });
+        return ok({ department }, traceId);
+      }
+      case "delete_department": {
+        const result = await deleteDepartment({ principal, deptId: body.deptId });
+        await writeAudit({ principal, traceId, action: "organization.department.deleted", resourceType: "department", resourceId: body.deptId, details: result });
+        return ok(result, traceId);
+      }
       case "archive_department": {
         const result = await archiveDepartment({ principal, deptId: body.deptId });
         await writeAudit({
@@ -81,7 +109,8 @@ export async function POST(request: Request) {
         return ok(result, traceId);
       }
       default:
-        return ok({ error: "알 수 없는 요청입니다." }, traceId, { status: 400 });
+        // 화면은 payload.error?.message 를 읽는다 — 문자열을 넣으면 메시지가 사라진다.
+        return ok({ error: { code: "INVALID_ACTION", message: "알 수 없는 요청입니다.", trace_id: traceId } }, traceId, { status: 400 });
     }
   } catch (error) { return fail(error, traceId); }
 }

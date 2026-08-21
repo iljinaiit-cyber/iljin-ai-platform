@@ -1,8 +1,11 @@
 import { getD1 } from "../db";
 import { audit } from "./conversations";
 import type { Principal, UserRole } from "./identity";
-import { getRagStatus, searchRag } from "./rag";
-import { createScheduleWorkItem, deleteScheduleWorkItemsForSource, syncScheduleWorkItemStatus } from "./schedule-planning";
+import { completeWithRag, getRagStatus, searchRag } from "./rag";
+import { inspectUserInput } from "./guardrails";
+import { createScheduleWorkItem, deleteScheduleWorkItemsForSource, ensureSchedulePlanningSchema, syncScheduleWorkItemStatus } from "./schedule-planning";
+import { getChatAgent } from "./chat-agents";
+import { verifyD1Schema } from "./d1-schema";
 
 export type RiskLevel = "R0" | "R1" | "R2" | "R3";
 export type AgentState = "router" | "planner" | "retrieval" | "verification" | "execution";
@@ -77,100 +80,7 @@ type ApprovalRow = {
 const MAX_AGENT_ITERATIONS = 5;
 const APPROVAL_TTL_MS = 24 * 60 * 60 * 1000;
 const RISK_WEIGHT: Record<RiskLevel, number> = { R0: 0, R1: 1, R2: 2, R3: 3 };
-
-const TOOL_SEEDS = [
-  {
-    id: "platform.rag_status",
-    name: "RAG 플랫폼 상태 조회",
-    description: "현재 사용자의 권한 범위에서 문서·세그먼트 수와 RAG 구성 상태를 읽습니다.",
-    riskLevel: "R0",
-    mode: "read_only",
-    adapterType: "builtin",
-    enabled: 1,
-    timeoutMs: 2000,
-    maxRetries: 0,
-    inputSchema: { type: "object", additionalProperties: false },
-    roles: ["user", "manager", "admin"],
-  },
-  {
-    id: "knowledge.search",
-    name: "사내 지식 근거 검색",
-    description: "부서 ACL을 적용한 Hybrid Search를 실행하고 Citation 근거를 반환합니다.",
-    riskLevel: "R1",
-    mode: "read_only",
-    adapterType: "builtin",
-    enabled: 1,
-    timeoutMs: 10000,
-    maxRetries: 1,
-    inputSchema: { type: "object", properties: { query: { type: "string", minLength: 2, maxLength: 1000 } } },
-    roles: ["user", "manager", "admin"],
-  },
-  {
-    id: "controlled.change_evidence",
-    name: "통제 변경 증빙 생성",
-    description: "R2 승인 경로를 검증하기 위한 읽기 전용 Demo Tool입니다. 외부 시스템을 변경하지 않고 승인·멱등성 증빙만 생성합니다.",
-    riskLevel: "R2",
-    mode: "read_only",
-    adapterType: "builtin",
-    enabled: 1,
-    timeoutMs: 2000,
-    maxRetries: 0,
-    inputSchema: { type: "object", properties: { change: { type: "string", maxLength: 1000 } } },
-    roles: ["user", "manager", "admin"],
-  },
-  {
-    id: "erp.purchase_order.read",
-    name: "ERP 구매오더 조회",
-    description: "ERP Adapter 계약 예시입니다. Sandbox와 인증정보가 없어 비활성화되어 있습니다.",
-    riskLevel: "R1",
-    mode: "read_only",
-    adapterType: "external",
-    enabled: 0,
-    timeoutMs: 5000,
-    maxRetries: 1,
-    inputSchema: { type: "object", properties: { purchaseOrderId: { type: "string" } }, required: ["purchaseOrderId"] },
-    roles: ["user", "manager", "admin"],
-  },
-  {
-    id: "itsm.ticket.create",
-    name: "ITSM 티켓 생성",
-    description: "ITSM Adapter 계약 예시입니다. R2 승인과 실제 연결정보가 필요하며 현재 비활성화되어 있습니다.",
-    riskLevel: "R2",
-    mode: "write",
-    adapterType: "external",
-    enabled: 0,
-    timeoutMs: 5000,
-    maxRetries: 0,
-    inputSchema: { type: "object", properties: { summary: { type: "string" } }, required: ["summary"] },
-    roles: ["manager", "admin"],
-  },
-  {
-    id: "mes.work_order.update",
-    name: "MES 작업지시 변경",
-    description: "MES Adapter 계약 예시입니다. R3 이중 통제와 Sandbox가 없어 비활성화되어 있습니다.",
-    riskLevel: "R3",
-    mode: "write",
-    adapterType: "external",
-    enabled: 0,
-    timeoutMs: 5000,
-    maxRetries: 0,
-    inputSchema: { type: "object", properties: { workOrderId: { type: "string" }, status: { type: "string" } }, required: ["workOrderId", "status"] },
-    roles: ["manager", "admin"],
-  },
-  {
-    id: "hr.travel.submit",
-    name: "HR 출장 신청 제출",
-    description: "HR Adapter 계약 예시입니다. R3 승인과 HR Sandbox가 없어 비활성화되어 있습니다.",
-    riskLevel: "R3",
-    mode: "write",
-    adapterType: "external",
-    enabled: 0,
-    timeoutMs: 5000,
-    maxRetries: 0,
-    inputSchema: { type: "object", properties: { requestId: { type: "string" } }, required: ["requestId"] },
-    roles: ["user", "manager", "admin"],
-  },
-] as const;
+const WORK_ASSISTANT_TOOL = { id: "work.assistant" } as const;
 
 function id(prefix: string) {
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -211,6 +121,7 @@ function mapTool(row: ToolRow) {
 }
 
 function mapRun(row: RunRow) {
+  const input = parseJson<{ agentProfile?: { id: string; name: string } }>(row.input_json, {});
   return {
     id: row.id,
     title: row.title,
@@ -218,6 +129,7 @@ function mapRun(row: RunRow) {
     status: row.status,
     currentState: row.current_state,
     selectedToolId: row.selected_tool_id || undefined,
+    agentProfile: input.agentProfile ? { id: input.agentProfile.id, name: input.agentProfile.name } : undefined,
     maxIterations: row.max_iterations,
     iterationCount: row.iteration_count,
     output: parseJson<Record<string, unknown> | undefined>(row.output_json, undefined),
@@ -256,93 +168,13 @@ let schemaPromise: Promise<void> | undefined;
 
 export function ensureAgentSchema() {
   if (!schemaPromise) {
-    schemaPromise = (async () => {
-      const db = getD1();
-      await db.batch([
-        db.prepare(`CREATE TABLE IF NOT EXISTS tool_registry (
-          id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL DEFAULT '*', name TEXT NOT NULL,
-          description TEXT NOT NULL, risk_level TEXT NOT NULL DEFAULT 'R0',
-          mode TEXT NOT NULL DEFAULT 'read_only', adapter_type TEXT NOT NULL DEFAULT 'builtin',
-          enabled INTEGER NOT NULL DEFAULT 0, timeout_ms INTEGER NOT NULL DEFAULT 3000,
-          max_retries INTEGER NOT NULL DEFAULT 0, input_schema_json TEXT NOT NULL DEFAULT '{}',
-          required_roles_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS agent_runs (
-          id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, owner_email TEXT NOT NULL,
-          title TEXT NOT NULL, objective TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued',
-          current_state TEXT NOT NULL DEFAULT 'router', selected_tool_id TEXT,
-          max_iterations INTEGER NOT NULL DEFAULT 5, iteration_count INTEGER NOT NULL DEFAULT 0,
-          idempotency_key TEXT NOT NULL, input_json TEXT, output_json TEXT,
-          error_code TEXT, error_message TEXT, trace_id TEXT NOT NULL,
-          created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT,
-          FOREIGN KEY(selected_tool_id) REFERENCES tool_registry(id)
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS agent_steps (
-          id TEXT PRIMARY KEY, run_id TEXT NOT NULL, sequence INTEGER NOT NULL,
-          step_type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', tool_id TEXT,
-          trace_id TEXT NOT NULL, input_json TEXT, output_json TEXT, error_code TEXT,
-          error_message TEXT, started_at TEXT, completed_at TEXT, created_at TEXT NOT NULL,
-          FOREIGN KEY(run_id) REFERENCES agent_runs(id) ON DELETE CASCADE,
-          FOREIGN KEY(tool_id) REFERENCES tool_registry(id)
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS tool_approval_requests (
-          id TEXT PRIMARY KEY, run_id TEXT NOT NULL, step_id TEXT NOT NULL, tool_id TEXT NOT NULL,
-          requester_email TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', reason TEXT NOT NULL,
-          input_json TEXT NOT NULL DEFAULT '{}', decision_by TEXT, decision_note TEXT, decided_at TEXT,
-          expires_at TEXT NOT NULL, created_at TEXT NOT NULL,
-          FOREIGN KEY(run_id) REFERENCES agent_runs(id) ON DELETE CASCADE,
-          FOREIGN KEY(step_id) REFERENCES agent_steps(id) ON DELETE CASCADE,
-          FOREIGN KEY(tool_id) REFERENCES tool_registry(id)
-        )`),
-        db.prepare(`CREATE TABLE IF NOT EXISTS tool_executions (
-          id TEXT PRIMARY KEY, run_id TEXT NOT NULL, step_id TEXT NOT NULL, tool_id TEXT NOT NULL,
-          approval_request_id TEXT, idempotency_key TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued',
-          attempt_count INTEGER NOT NULL DEFAULT 0, input_json TEXT NOT NULL DEFAULT '{}', output_json TEXT,
-          error_code TEXT, error_message TEXT, started_at TEXT, completed_at TEXT, created_at TEXT NOT NULL,
-          FOREIGN KEY(run_id) REFERENCES agent_runs(id) ON DELETE CASCADE,
-          FOREIGN KEY(step_id) REFERENCES agent_steps(id) ON DELETE CASCADE,
-          FOREIGN KEY(tool_id) REFERENCES tool_registry(id),
-          FOREIGN KEY(approval_request_id) REFERENCES tool_approval_requests(id)
-        )`),
-      ]);
-      await db.batch([
-        db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS agent_runs_owner_idempotency_uidx ON agent_runs(tenant_id, owner_email, idempotency_key)"),
-        db.prepare("CREATE INDEX IF NOT EXISTS agent_runs_owner_created_idx ON agent_runs(tenant_id, owner_email, created_at)"),
-        db.prepare("CREATE INDEX IF NOT EXISTS agent_runs_status_updated_idx ON agent_runs(status, updated_at)"),
-        db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS agent_steps_run_sequence_uidx ON agent_steps(run_id, sequence)"),
-        db.prepare("CREATE INDEX IF NOT EXISTS agent_steps_run_status_idx ON agent_steps(run_id, status)"),
-        db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS tool_approval_requests_run_step_uidx ON tool_approval_requests(run_id, step_id)"),
-        db.prepare("CREATE INDEX IF NOT EXISTS tool_approval_requests_status_expires_idx ON tool_approval_requests(status, expires_at)"),
-        db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS tool_executions_idempotency_uidx ON tool_executions(idempotency_key)"),
-        db.prepare("CREATE INDEX IF NOT EXISTS tool_executions_run_status_idx ON tool_executions(run_id, status)"),
-        db.prepare("CREATE INDEX IF NOT EXISTS tool_registry_enabled_risk_idx ON tool_registry(enabled, risk_level)"),
-        db.prepare("CREATE INDEX IF NOT EXISTS tool_registry_adapter_idx ON tool_registry(adapter_type)"),
-      ]);
-      const timestamp = nowIso();
-      await db.batch(TOOL_SEEDS.map((tool) => db.prepare(`INSERT INTO tool_registry
-        (id, tenant_id, name, description, risk_level, mode, adapter_type, enabled, timeout_ms,
-          max_retries, input_schema_json, required_roles_json, created_at, updated_at)
-        VALUES (?, '*', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description,
-          risk_level = excluded.risk_level, mode = excluded.mode, adapter_type = excluded.adapter_type,
-          enabled = excluded.enabled, timeout_ms = excluded.timeout_ms, max_retries = excluded.max_retries,
-          input_schema_json = excluded.input_schema_json, required_roles_json = excluded.required_roles_json,
-          updated_at = excluded.updated_at`).bind(
-          tool.id,
-          tool.name,
-          tool.description,
-          tool.riskLevel,
-          tool.mode,
-          tool.adapterType,
-          tool.enabled,
-          tool.timeoutMs,
-          tool.maxRetries,
-          JSON.stringify(tool.inputSchema),
-          JSON.stringify(tool.roles),
-          timestamp,
-          timestamp,
-        )));
-    })().catch((error) => {
+    schemaPromise = verifyD1Schema({
+      tool_registry: ["id", "tenant_id", "name", "description", "risk_level", "mode", "adapter_type", "enabled", "timeout_ms", "max_retries", "input_schema_json", "required_roles_json", "created_at", "updated_at"],
+      agent_runs: ["id", "tenant_id", "owner_email", "title", "objective", "status", "current_state", "selected_tool_id", "max_iterations", "iteration_count", "idempotency_key", "trace_id", "created_at", "updated_at"],
+      agent_steps: ["id", "run_id", "sequence", "step_type", "status", "trace_id", "created_at"],
+      tool_approval_requests: ["id", "run_id", "step_id", "tool_id", "requester_email", "status", "reason", "input_json", "expires_at", "created_at"],
+      tool_executions: ["id", "run_id", "step_id", "tool_id", "idempotency_key", "status", "attempt_count", "input_json", "created_at"],
+    }).catch((error) => {
       schemaPromise = undefined;
       throw error;
     });
@@ -531,6 +363,31 @@ async function runBuiltinTool(input: {
       externalWrite: false,
     };
   }
+  if (input.tool.id === WORK_ASSISTANT_TOOL.id) {
+    const task = String(input.toolInput.task || input.objective).trim().slice(0, 2000);
+    if (task.length < 2) throw new AgentError("업무 요청은 두 글자 이상이어야 합니다.", 400, "INVALID_TOOL_INPUT");
+    // 채팅과 별도인 Agent 실행 경로도 모델에 전달하기 전에 동일한 입력 보호를 적용한다.
+    inspectUserInput(task);
+    const result = await completeWithRag({
+      messages: [{ role: "user", content: task }],
+      principal: input.principal,
+      traceId: input.traceId,
+      reasoningTier: "expert",
+      responsePreferences: { length: "standard", format: "bullets" },
+      allowAssumptions: true,
+    });
+    return {
+      summary: "업무 Agent가 사내 근거를 검토해 초안을 작성했습니다.",
+      answer: result.completion.content,
+      grounded: result.search.grounded,
+      citations: result.search.citations.map((citation) => ({
+        id: citation.id,
+        title: citation.title,
+        excerpt: citation.excerpt,
+      })),
+      externalWrite: false,
+    };
+  }
   if (input.tool.id === "controlled.change_evidence") {
     return {
       summary: "명시적 승인과 멱등성 검사를 통과한 읽기 전용 Demo 증빙을 생성했습니다.",
@@ -697,7 +554,10 @@ async function createApproval(input: {
   return approvalId;
 }
 
-async function failRun(principal: Principal, run: RunRow, error: unknown, stepId?: string) {
+// 반환 타입을 명시한다. 이 함수는 항상 throw 로 끝나지만 TypeScript 는 return 문이
+// 없는 async 함수를 Promise<void> 로 추론한다. 그 void 가 orchestrate 의 반환 유니온에
+// 섞여 호출부(app/api/v1/agent/runs/route.ts)에서 run.status 접근이 타입 오류가 났다.
+async function failRun(principal: Principal, run: RunRow, error: unknown, stepId?: string): Promise<never> {
   const failure = error instanceof AgentError
     ? error
     : new AgentError("Agent 실행에 실패했습니다.", 500, "AGENT_RUN_FAILED");
@@ -837,6 +697,9 @@ export async function createAgentRun(input: {
   objective: string;
   toolId?: string;
   toolInput?: Record<string, unknown>;
+  agentId?: string;
+  projectId?: string;
+  parentId?: string;
   idempotencyKey: string;
   traceId: string;
 }) {
@@ -845,8 +708,10 @@ export async function createAgentRun(input: {
   const idempotencyKey = input.idempotencyKey.trim().slice(0, 200);
   if (objective.length < 2) throw new AgentError("Agent 목표는 두 글자 이상이어야 합니다.", 400, "INVALID_AGENT_OBJECTIVE");
   if (!idempotencyKey) throw new AgentError("Idempotency-Key가 필요합니다.", 400, "IDEMPOTENCY_KEY_REQUIRED");
-  if (input.toolId) {
-    const tool = await findTool(input.toolId);
+  const agent = input.agentId?.trim() ? await getChatAgent(input.principal, input.agentId) : undefined;
+  const selectedToolId = input.toolId || agent?.defaultToolId;
+  if (selectedToolId) {
+    const tool = await findTool(selectedToolId);
     if (!tool) throw new AgentError("요청한 Tool을 찾지 못했습니다.", 404, "TOOL_NOT_FOUND");
     assertToolPermission(input.principal, tool);
   }
@@ -860,11 +725,15 @@ export async function createAgentRun(input: {
       runId,
       input.principal.tenantId,
       input.principal.email,
-      objective.slice(0, 80),
+      agent ? `${agent.name}: ${objective}`.slice(0, 120) : objective.slice(0, 80),
       objective,
       MAX_AGENT_ITERATIONS,
       idempotencyKey,
-      JSON.stringify({ toolId: input.toolId, toolInput: input.toolInput || {} }),
+      JSON.stringify({
+        toolId: selectedToolId,
+        toolInput: input.toolInput || {},
+        agentProfile: agent ? { id: agent.id, name: agent.name, instructions: agent.instructions } : undefined,
+      }),
       input.traceId,
       timestamp,
       timestamp,
@@ -879,15 +748,18 @@ export async function createAgentRun(input: {
     resourceType: "agent_run",
     resourceId: runId,
     traceId: input.traceId,
-    details: { objective: objective.slice(0, 200), requestedToolId: input.toolId },
+    details: { objective: objective.slice(0, 200), requestedToolId: selectedToolId, agentId: agent?.id },
   });
   await createScheduleWorkItem({
     principal: input.principal,
-    title: `Agent: ${objective.slice(0, 120)}`,
+    title: objective,
     description: objective,
     kind: "execution",
+    status: "in_progress",
     sourceType: "agent_run",
     sourceId: runId,
+    projectId: input.projectId,
+    parentId: input.parentId,
     autoGenerated: true,
     notifyEnabled: false,
   }).catch((error) => console.error("[agent] run schedule registration failed", error));
@@ -943,11 +815,8 @@ export async function getAgentRun(principal: Principal, runId: string) {
 }
 
 export async function listToolApprovals(principal: Principal, limit = 100) {
-  await ensureAgentSchema();
+  await expireStaleToolApprovals();
   const db = getD1();
-  const timestamp = nowIso();
-  await db.prepare(`UPDATE tool_approval_requests SET status = 'expired'
-    WHERE status = 'pending' AND expires_at <= ?`).bind(timestamp).run();
   const elevated = principal.role === "manager" || principal.role === "admin";
   const rows = await db.prepare(`SELECT a.*, r.objective, r.status AS run_status,
       t.name AS tool_name, t.risk_level, t.mode
@@ -962,6 +831,34 @@ export async function listToolApprovals(principal: Principal, limit = 100) {
       Math.min(Math.max(limit, 1), 200),
     ).all<ApprovalRow>();
   return (rows.results || []).map(mapApproval);
+}
+
+// Expiry must end the owning run as well as the approval record. Otherwise an
+// approval that nobody opens again leaves its Agent run in awaiting_approval.
+export async function expireStaleToolApprovals() {
+  await ensureAgentSchema();
+  await ensureSchedulePlanningSchema();
+  const db = getD1();
+  const timestamp = nowIso();
+  const expired = await db.prepare(`UPDATE tool_approval_requests SET status = 'expired'
+    WHERE status = 'pending' AND expires_at <= ?`).bind(timestamp).run();
+  if (!expired.meta.changes) return { expired: 0 };
+
+  await db.batch([
+    db.prepare(`UPDATE agent_steps SET status = 'cancelled', error_code = 'TOOL_APPROVAL_EXPIRED',
+      error_message = ?, completed_at = ? WHERE status = 'waiting_approval' AND id IN (
+        SELECT step_id FROM tool_approval_requests WHERE status = 'expired' AND expires_at <= ?
+      )`).bind("Tool approval request expired.", timestamp, timestamp),
+    db.prepare(`UPDATE agent_runs SET status = 'cancelled', error_code = 'TOOL_APPROVAL_EXPIRED',
+      error_message = ?, updated_at = ?, completed_at = ? WHERE status = 'awaiting_approval' AND id IN (
+        SELECT run_id FROM tool_approval_requests WHERE status = 'expired' AND expires_at <= ?
+      )`).bind("Tool approval request expired.", timestamp, timestamp, timestamp),
+    db.prepare(`UPDATE schedule_work_items SET status = 'cancelled', updated_at = ?
+      WHERE status IN ('open', 'in_progress') AND source_type = 'agent_run' AND source_id IN (
+        SELECT run_id FROM tool_approval_requests WHERE status = 'expired' AND expires_at <= ?
+      )`).bind(timestamp, timestamp),
+  ]);
+  return { expired: Number(expired.meta.changes) };
 }
 
 export async function decideToolApproval(input: {
@@ -995,13 +892,12 @@ export async function decideToolApproval(input: {
     throw new AgentError("이미 처리되었거나 만료된 승인 요청입니다.", 409, "TOOL_APPROVAL_ALREADY_DECIDED");
   }
   if (approval.expires_at <= nowIso()) {
-    await db.prepare("UPDATE tool_approval_requests SET status = 'expired' WHERE id = ? AND status = 'pending'")
-      .bind(approval.id).run();
+    await expireStaleToolApprovals();
     throw new AgentError("승인 요청이 만료되었습니다.", 409, "TOOL_APPROVAL_EXPIRED");
   }
 
   const decidedAt = nowIso();
-  await db.prepare(`UPDATE tool_approval_requests SET status = ?, decision_by = ?, decision_note = ?,
+  const transition = await db.prepare(`UPDATE tool_approval_requests SET status = ?, decision_by = ?, decision_note = ?,
     decided_at = ? WHERE id = ? AND status = 'pending'`).bind(
       input.decision,
       input.principal.email,
@@ -1009,6 +905,9 @@ export async function decideToolApproval(input: {
       decidedAt,
       approval.id,
     ).run();
+  if (!transition.meta.changes) {
+    throw new AgentError("이미 처리되었거나 만료된 승인 요청입니다.", 409, "TOOL_APPROVAL_ALREADY_DECIDED");
+  }
   await audit({
     principal: input.principal,
     action: input.decision === "approved" ? "tool.approval_approved" : "tool.approval_rejected",

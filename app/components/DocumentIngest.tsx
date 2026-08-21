@@ -28,7 +28,7 @@ const TEXT_LIKE = /\.(txt|md|markdown|csv|json|ya?ml|html?)$/i;
 // 서버는 이미 PDF·이미지·오디오·비디오를 멀티모달로 처리한다(lib/multimodal.ts,
 // getRagStatus().multimodalFormats). 여기서 막을 이유가 없다 — 텍스트류만 골라
 // 본문 미리보기에 인라인으로 붙이고, 나머지는 그대로 큐에 넣어 서버가 변환한다.
-const UPLOAD_ACCEPT = ".txt,.md,.markdown,.csv,.json,.yaml,.yml,.html,.htm,.pdf,.jpg,.jpeg,.png,.webp,.svg,.gif,.bmp,.wav,.mp3,.flac,.ogg,.m4a,.mp4,.mov,.webm,.mkv,audio/*,video/*,image/*";
+const UPLOAD_ACCEPT = ".txt,.md,.markdown,.csv,.json,.yaml,.yml,.html,.htm,.xlsx,.xlsm,.pdf,.jpg,.jpeg,.png,.webp,.svg,.gif,.bmp,.wav,.mp3,.flac,.ogg,.m4a,.mp4,.mov,.webm,.mkv,audio/*,video/*,image/*";
 const TERMINAL_STATUSES = new Set(["indexed", "failed"]);
 
 function statusMessage(progress: EmbeddingProgress) {
