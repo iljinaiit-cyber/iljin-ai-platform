@@ -14,11 +14,17 @@ test("AI 답변은 일정 후보만 만들고 사용자가 확인할 때 저장�
 
   assert.match(candidates, /ownedAssistantMessage/);
   assert.match(candidates, /completeWithGateway/);
+  assert.match(candidates, /rowid < \?/);
+  assert.match(candidates, /scheduleAnswerChunks/);
+  assert.match(candidates, /dedupeScheduleCandidates/);
+  assert.match(candidates, /role: "assistant", content: `AI 답변/);
   assert.match(candidates, /conciseAutoWorkTitle/);
-  assert.match(candidates, /Title must be a concise action phrase/);
+  assert.match(candidates, /간결한 단일 행동 문구/);
   assert.match(candidates, /sourceType: "assistant_message"/);
   assert.match(route, /body\.candidate/);
   assert.match(portal, /AI 일정 후보/);
+  assert.match(portal, /scheduleCandidatesChecked/);
+  assert.match(portal, /일정으로 등록할 행동 항목을 찾지 못했습니다/);
   assert.match(portal, /일정 추가/);
   assert.doesNotMatch(chat, /auto work registration|auto schedule registration/);
 });
