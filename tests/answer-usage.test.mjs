@@ -22,9 +22,9 @@ test("답변 상태 레이블 옆에 총 토큰과 생성 경과 시간을 표�
   assert.match(portal, /GenerationProgress scope=\{searchScope\}/);
   assert.match(portal, /liveCitation = gatewayCitationToResult/);
   assert.doesNotMatch(portal, /className="evidence-strip"/);
-  assert.match(portal, /if \(\/\^\\\[W\\d\+\\\]\$\/\.test\(part\)\) return null;/);
+  assert.ok(portal.includes('if (/^\\[(?:W|S)\\d+\\]$/.test(part)) {'));
   assert.match(portal, /function shortenCitationFilename/);
   assert.match(portal, /c\.fileName \|\| c\.title/);
-  assert.match(portal, /const label = ref\?\.title \? shortenCitationFilename\(ref\.title\) : part/);
+  assert.ok(portal.includes('const label = /^\\[W\\d+\\]$/.test(part) ? part : ref?.title ? shortenCitationFilename(ref.title) : part;'));
   assert.match(portal, /const linkMatch = part\.match/);
 });

@@ -18,6 +18,14 @@ test("extractFollowUpQuestions parses ## 보충 질문 section", async () => {
   assert.match(source, /FollowUpQuestion/);
 });
 
+test("연관 질문 파서는 제목과 목록의 Markdown 변형을 허용한다", async () => {
+  const source = await readFile(new URL("lib/question-rewriter.ts", root), "utf8");
+  assert.match(source, /RELATED_PATTERN/);
+  assert.match(source, /#\{1,6\}/);
+  assert.match(source, /trimmed\.match\(\/\^\[-\*•\]/);
+  assert.match(source, /연관 주제 탐색/);
+});
+
 test("FOLLOW_UP_INSTRUCTION contains format guidance", async () => {
   const source = await readFile(new URL("lib/question-rewriter.ts", root), "utf8");
   assert.match(source, /보충 질문/);
@@ -70,6 +78,8 @@ test("chat route shares one done object with follow_up_questions across streamin
   assert.match(source, /follow_up_questions: allFollowUps/);
   assert.match(source, /sse\("done", done\)/);
   assert.match(source, /ok\(\{ \.\.\.done, content: completion\.content, citations \}, traceId\)/);
+  assert.match(source, /buildContextRelatedQuestions/);
+  assert.match(source, /related_questions: relatedQuestions/);
 });
 
 test("llm-gateway imports FOLLOW_UP_INSTRUCTION", async () => {

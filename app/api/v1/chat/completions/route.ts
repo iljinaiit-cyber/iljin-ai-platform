@@ -10,7 +10,8 @@ import { buildFeedbackLearningContext, loadUserPreferences, updateUserPreference
 import { getEffectiveModel } from "../../../../../lib/llm-model-config";
 import { getConversationSensitivity, recordLlmInvocation } from "../../../../../lib/llm-telemetry";
 import { searchInternet, type InternetSearchResponse } from "../../../../../lib/internet-search";
-import { answerOutputTokenBudget, answerPreferenceInstruction, answerReasoningTier, deepInternetFirstPassInstruction, inferAnswerFormat, isResearchQuery } from "../../../../../lib/answer-format";
+import { COMPANY_NAME } from "../../../../../lib/company-profile";
+import { answerOutputTokenBudget, answerPreferenceInstruction, answerReasoningTier, deepInternetFirstPassInstruction, inferAnswerFormat, isResearchQuery, splitAnswerSummary } from "../../../../../lib/answer-format";
 import { extractFollowUpQuestions, extractRelatedQuestions, generateInsufficiencyQuestions, RELATED_QUESTION_INSTRUCTION, rewriteQuery, type FollowUpQuestion } from "../../../../../lib/question-rewriter";
 import { resolvePrincipal } from "../../../../../lib/identity";
 import { authorizeFeature } from "../../../../../lib/admin-governance";
@@ -52,6 +53,8 @@ const DEEP_INTERNET_FIRST_PASS_MIN_CHARACTERS = 4_500;
 const DEEP_INTERNET_FIRST_PASS_MAX_CHARACTERS = 7_000;
 const DEEP_INTERNET_FINAL_MAX_CHARACTERS = 16_000;
 const DEEP_INTERNET_EVIDENCE_EXCERPT_MAX_CHARACTERS = 240;
+const DEEP_INTERNET_FIRST_PASS_MAX_OUTPUT_TOKENS = 4_800;
+const DEEP_INTERNET_SUPPLEMENT_MAX_OUTPUT_TOKENS = 1_800;
 const INTERNET_LINK_INSTRUCTION = "Only use URLs present in the supplied search evidence. Never invent example, guessed, or generalized URLs; if a source URL is not verified, show the source title without a link.";
 
 function needsColdStartClarification(query: string, previousMessages: Array<{ role: string; content: string }>, webSearch?: InternetSearchResponse) {
@@ -151,9 +154,9 @@ function sanitizeInternetLinks(content: string, citations: WebRagCitation[]) {
   return linkedContent.replace(/https?:\/\/[^\s<)]+/g, (rawUrl) => trustedUrls.get(canonicalHttpUrl(rawUrl) || "") || "");
 }
 
-function ensureInternetCitationCoverage(content: string, citations: WebRagCitation[]) {
-  if (!citations.length || /\[W\d+\]/.test(content)) return content;
-  return `${content}\n\n## 참고 출처\n${citations.map((citation) => `- [${citation.id}] ${citation.title}`).join("\n")}`;
+function citedInternetSources(content: string, candidates: WebRagCitation[]) {
+  const citedIds = new Set([...content.matchAll(/\[(W\d+)\]/g)].map((match) => match[1]));
+  return candidates.filter((citation) => citedIds.has(citation.id));
 }
 
 function withoutSourceSection(content: string) {
@@ -210,47 +213,16 @@ function deepInternetFirstPassCharacterCount(content: string) {
   return withoutSourceSection(content).replace(/##\s*연관\s*질문[\s\S]*$/i, "").trim().length;
 }
 
-async function ensureDeepInternetFirstPass(
-  completion: GatewayCompletion,
-  prompt: string,
-  traceId: string,
-  sensitivity: GatewaySensitivity,
-  reasoningTier: "swift" | "expert" | "deep",
-  cloudflareModelOverride?: string,
-  localModelOverride?: string,
-) {
+function ensureDeepInternetFirstPass(completion: GatewayCompletion, traceId: string) {
   const firstPassLength = deepInternetFirstPassCharacterCount(completion.content);
-  if (firstPassLength >= DEEP_INTERNET_FIRST_PASS_MIN_CHARACTERS) {
-    return firstPassLength <= DEEP_INTERNET_FIRST_PASS_MAX_CHARACTERS
-      ? completion
-      : { ...completion, content: truncateMarkdown(withoutSourceSection(completion.content), DEEP_INTERNET_FIRST_PASS_MAX_CHARACTERS) };
+  if (firstPassLength < DEEP_INTERNET_FIRST_PASS_MIN_CHARACTERS) {
+    // A full re-write was a third sequential LLM call and was the main latency spike.
+    // The second pass is explicitly responsible for filling evidence gaps instead.
+    console.info(JSON.stringify({ event: "internet-deep-first-pass-under-target", traceId, firstPassChars: firstPassLength }));
   }
-
-  try {
-    const repaired = await completeWithGateway(
-      [
-        { role: "user", content: prompt },
-        { role: "assistant", content: completion.content },
-        { role: "user", content: `1차 보고서가 ${firstPassLength.toLocaleString("ko-KR")}자로 짧습니다. 제공된 검색 근거만 사용해 보고서 전체를 다시 작성하세요. ${deepInternetFirstPassInstruction()} 이전 문장을 반복해 덧붙이지 말고, 완결된 1차 보고서로 교체하세요.` },
-      ],
-      `${traceId}-first-pass-repair`,
-      { sensitivity, maxOutputTokens: maxOutputTokensFor("detailed", reasoningTier), cloudflareModelOverride, localModelOverride },
-      reasoningTier,
-    );
-    if (deepInternetFirstPassCharacterCount(repaired.content) <= firstPassLength) return completion;
-    console.info(JSON.stringify({ event: "internet-deep-first-pass-repaired", traceId, beforeChars: firstPassLength, afterChars: deepInternetFirstPassCharacterCount(repaired.content) }));
-    const content = truncateMarkdown(withoutSourceSection(repaired.content), DEEP_INTERNET_FIRST_PASS_MAX_CHARACTERS);
-    return {
-      ...repaired,
-      content,
-      traceId: completion.traceId,
-      latencyMs: completion.latencyMs + repaired.latencyMs,
-      usage: mergeCompletionUsage(completion, repaired),
-    };
-  } catch (error) {
-    console.warn("[chat] deep internet first-pass repair failed", { traceId, error: error instanceof Error ? error.message : String(error) });
-    return completion;
-  }
+  return firstPassLength <= DEEP_INTERNET_FIRST_PASS_MAX_CHARACTERS
+    ? completion
+    : { ...completion, content: truncateMarkdown(withoutSourceSection(completion.content), DEEP_INTERNET_FIRST_PASS_MAX_CHARACTERS) };
 }
 
 function normalizedResearchBlock(value: string) {
@@ -298,7 +270,7 @@ async function createDeepInternetSupplement(
       { role: "user", content: "아래 5개 항목을 1차 보고서와 대조해, 제공된 검색 근거로 뒷받침되는 누락분만 추가하세요: 데이터, 실제 사례, 현장 적용 시사점, 리스크, 실행 우선순위. 이미 있는 주장·수치·사례를 다시 쓰거나 요약하지 마세요. 새 내용은 짧은 소제목과 항목으로만 작성하고, 새 핵심 주장에는 [Wn] 인용을 붙이세요. 추가할 근거가 없으면 정확히 '보강할 근거 없음'만 답하세요. 별도 참고 출처 목록은 만들지 마세요." },
     ],
     `${traceId}-supplement`,
-    { sensitivity, maxOutputTokens: maxOutputTokensFor("detailed", reasoningTier), cloudflareModelOverride, localModelOverride },
+    { sensitivity, maxOutputTokens: DEEP_INTERNET_SUPPLEMENT_MAX_OUTPUT_TOKENS, cloudflareModelOverride, localModelOverride },
     reasoningTier,
   );
   const content = mergeDeepInternetResearch(firstPass.content, supplement.content);
@@ -317,19 +289,6 @@ function ensureReferenceDateHeader(content: string) {
   return `${referenceDateHeader()}\n\n${content}`;
 }
 
-function splitStreamingAnswer(content: string) {
-  const lines = content.trim().split(/\r?\n/);
-  const summaryIndex = lines.findIndex((line) => {
-    const value = line.trim();
-    return value && !/^>\s*기준일:/.test(value) && !/^#{1,3}\s+/.test(value);
-  });
-  if (summaryIndex < 0) return { summary: "", remainder: content };
-  return {
-    summary: lines[summaryIndex].trim(),
-    remainder: [...lines.slice(0, summaryIndex), ...lines.slice(summaryIndex + 1)].join("\n").trim(),
-  };
-}
-
 function buildFallbackRelatedQuestions(query: string, webSearch: InternetSearchResponse): FollowUpQuestion[] {
   const sourceQuestions = [...new Set(webSearch.results.map((item) => item.title.trim()).filter(Boolean))]
     .slice(0, 2)
@@ -341,6 +300,15 @@ function buildFallbackRelatedQuestions(query: string, webSearch: InternetSearchR
     ...sourceQuestions,
     { question: `${query}와 관련된 최신 변경 사항이나 후속 영향은 무엇인가요?`, intent: "최신 동향 확인" },
   ].slice(0, 3);
+}
+
+function buildContextRelatedQuestions(query: string): FollowUpQuestion[] {
+  const subject = query.trim().replace(/\s+/g, " ").slice(0, 180) || "이 주제";
+  return [
+    { question: `${subject}의 핵심 근거와 사례를 더 자세히 알려줘.`, intent: "근거와 사례 확인" },
+    { question: `${subject}를 실제 업무에 적용할 때 우선순위와 리스크는 무엇인가요?`, intent: "실행 검토" },
+    { question: `${subject}와 관련해 다음으로 확인할 최신 정보는 무엇인가요?`, intent: "후속 탐색" },
+  ];
 }
 
 async function resolveSensitivity(request: Request, principal: Parameters<typeof getConversationSensitivity>[0], body: Body) {
@@ -428,7 +396,7 @@ async function executeChat(request: Request, body: Body, traceId: string, emitSt
     let internetGrounded = false;
     let clarificationSuggestionsOnly = false;
     const searchMode = body.search_mode ?? storedPreferences.searchScope;
-    emitStage?.("질문·의도 분석 중");
+    emitStage?.("질문·의도 분석 중", { deepResearch: deepInternetResearch });
     if (searchMode === "internet") {
       const priorInternetMessages = contextMessages
         .slice(0, -1)
@@ -479,11 +447,11 @@ async function executeChat(request: Request, body: Body, traceId: string, emitSt
           completion = await completeWithGateway(
             [{ role: "user", content: internetPrompt }],
             traceId,
-            { sensitivity, maxOutputTokens: maxOutputTokensFor(answerLength, reasoningTier), cloudflareModelOverride, localModelOverride },
+            { sensitivity, maxOutputTokens: deepInternetResearch ? DEEP_INTERNET_FIRST_PASS_MAX_OUTPUT_TOKENS : maxOutputTokensFor(answerLength, reasoningTier), cloudflareModelOverride, localModelOverride },
             reasoningTier,
           );
           if (deepInternetResearch) {
-            completion = await ensureDeepInternetFirstPass(completion, internetPrompt, traceId, sensitivity, reasoningTier, cloudflareModelOverride, localModelOverride);
+            completion = ensureDeepInternetFirstPass(completion, traceId);
             emitStage?.("심층 분석 보강 중");
             completion = await createDeepInternetSupplement(completion, internetPrompt, traceId, sensitivity, reasoningTier, cloudflareModelOverride, localModelOverride);
             emitStage?.("최종 보고서 병합 중");
@@ -493,13 +461,14 @@ async function executeChat(request: Request, body: Body, traceId: string, emitSt
             ? related.relatedQuestions.slice(0, 3)
             : buildFallbackRelatedQuestions(userContent, webSearch);
           completion.content = related.content;
-           citations = webSearch.results.slice(0, INTERNET_GROUNDING_SOURCE_LIMIT).map((item, index) => ({
+           const citationCandidates = webSearch.results.slice(0, INTERNET_GROUNDING_SOURCE_LIMIT).map((item, index) => ({
             id: `W${index + 1}`, assetId: item.url, segmentId: item.id, title: item.title, version: 1,
             updatedAt: item.publishedAt, excerpt: item.snippet, score: item.score, lexicalScore: item.score,
             denseScore: item.score, url: item.url, sourceType: "web" as const, source: item.source,
             sourceCategoryLabel: item.sourceCategoryLabel, publishedAt: item.publishedAt,
            }));
-           completion.content = ensureDeepInternetSourceSection(ensureInternetCitationCoverage(completion.content, citations), citations, researchDepth ? "detailed" : answerLength);
+           citations = citedInternetSources(completion.content, citationCandidates);
+           completion.content = ensureDeepInternetSourceSection(completion.content, citations, researchDepth ? "detailed" : answerLength);
            // 내부 RAG만이 아니라 웹 근거도 같은 주장-인용 규칙으로 확인한다. 웹 발췌문은
            // 외부 임베딩 호출 없이 로컬 어휘 검증을 적용해, 근거가 맞지 않는 인용을 숨기지 않는다.
            const webCitationReport = await verifyCitations(
@@ -519,8 +488,22 @@ async function executeChat(request: Request, body: Body, traceId: string, emitSt
           console.info(JSON.stringify({ event: "internet-grounded", traceId, providersUsed: webSearch.providersUsed, providerPath: webSearch.providerPath }));
         }
       } catch (error) {
-        if (!(error instanceof RagError) || !["INTERNET_SEARCH_UNAVAILABLE", "INTERNET_SEARCH_NO_RESULTS"].includes(error.code)) throw error;
-        if (needsColdStartClarification(userContent, priorInternetMessages)) {
+        if (!(error instanceof RagError) || !["INTERNET_SEARCH_UNAVAILABLE", "INTERNET_SEARCH_NO_RESULTS", "INTERNET_SEARCH_COMPANY_SOURCE_UNVERIFIED"].includes(error.code)) throw error;
+        if (error.code === "INTERNET_SEARCH_COMPANY_SOURCE_UNVERIFIED") {
+          completion = {
+            id: `internet-company-source-unverified-${traceId}`,
+            provider: "cloudflare" as const,
+            model: "source-verification-gate",
+            content: `${COMPANY_NAME} 관련 회사·서비스 정보는 승인된 공식 출처 또는 서로 다른 승인 독립 보도 2건으로 확인되지 않아 답변 근거로 사용하지 않았습니다. 현재 공식 관계 확인 불가입니다.`,
+            finishReason: "insufficient_evidence" as const,
+            traceId,
+            latencyMs: 0,
+            usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+          };
+          citations = [];
+          clarificationSuggestionsOnly = true;
+          console.info(JSON.stringify({ event: "internet-company-source-unverified", traceId }));
+        } else if (needsColdStartClarification(userContent, priorInternetMessages)) {
           followUpQuestions = await generateInsufficiencyQuestions(userContent, contextMessages, traceId);
           if (!followUpQuestions.length) followUpQuestions = defaultClarificationQuestions();
           completion = {
@@ -567,6 +550,12 @@ async function executeChat(request: Request, body: Body, traceId: string, emitSt
       citations = ragResult.search.citations;
       followUpQuestions = ragResult.followUpQuestions;
     }
+    // 연관 질문을 먼저 분리해야 뒤에 보충 질문이 와도 한 절이 다른 절을 잘라내지 않는다.
+    const extractedRelated = extractRelatedQuestions(completion.content);
+    completion = { ...completion, content: extractedRelated.content };
+    if (extractedRelated.relatedQuestions.length) {
+      relatedQuestions = extractedRelated.relatedQuestions.slice(0, 3);
+    }
     // 근거 부족(rag.ts) 뿐 아니라 정상 답변에도 프롬프트 지침에 따라 LLM이
     // 스스로 '## 보충 질문' 절을 붙일 수 있다(FOLLOW_UP_INSTRUCTION). 답변 본문에
     // 마크다운으로 남기지 않고 항상 이 지점에서 뽑아 follow_up_questions 로 합친다.
@@ -575,6 +564,9 @@ async function executeChat(request: Request, body: Body, traceId: string, emitSt
     const allFollowUps = [...followUpQuestions, ...extractedFollowUps.followUpQuestions]
       .filter((question, index, all) => all.findIndex((other) => other.question === question.question) === index)
       .slice(0, 5);
+    if (!relatedQuestions.length && !clarificationSuggestionsOnly) {
+      relatedQuestions = buildContextRelatedQuestions(userContent);
+    }
     // rag.ts 가 finishReason: "insufficient_evidence" 로 표시하는 경우는 부분 답변이
     // 아니라 "근거가 없어 아직 답하지 않았다"는 뜻이다. AgentPortal 은 이 신호로
     // ClarificationForm(정보 제출 후 최종 답변 재요청)을 띄우고, 그 외에는 보충 질문을
@@ -654,7 +646,7 @@ export async function POST(request: Request) {
               controller.enqueue(sse("stage", { stage, ...details }));
             });
             const done = result.done;
-            const { summary, remainder } = splitStreamingAnswer(result.content ?? "");
+            const { summary, remainder } = splitAnswerSummary(result.content ?? "");
             if (summary) controller.enqueue(sse("summary", { text: summary }));
             controller.enqueue(sse("stage", { stage: "상세 답변 생성 중", tokens: result.done.usage?.completion_tokens }));
             for (const citation of result.citations) controller.enqueue(sse("citation", citation));

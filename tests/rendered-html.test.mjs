@@ -507,7 +507,7 @@ test("separates internal and internet search and supports queued document drag-a
   assert.match(chatRoute, /const sourceBudget = maxLength - instruction\.length - INTERNET_LINK_INSTRUCTION\.length - question\.length/);
   assert.match(chatRoute, /INTERNET_GROUNDING_SOURCE_LIMIT = 6/);
   assert.match(chatRoute, /boundedSourceContext/);
-  assert.match(chatRoute, /ensureInternetCitationCoverage/);
+  assert.match(chatRoute, /function citedInternetSources/);
   assert.match(chatRoute, /현재 날짜\(대한민국\)/);
   assert.match(chatRoute, /internet-grounded/);
   assert.match(chatRoute, /providerPath: webSearch\.providerPath/);
@@ -646,6 +646,8 @@ test("upgrades integrated search into an ACL-aware Knowledge Data Base", async (
   assert.match(portal, /knowledge-operational-strip/);
   assert.match(portal, /knowledge-refresh-button/);
   assert.match(portal, /knowledgeStatusLabel/);
+  assert.doesNotMatch(portal, /ILJIN ENTERPRISE KNOWLEDGE DATA/);
+  assert.doesNotMatch(portal, /LATEST KNOWLEDGE/);
   assert.match(route, /authorizeFeature\(principal, "rag\.search", "rag\.search"\)/);
   assert.match(route, /listAssets\(principal, 100\)/);
   assert.match(route, /totalDocuments/);

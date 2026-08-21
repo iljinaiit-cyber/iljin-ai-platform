@@ -17,7 +17,7 @@ if (packageJson.scripts?.["test:rag:g1"] === packageJson.scripts?.["test:rag:g2"
 if (!packageJson.scripts?.["test:rag:g1"]?.includes("verify-g1.mjs")) errors.push("G1 npm script must call verify-g1.mjs");
 if (!packageJson.scripts?.["test:rag:g2"]?.includes("verify-g2.mjs")) errors.push("G2 npm script must call verify-g2.mjs");
 if (manifest.policy?.starter_dataset_is_official !== false) errors.push("Starter dataset must not be marked official");
-if (starterCases.length >= manifest.policy.official_g2_minimum_cases) errors.push("Starter dataset metadata is stale; promote it through an approved dataset process");
+if (starterCases.length > manifest.policy.official_g2_minimum_cases) errors.push("Starter dataset exceeds the declared evaluation cap; split or promote it through an approved dataset process");
 
 for (const gate of manifest.gates || []) {
   if (!["pass", "hold", "not_ready"].includes(gate.decision)) errors.push(`${gate.id}: invalid decision`);

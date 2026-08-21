@@ -89,6 +89,10 @@ export type RuntimeEnv = {
   JINA_API_KEY?: string;
   COHERE_API_KEY?: string;
   INTERNET_SEARCH_PROVIDER_ORDER?: string;
+  /** 회사 사실 주장에 사용할 승인 출처 등록부(쉼표로 구분한 도메인). */
+  ILJIN_OFFICIAL_SOURCE_DOMAINS?: string;
+  /** 공식 출처가 없을 때 교차 확인할 승인 독립 보도 도메인(쉼표로 구분). */
+  ILJIN_TRUSTED_INDEPENDENT_SOURCE_DOMAINS?: string;
   LOCAL_LLM_TIMEOUT_MS?: string;
   LLM_TIMEOUT_MS?: string;
   DEFAULT_TENANT_ID?: string;
@@ -149,6 +153,8 @@ export function getRuntimeEnv(): RuntimeEnv {
       JINA_API_KEY: process.env.JINA_API_KEY,
       COHERE_API_KEY: process.env.COHERE_API_KEY,
       INTERNET_SEARCH_PROVIDER_ORDER: process.env.INTERNET_SEARCH_PROVIDER_ORDER,
+      ILJIN_OFFICIAL_SOURCE_DOMAINS: process.env.ILJIN_OFFICIAL_SOURCE_DOMAINS,
+      ILJIN_TRUSTED_INDEPENDENT_SOURCE_DOMAINS: process.env.ILJIN_TRUSTED_INDEPENDENT_SOURCE_DOMAINS,
       LOCAL_LLM_TIMEOUT_MS: process.env.LOCAL_LLM_TIMEOUT_MS,
       LLM_TIMEOUT_MS: process.env.LLM_TIMEOUT_MS,
       DEFAULT_TENANT_ID: process.env.DEFAULT_TENANT_ID,

@@ -1324,3 +1324,77 @@ th,
 @media (max-width: 700px) {
   .schedule-planning-panel { --schedule-content-inset: 14px; }
 }
+
+.schedule-planning-panel {
+  inline-size: 100%;
+  max-inline-size: none;
+  min-inline-size: 0;
+  margin-inline: 0;
+}
+
+.schedule-grid > .schedule-planning-panel {
+  grid-column: 1 / -1;
+}
+
+.schedule-planning-panel > .schedule-project-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, max-content) max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding-block: 8px;
+}
+
+.schedule-planning-panel > .schedule-project-bar > label { min-width: 0; }
+.schedule-planning-panel > .schedule-project-bar > label select { max-width: min(32vw, 360px); }
+.schedule-planning-panel > .schedule-project-bar .schedule-view-switch { grid-column: 4; justify-self: end; margin-left: 0; }
+
+.schedule-planning-commandbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 24px;
+}
+
+.schedule-planning-commandbar .schedule-planning-metrics { flex-wrap: wrap; white-space: normal; }
+.schedule-planning-commandbar .schedule-planning-toolbar { width: 100%; min-width: 0; }
+.schedule-planning-commandbar .schedule-planning-toolbar > span { margin-left: auto; white-space: nowrap; }
+
+.schedule-project-dashboard {
+  grid-template-columns: 1fr;
+  gap: 14px;
+  padding-inline: var(--schedule-content-inset);
+}
+
+.schedule-planning-panel > .schedule-project-list,
+.schedule-project-dashboard > .schedule-project-list {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.schedule-planning-panel > .schedule-project-list { padding-inline: var(--schedule-content-inset); }
+
+.schedule-project-dashboard > .schedule-project-list,
+.schedule-task-dashboard > .schedule-plan-list {
+  margin: 0;
+  padding: 0;
+}
+
+.schedule-task-dashboard { padding-inline: var(--schedule-content-inset); }
+
+@media (max-width: 820px) {
+  .schedule-planning-panel > .schedule-project-bar { grid-template-columns: minmax(0, 1fr) max-content; }
+  .schedule-planning-panel > .schedule-project-bar > label { grid-column: 1 / -1; }
+  .schedule-planning-panel > .schedule-project-bar .schedule-view-switch { grid-column: 1 / -1; justify-self: stretch; }
+  .schedule-planning-panel > .schedule-project-bar .schedule-view-switch button { flex: 1; }
+  .schedule-planning-commandbar { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 700px) {
+  .schedule-planning-panel > .schedule-project-bar { grid-template-columns: 1fr; }
+  .schedule-planning-panel > .schedule-project-bar > label,
+  .schedule-planning-panel > .schedule-project-bar .schedule-scope-switch,
+  .schedule-planning-panel > .schedule-project-bar .schedule-view-switch { grid-column: auto; width: 100%; }
+  .schedule-planning-panel > .schedule-project-bar .schedule-scope-switch button,
+  .schedule-planning-panel > .schedule-project-bar .schedule-view-switch button { flex: 1; }
+  .schedule-planning-panel > .schedule-project-list,
+  .schedule-project-dashboard > .schedule-project-list { grid-template-columns: 1fr; }
+}

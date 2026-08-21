@@ -2672,7 +2672,7 @@ function SearchView({ type, setType, canUpload, onChat }: { type: string; setTyp
           snippet: string;
           score: number;
           source: string;
-          sourceCategory?: "government" | "academic" | "reference" | "web";
+          sourceCategory?: "official" | "government" | "academic" | "reference" | "independent" | "unverified";
           sourceCategoryLabel?: string;
           publishedAt?: string;
         }>;
@@ -2760,7 +2760,7 @@ function SearchView({ type, setType, canUpload, onChat }: { type: string; setTyp
     <div className="view-stack knowledge-base">
       <section className="knowledge-hero">
         <div className="knowledge-hero-heading">
-          <div><span className="knowledge-eyebrow">ILJIN ENTERPRISE KNOWLEDGE DATA</span><h1 className="sr-only">Knowledge Data Base</h1><p>{scope === "internal" ? "질의를 재작성하고 Dense·BM25 결과를 RRF로 융합한 뒤 재정렬·근거 검증까지 수행합니다." : "사내 정보와 분리된 공개 웹에서 최신 외부 참고자료를 조사합니다."}</p></div>
+          <div><h1 className="sr-only">Knowledge Data Base</h1><p>{scope === "internal" ? "질의를 재작성하고 Dense·BM25 결과를 RRF로 융합한 뒤 재정렬·근거 검증까지 수행합니다." : "사내 정보와 분리된 공개 웹에서 최신 외부 참고자료를 조사합니다."}</p></div>
           <div className="knowledge-policy"><span>ACL</span><strong>권한 기반 지식 접근</strong><small>{overview?.summary.department || "소속 부서"} Context 적용</small></div>
         </div>
         <div className="search-scope-switch search-scope-switch--hero" role="group" aria-label="지식 검색 범위">
@@ -2793,7 +2793,7 @@ function SearchView({ type, setType, canUpload, onChat }: { type: string; setTyp
       </div>}
       {scope === "internal" && <div className="knowledge-catalog-toolbar"><span>Knowledge Data Base 카탈로그</span><button className="knowledge-refresh-button" type="button" onClick={refreshOverview} disabled={overviewLoading}>새로고침</button></div>}
       {scope === "internal" && <section className="knowledge-catalog" aria-labelledby="recent-knowledge-title">
-        <div className="knowledge-section-heading"><div><span className="section-kicker">LATEST KNOWLEDGE</span><h2 id="recent-knowledge-title">최근 업데이트 지식</h2><p>접근 가능한 최신 버전의 문서와 원문 상태를 보여줍니다.</p></div><div className="knowledge-category-summary">{(overview?.categories || []).slice(0, 4).map((category) => <span key={category.sourceType}>{category.label} {category.count}</span>)}</div></div>
+        <div className="knowledge-section-heading"><div><h2 id="recent-knowledge-title">최근 업데이트 지식</h2><p>접근 가능한 최신 버전의 문서와 원문 상태를 보여줍니다.</p></div><div className="knowledge-category-summary">{(overview?.categories || []).slice(0, 4).map((category) => <span key={category.sourceType}>{category.label} {category.count}</span>)}</div></div>
         {overviewLoading ? <div className="knowledge-catalog-loading" role="status">지식 카탈로그를 불러오고 있습니다.</div> : overview?.recent.length ? <div className="knowledge-card-grid">{overview.recent.slice(0, 6).map((asset) => <article className="knowledge-card" key={asset.id}>
           <div className="knowledge-card-top"><span className="knowledge-file-mark">{asset.mime_type.includes("csv") ? "DATA" : asset.mime_type.includes("json") ? "JSON" : "DOC"}</span><span className={`knowledge-classification knowledge-${asset.classification}`}>{asset.classification === "confidential" ? "기밀" : asset.classification === "public" ? "공개" : "사내"}</span></div>
            <div className={`knowledge-status knowledge-status-${asset.status}`}>{knowledgeStatusLabel(asset.status)}</div><h3>{asset.title}</h3>

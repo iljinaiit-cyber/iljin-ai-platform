@@ -108,6 +108,74 @@ test("Google, NAVER, and YouTube results are merged in one provider batch", asyn
   assert.ok(response.results.some((result) => result.url === "https://www.youtube.com/watch?v=video-1"));
 });
 
+test("기업 질의에서는 오인 도메인과 미검증 공개 웹을 모델 근거에서 제외한다", async (t) => {
+  if (!requireBundle(t)) return;
+  globalThis.__ILJIN_RUNTIME_ENV__ = {
+    INTERNET_SEARCH_PROVIDER_ORDER: "google",
+    GOOGLE_SEARCH_API_KEY: "google-key",
+    GOOGLE_SEARCH_ENGINE_ID: "google-cx",
+    ILJIN_OFFICIAL_SOURCE_DOMAINS: "official.iljin.example",
+  };
+  stubFetch([
+    ["customsearch.googleapis.com", () => jsonResponse({
+      items: [
+        { title: "일진AI 캐스트 - AI 서비스 소개", link: "https://www.jinjai.net/", snippet: "오인된 서비스" },
+        { title: "일진모바일 - AI 서비스 및 앱 개발", link: "https://www.jinjaimobile.com/", snippet: "오인된 서비스" },
+        { title: "미검증 유사 명칭 출처", link: "https://unverified-source.example/iljin", snippet: "법인 관계를 확인할 수 없는 결과" },
+        { title: "일진글로벌 공식 출처", link: "https://official.iljin.example/iljin", snippet: "공식 확인 결과" },
+      ],
+    })],
+  ]);
+
+  const response = await internetSearch.searchInternet("일진 AI 서비스", { principal, traceId: "TRC-BLOCKED-DOMAIN", limit: 3 });
+
+  assert.deepEqual(response.results.map((result) => result.source), ["official.iljin.example"]);
+  assert.deepEqual(response.results.map((result) => result.sourceCategoryLabel), ["공식 확인"]);
+});
+
+test("공식 출처가 없으면 서로 다른 승인 독립 보도 2건만 기업 주장 근거로 남긴다", async (t) => {
+  if (!requireBundle(t)) return;
+  globalThis.__ILJIN_RUNTIME_ENV__ = {
+    INTERNET_SEARCH_PROVIDER_ORDER: "google",
+    GOOGLE_SEARCH_API_KEY: "google-key",
+    GOOGLE_SEARCH_ENGINE_ID: "google-cx",
+    ILJIN_TRUSTED_INDEPENDENT_SOURCE_DOMAINS: "news-one.example,news-two.example",
+  };
+  stubFetch([
+    ["customsearch.googleapis.com", () => jsonResponse({
+      items: [
+        { title: "일진글로벌 독립 보도 1", link: "https://news-one.example/iljin", snippet: "독립 보도 근거 1" },
+        { title: "일진글로벌 독립 보도 2", link: "https://news-two.example/iljin", snippet: "독립 보도 근거 2" },
+        { title: "일진글로벌 미검증 블로그", link: "https://blog.example/iljin", snippet: "검증되지 않은 주장" },
+      ],
+    })],
+  ]);
+
+  const response = await internetSearch.searchInternet("일진글로벌 사업 현황", { principal, traceId: "TRC-INDEPENDENT-PAIR", limit: 3 });
+
+  assert.deepEqual(new Set(response.results.map((result) => result.source)), new Set(["news-one.example", "news-two.example"]));
+  assert.ok(response.results.every((result) => result.sourceCategoryLabel === "독립 제3자 보도"));
+});
+
+test("승인 출처가 없는 기업 질의는 공식 관계 확인 불가로 종료한다", async (t) => {
+  if (!requireBundle(t)) return;
+  globalThis.__ILJIN_RUNTIME_ENV__ = {
+    INTERNET_SEARCH_PROVIDER_ORDER: "google",
+    GOOGLE_SEARCH_API_KEY: "google-key",
+    GOOGLE_SEARCH_ENGINE_ID: "google-cx",
+  };
+  stubFetch([
+    ["customsearch.googleapis.com", () => jsonResponse({
+      items: [{ title: "일진글로벌 유사 명칭 블로그", link: "https://blog.example/iljin", snippet: "검증되지 않은 주장" }],
+    })],
+  ]);
+
+  await assert.rejects(
+    () => internetSearch.searchInternet("일진글로벌 서비스 운영 주체", { principal, traceId: "TRC-UNVERIFIED", limit: 3 }),
+    (error) => error?.code === "INTERNET_SEARCH_COMPANY_SOURCE_UNVERIFIED",
+  );
+});
+
 function requireBundle(t) {
   if (internetSearch) return true;
   t.skip("esbuild 를 사용할 수 없어 internet-search 번들을 만들지 못했습니다.");
@@ -134,7 +202,7 @@ test("Tavily 와 Exa 를 병렬로 불러 결과를 합친다", async (t) => {
     })],
   ]);
 
-  const response = await internetSearch.searchInternet("일진 AI 최신 동향", { principal, traceId: "TRC-1", limit: 8 });
+  const response = await internetSearch.searchInternet("제조 AI 최신 동향", { principal, traceId: "TRC-1", limit: 8 });
 
   assert.ok(calls.some((url) => url.includes("api.tavily.com")));
   assert.ok(calls.some((url) => url.includes("api.exa.ai")), "Exa 를 Tavily 와 같은 배치에서 병렬로 호출해야 한다");

@@ -2773,6 +2773,18 @@ a.answer-citation:hover {
   margin-top: 10px;
 }
 
+/* A message is a two-column grid (avatar + content). These follow-up controls
+   are siblings of the content panel, so they must explicitly stay in column 2. */
+.message > .answer-actions,
+.message > .schedule-candidates {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.message > .answer-actions button {
+  white-space: nowrap;
+}
+
 .answer-actions button {
   min-height: 36px;
   border: 0;

@@ -33,4 +33,6 @@ test("visual search persists Cohere vectors separately and only for opted-in doc
   assert.match(rag, /visual_search_enabled/);
   assert.match(rag, /input\.visualSearchEnabled/);
   assert.match(rag, /chart_json/);
+  assert.match(rag, /char_start/);
+  assert.match(rag, /segmentIndexForVisualRegion/);
 });

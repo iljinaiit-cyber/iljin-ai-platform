@@ -11,6 +11,24 @@ test("RAG 후보 집합은 D1 바인딩 한도를 넘지 않는 JSON1 경로를 
   assert.doesNotMatch(source, /candidateIds\.map\(\(\) => "\?"\)/);
 });
 
+test("Hybrid retrieval adds ACL-filtered FTS candidates before RRF reranking", async () => {
+  const source = await readFile(new URL("lib/rag.ts", root), "utf8");
+  assert.match(source, /FROM segments_fts/);
+  assert.match(source, /segments_fts MATCH \?/);
+  assert.match(source, /ORDER BY bm25\(segments_fts\)/);
+  assert.match(source, /const lexicalCandidateIds = await queryLexicalCandidateIds/);
+  assert.match(source, /\.\.\.lexicalCandidateIds,/);
+  assert.match(source, /a\.department_scope/);
+});
+
+test("Visual regions are assigned to overlapping text chunks, not ingestion order", async () => {
+  const source = await readFile(new URL("lib/rag.ts", root), "utf8");
+  assert.match(source, /function segmentIndexForVisualRegion/);
+  assert.match(source, /Math\.min\(chunk\.charEnd, end!/);
+  assert.match(source, /segmentIds\[segmentIndexForVisualRegion\(chunks, region\)\]/);
+  assert.doesNotMatch(source, /segmentIds\[Math\.min\(index, segmentIds\.length - 1\)\]/);
+});
+
 test("그래프 후보와 관계 증거는 최신 ACL 및 문서 상태를 검사한다", async () => {
   const source = await readFile(new URL("lib/ontology.ts", root), "utf8");
   assert.match(source, /ontology_relation_evidence/);

@@ -45,6 +45,20 @@ export function deepInternetFirstPassInstruction() {
   return "심층 인터넷 조사 1차 작성 규칙: 제공된 웹 검색 근거만 사용해 4,500~7,000자 수준의 독립적인 근거 중심 보고서를 작성하세요. 데이터·사례·현장 적용 시사점·리스크·실행 우선순위를 빠뜨리지 말고, 핵심 주장마다 [Wn] 인용을 붙이세요. 참고 출처 목록은 마지막 단계에서 시스템이 정리하므로 본문에 별도 출처 목록을 만들지 마세요.";
 }
 
+/** 기준일·제목이 아니라 모델이 명시한 결론만 빠른 요약으로 분리한다. */
+export function splitAnswerSummary(content: string) {
+  const lines = content.trim().split(/\r?\n/);
+  const summaryIndex = lines.findIndex((line) => /^\s*(?:\*\*)?한\s*줄\s*요약(?:\*\*)?\s*[:：]\s*\S/u.test(line));
+  if (summaryIndex < 0) return { summary: "", remainder: content.trim() };
+  const summary = lines[summaryIndex]
+    .replace(/^\s*(?:\*\*)?한\s*줄\s*요약(?:\*\*)?\s*[:：]\s*/u, "")
+    .trim();
+  return {
+    summary,
+    remainder: [...lines.slice(0, summaryIndex), ...lines.slice(summaryIndex + 1)].join("\n").trim(),
+  };
+}
+
 export function answerOutputTokenBudget(length: AnswerLength | undefined) {
   return length === "brief" ? 600 : length === "detailed" ? 4_800 : 1_800;
 }

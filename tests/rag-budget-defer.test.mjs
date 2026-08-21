@@ -64,8 +64,9 @@ function recordingDb(rows = {}, options = {}) {
     segments: ["id", "asset_id", "parent_id", "ordinal", "heading", "content", "page_number", "char_start", "char_end", "token_count", "embedding", "embedding_model", "vector_indexed_at", "time_start_ms", "time_end_ms", "speaker", "modality", "created_at"],
     index_jobs: ["id", "asset_id", "status", "stage", "error_code", "error_message", "attempt_count", "processed_chunks", "total_chunks", "deferred_until", "resume_offset", "last_error_code", "started_at", "completed_at", "created_at"],
     retrieval_traces: ["id", "tenant_id", "owner_email", "query_hash", "department", "result_count", "top_score", "latency_ms", "embedding_model", "embedding_dimensions", "rerank_model", "rerank_status", "candidate_count", "query_variant_count", "fusion_strategy", "fusion_candidate_count", "rerank_candidate_count", "evidence_confidence", "verifier_status", "graph_seed_count", "graph_candidate_count", "graph_boosted_count", "search_scope", "search_provider", "created_at"],
-    visual_regions: ["id", "asset_id", "segment_id", "page_number", "region_type", "ordinal", "bbox_json", "caption", "ocr_text", "table_markdown", "labels_json", "chart_json", "created_at"],
+    visual_regions: ["id", "asset_id", "segment_id", "page_number", "region_type", "ordinal", "bbox_json", "char_start", "char_end", "caption", "ocr_text", "table_markdown", "labels_json", "chart_json", "created_at"],
     visual_embeddings: ["id", "asset_id", "segment_id", "embedding", "embedding_model", "dimensions", "created_at"],
+    segments_fts: ["heading", "content"],
     ingestion_sources: ["id", "tenant_id", "name", "source_type", "connection_config", "schedule_interval_minutes", "classification", "department_scope", "enabled", "last_run_at", "last_run_status", "last_run_summary", "total_ingested", "created_at", "updated_at", "created_by"],
   };
   const db = {

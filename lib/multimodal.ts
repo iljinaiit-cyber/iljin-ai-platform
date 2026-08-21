@@ -77,6 +77,8 @@ export type MultimodalAnalysis = {
   modality: "image" | "document" | "audio" | "video";
   regions: Array<{
     pageNumber: number;
+    charStart?: number;
+    charEnd?: number;
     regionType: "image" | "page" | "table" | "chart";
     bbox: [number, number, number, number] | null;
     caption: string;
@@ -264,16 +266,24 @@ function conversionResult(value: unknown): MarkdownConversionResult {
 }
 
 function extractVisualRegions(markdown: string, isImage: boolean): MultimodalAnalysis["regions"] {
-  const pages = markdown
-    .split(/\f|\n(?=#{1,3}\s*(?:page|페이지)\s*\d+)/i)
-    .map((page) => page.trim())
-    .filter(Boolean);
+  let cursor = 0;
+  const pages = markdown.split(/\f|\n(?=#{1,3}\s*(?:page|페이지)\s*\d+)/i).flatMap((raw) => {
+    const rawStart = markdown.indexOf(raw, cursor);
+    cursor = rawStart + raw.length;
+    const page = raw.trim();
+    if (!page) return [];
+    const charStart = rawStart + raw.indexOf(page);
+    return [{ page, charStart, charEnd: charStart + page.length }];
+  });
   const regions: MultimodalAnalysis["regions"] = [];
-  (pages.length ? pages : [markdown]).slice(0, 100).forEach((page, pageIndex) => {
+  (pages.length ? pages : [{ page: markdown, charStart: 0, charEnd: markdown.length }]).slice(0, 100).forEach((pageEntry, pageIndex) => {
+    const { page, charStart, charEnd } = pageEntry;
     const pageNumber = pageIndex + 1;
     const tables = page.match(/(?:^|\n)(?:\|[^\n]+\|\n\|(?:\s*:?-{3,}:?\s*\|)+\n(?:\|[^\n]+\|\n?)+)/gm) || [];
     tables.slice(0, 20).forEach((table) => regions.push({
       pageNumber,
+      charStart: charStart + page.indexOf(table),
+      charEnd: charStart + page.indexOf(table) + table.length,
       regionType: "table",
       bbox: null,
       caption: `페이지 ${pageNumber}의 표`,
@@ -283,6 +293,8 @@ function extractVisualRegions(markdown: string, isImage: boolean): MultimodalAna
     if (/(차트|그래프|도표|chart|graph|plot)/i.test(page)) {
       regions.push({
         pageNumber,
+        charStart,
+        charEnd,
         regionType: "chart",
         bbox: null,
         caption: page.slice(0, 1_000),
@@ -291,6 +303,8 @@ function extractVisualRegions(markdown: string, isImage: boolean): MultimodalAna
     }
     regions.push({
       pageNumber,
+      charStart,
+      charEnd,
       regionType: isImage ? "image" : "page",
       bbox: [0, 0, 1, 1],
       caption: page.slice(0, 1_000),

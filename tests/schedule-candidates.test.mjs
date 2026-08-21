@@ -5,11 +5,12 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("AI 답변은 일정 후보만 만들고 사용자가 확인할 때 저장한다", async () => {
-  const [candidates, route, portal, chat] = await Promise.all([
+  const [candidates, route, portal, chat, styles] = await Promise.all([
     readFile(new URL("lib/schedule-candidates.ts", root), "utf8"),
     readFile(new URL("app/api/v1/schedule-candidates/route.ts", root), "utf8"),
     readFile(new URL("app/AgentPortal.tsx", root), "utf8"),
     readFile(new URL("app/api/v1/chat/completions/route.ts", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
   ]);
 
   assert.match(candidates, /ownedAssistantMessage/);
@@ -26,6 +27,8 @@ test("AI 답변은 일정 후보만 만들고 사용자가 확인할 때 저장�
   assert.match(portal, /scheduleCandidatesChecked/);
   assert.match(portal, /일정으로 등록할 행동 항목을 찾지 못했습니다/);
   assert.match(portal, /일정 추가/);
+  assert.match(styles, /\.message > \.answer-actions,\s*\.message > \.schedule-candidates/);
+  assert.match(styles, /\.message > \.answer-actions button\s*\{\s*white-space: nowrap/);
   assert.doesNotMatch(chat, /auto work registration|auto schedule registration/);
 });
 

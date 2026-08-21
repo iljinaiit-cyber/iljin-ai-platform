@@ -6,7 +6,7 @@ export type FollowUpQuestion = {
 };
 
 const FOLLOW_UP_PATTERN = /(?:^|\n)\s*(?:#{1,3}\s*)?(?:\[)?\s*보충\s*질문\s*(?:\])?\s*(?=\n|$)/i;
-const RELATED_PATTERN = /##\s*연관\s*질문/i;
+const RELATED_PATTERN = /(?:^|\n)\s*(?:#{1,6}\s*)?(?:\*\*)?\s*연관\s*질문\s*(?:\*\*)?\s*(?=\n|$)/i;
 
 export function normalizeRewrittenQuery(content: string, original: string) {
   const rewritten = content
@@ -84,7 +84,9 @@ export function extractRelatedQuestions(content: string): {
   for (const line of section.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    const item = trimmed.match(/^\d+[.)]\s+(.+)$/);
+    const item = trimmed.match(/^\d+[.)]\s+(.+)$/)
+      || trimmed.match(/^[-*•]\s+(.+)$/)
+      || trimmed.match(/^(.+[?？])$/);
     if (item) {
       const text = item[1].trim();
       const intentMatch = text.match(/\(([^)]+)\)$/);

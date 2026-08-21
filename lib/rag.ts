@@ -124,6 +124,7 @@ type SegmentRow = {
   ordinal: number;
   visual_region_id: string | null;
   region_type: "image" | "page" | "table" | "chart" | null;
+  visual_page_number: number | null;
   bbox_json: string | null;
   chart_json: string | null;
   region_modalities: string | null;
@@ -159,6 +160,7 @@ const RRF_LEXICAL_WEIGHT = 0.4;
 const RRF_DENSE_WEIGHT = 0.6;
 const FUSION_CANDIDATE_LIMIT = 120;
 const RERANK_CANDIDATE_LIMIT = 50;
+const LEXICAL_CANDIDATE_LIMIT = 120;
 const MAX_RAG_PROMPT_CHARS = 7_800;
 const MIN_RAG_EVIDENCE_CHARS = 400;
 const RAG_EVIDENCE_MARKER = "__RAG_EVIDENCE__";
@@ -524,8 +526,9 @@ export async function ensureRagSchema() {
       segments: ["id", "asset_id", "parent_id", "ordinal", "heading", "content", "page_number", "char_start", "char_end", "token_count", "embedding", "embedding_model", "vector_indexed_at", "time_start_ms", "time_end_ms", "speaker", "modality", "created_at"],
       index_jobs: ["id", "asset_id", "status", "stage", "error_code", "error_message", "attempt_count", "processed_chunks", "total_chunks", "deferred_until", "resume_offset", "last_error_code", "started_at", "completed_at", "created_at"],
       retrieval_traces: ["id", "tenant_id", "owner_email", "query_hash", "department", "result_count", "top_score", "latency_ms", "embedding_model", "embedding_dimensions", "rerank_model", "rerank_status", "candidate_count", "query_variant_count", "fusion_strategy", "fusion_candidate_count", "rerank_candidate_count", "evidence_confidence", "verifier_status", "graph_seed_count", "graph_candidate_count", "graph_boosted_count", "search_scope", "search_provider", "created_at"],
-      visual_regions: ["id", "asset_id", "segment_id", "page_number", "region_type", "ordinal", "bbox_json", "caption", "ocr_text", "table_markdown", "labels_json", "chart_json", "created_at"],
+      visual_regions: ["id", "asset_id", "segment_id", "page_number", "region_type", "ordinal", "bbox_json", "char_start", "char_end", "caption", "ocr_text", "table_markdown", "labels_json", "chart_json", "created_at"],
       visual_embeddings: ["id", "asset_id", "segment_id", "embedding", "embedding_model", "dimensions", "created_at"],
+      segments_fts: ["heading", "content"],
       ingestion_sources: ["id", "tenant_id", "name", "source_type", "connection_config", "schedule_interval_minutes", "classification", "department_scope", "enabled", "last_run_at", "last_run_status", "last_run_summary", "total_ingested", "created_at", "updated_at", "created_by"],
     } as const;
     const checks = await db.batch(Object.keys(requiredColumns).map((table) => db.prepare(`PRAGMA table_info(${table})`)));
@@ -994,6 +997,61 @@ function uniqueValues(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
+function ftsPhrase(value: string) {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+export function buildFtsQuery(plan: RagQueryPlan) {
+  const terms = uniqueValues([
+    ...plan.identifiers,
+    ...plan.variants.flatMap((variant) => tokenize(variant)),
+  ]).slice(0, 24);
+  return terms.map(ftsPhrase).join(" OR ");
+}
+
+async function queryLexicalCandidateIds(input: {
+  db: D1Database;
+  plan: RagQueryPlan;
+  tenantId: string;
+  department: string;
+  assetIds: string[];
+  sourceType?: string;
+  createdFrom?: string;
+  createdTo?: string;
+}) {
+  const query = buildFtsQuery(input.plan);
+  if (!query) return [] as string[];
+  const assetFilter = input.assetIds.length
+    ? `AND a.id IN (${input.assetIds.map(() => "?").join(",")})`
+    : "";
+  const result = await input.db.prepare(`SELECT s.id
+    FROM segments_fts
+    JOIN segments s ON s.rowid = segments_fts.rowid
+    JOIN assets a ON a.id = s.asset_id
+    WHERE segments_fts MATCH ?
+      AND a.status = 'indexed' AND a.deleted_at IS NULL AND a.tenant_id = ?
+      AND (a.document_status IS NULL OR a.document_status = 'effective')
+      AND (a.classification = 'public' OR a.department_scope = '*' OR instr(',' || a.department_scope || ',', ',' || ? || ',') > 0)
+      ${assetFilter}
+      AND (? = '' OR a.source_type = ?)
+      AND (? = '' OR a.created_at >= ?)
+      AND (? = '' OR a.created_at <= ?)
+    ORDER BY bm25(segments_fts) LIMIT ?`).bind(
+      query,
+      input.tenantId,
+      input.department,
+      ...input.assetIds,
+      input.sourceType || "",
+      input.sourceType || "",
+      input.createdFrom || "",
+      input.createdFrom || "",
+      input.createdTo || "",
+      input.createdTo || "",
+      LEXICAL_CANDIDATE_LIMIT,
+    ).all<{ id: string }>();
+  return (result.results || []).map((row) => row.id);
+}
+
 const DOMAIN_SYNONYMS: Record<string, string[]> = {
   "안전": ["안전관리", "안전수칙", "산업안전"],
   "설비": ["설비관리", "설비점검", "설비유지보수"],
@@ -1150,6 +1208,8 @@ export async function ingestDocument(input: {
   deduplicate?: boolean;
   visualRegions?: Array<{
     pageNumber?: number;
+    charStart?: number;
+    charEnd?: number;
     regionType: "image" | "page" | "table" | "chart";
     bbox?: [number, number, number, number] | null;
     caption?: string;
@@ -1281,12 +1341,12 @@ export async function ingestDocument(input: {
     if (input.visualRegions?.length && segmentIds[0]) {
       await db.batch(input.visualRegions.slice(0, 128).map((region, index) =>
         db.prepare(`INSERT INTO visual_regions
-          (id, asset_id, segment_id, page_number, region_type, ordinal, bbox_json, caption, ocr_text, table_markdown, labels_json, chart_json, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          (id, asset_id, segment_id, page_number, region_type, ordinal, bbox_json, char_start, char_end, caption, ocr_text, table_markdown, labels_json, chart_json, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
           .bind(
-            createId("reg"), assetId, segmentIds[Math.min(index, segmentIds.length - 1)],
+            createId("reg"), assetId, segmentIds[segmentIndexForVisualRegion(chunks, region)],
             region.pageNumber || 1, region.regionType, index,
-            JSON.stringify(region.bbox || [0, 0, 1, 1]),
+            JSON.stringify(region.bbox || [0, 0, 1, 1]), region.charStart || null, region.charEnd || null,
             region.caption || null, region.ocrText || null, region.tableMarkdown || null,
             region.labels?.length || region.labelSummary
               ? JSON.stringify({ labels: region.labels || [], summary: region.labelSummary || null, confidence: region.labelConfidence ?? null })
@@ -1340,6 +1400,8 @@ export async function ingestDocument(input: {
 
 export type IngestVisualRegion = {
   pageNumber?: number;
+  charStart?: number;
+  charEnd?: number;
   regionType: "image" | "page" | "table" | "chart";
   bbox?: [number, number, number, number] | null;
   caption?: string;
@@ -1357,6 +1419,42 @@ export type ExtractionPayload = {
   regions?: IngestVisualRegion[];
   visualAssets?: IngestVisualAsset[];
 };
+
+function segmentIndexForVisualRegion(
+  chunks: Array<{ content: string; charStart: number; charEnd: number }>,
+  region: Pick<IngestVisualRegion, "charStart" | "charEnd" | "caption" | "ocrText" | "tableMarkdown">,
+) {
+  if (!chunks.length) return 0;
+  const start = region.charStart;
+  const end = region.charEnd;
+  if (Number.isInteger(start) && Number.isInteger(end) && end! > start!) {
+    let bestIndex = 0;
+    let bestOverlap = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    chunks.forEach((chunk, index) => {
+      const overlap = Math.max(0, Math.min(chunk.charEnd, end!) - Math.max(chunk.charStart, start!));
+      const distance = overlap ? 0 : Math.min(Math.abs(chunk.charEnd - start!), Math.abs(chunk.charStart - end!));
+      if (overlap > bestOverlap || (overlap === bestOverlap && distance < bestDistance)) {
+        bestIndex = index;
+        bestOverlap = overlap;
+        bestDistance = distance;
+      }
+    });
+    return bestIndex;
+  }
+  const regionTokens = new Set(tokenize(`${region.tableMarkdown || ""}\n${region.ocrText || ""}\n${region.caption || ""}`));
+  if (!regionTokens.size) return 0;
+  let bestIndex = 0;
+  let bestMatches = -1;
+  chunks.forEach((chunk, index) => {
+    const matches = tokenize(chunk.content).reduce((count, token) => count + (regionTokens.has(token) ? 1 : 0), 0);
+    if (matches > bestMatches) {
+      bestIndex = index;
+      bestMatches = matches;
+    }
+  });
+  return bestIndex;
+}
 
 // Chunks embedded per queue message. Each window is one batch of embedding
 // subrequests, so this bounds a single consumer invocation regardless of how
@@ -1573,11 +1671,11 @@ export async function processIngestBatch(input: {
     if (segmentIds.length) {
       await db.batch(extraction.regions.slice(0, 128).map((region, index) =>
         db.prepare(`INSERT INTO visual_regions
-          (id, asset_id, segment_id, page_number, region_type, ordinal, bbox_json, caption, ocr_text, table_markdown, labels_json, chart_json, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .bind(createId("reg"), input.assetId, segmentIds[Math.min(index, segmentIds.length - 1)],
+          (id, asset_id, segment_id, page_number, region_type, ordinal, bbox_json, char_start, char_end, caption, ocr_text, table_markdown, labels_json, chart_json, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(createId("reg"), input.assetId, segmentIds[segmentIndexForVisualRegion(chunks, region)],
             region.pageNumber || 1, region.regionType, index,
-            JSON.stringify(region.bbox || [0, 0, 1, 1]),
+            JSON.stringify(region.bbox || [0, 0, 1, 1]), region.charStart || null, region.charEnd || null,
             region.caption || null, region.ocrText || null, region.tableMarkdown || null,
             region.labels?.length || region.labelSummary
               ? JSON.stringify({ labels: region.labels || [], summary: region.labelSummary || null, confidence: region.labelConfidence ?? null })
@@ -1851,20 +1949,14 @@ export async function searchRag(query: string, options: {
     console.error("[ontology] 그래프 확장 실패", { traceId: options.traceId, error });
   }
 
-  // 후보는 밀집(Vectorize)·시각 벡터·그래프 히트의 ID 로만 구성한다. 종전의 임의적인
-  // `ORDER BY ordinal LIMIT 1500` 창은 Vectorize 가 찾아낸 세그먼트를 버렸으므로 제거했다.
-  //
-  // ── 알려진 한계: 어휘 전용 후보 진입 경로가 없다 ────────────────────────
-  // scoreLexical 은 아래에서 계산되지만 **이미 확정된 이 후보 집합 안에서만** 동작한다.
-  // 따라서 밀집 검색이 놓친 세그먼트는 어휘 점수가 아무리 높아도 순위에 오르지 못한다.
-  // planRagQuery 가 식별자를 찾으면 어휘 가중치를 0.6 까지 올리지만(adaptiveLexWeight),
-  // "QMS-ALPHA-001" 같은 정확 일치 질의는 임베딩이 가장 약한 영역이라 이 조합이
-  // 실효를 못 볼 수 있다 — 가중치를 적용할 대상이 후보에 없기 때문이다.
-  //
-  // 정공법은 FTS5 가상 테이블을 만들어 어휘 상위 N 건을 candidateIds 에 합집합으로
-  // 넣는 것이다. 도입 전에 골든셋에서 **식별자 포함 질의만 분리해** Recall@5 를 재야 한다.
-  // 전체 평균으로는 이 구멍이 드러나지 않는다.
+  const lexicalCandidateIds = await queryLexicalCandidateIds({
+    db, plan: queryPlan, tenantId, department, assetIds,
+    sourceType: options.sourceType, createdFrom: options.createdFrom, createdTo: options.createdTo,
+  });
+  // 후보는 어휘(FTS5)·밀집(Vectorize)·시각 벡터·그래프 히트를 합친다. 이 경로가
+  // 있어야 문서코드·부품번호처럼 임베딩에 불리한 정확 일치도 BM25 재순위 대상이 된다.
   const candidateIds = uniqueValues([
+    ...lexicalCandidateIds,
     ...Array.from(vectorScores?.keys() || []),
     ...Array.from(visualSegmentScores.keys()),
     ...Array.from(graphSegmentHits.keys()),
@@ -1879,6 +1971,7 @@ export async function searchRag(query: string, options: {
       ${embeddingColumn}, s.embedding_model, s.vector_indexed_at, s.ordinal,
       (SELECT vr.id FROM visual_regions vr WHERE vr.segment_id = s.id ORDER BY vr.ordinal LIMIT 1) AS visual_region_id,
       (SELECT vr.region_type FROM visual_regions vr WHERE vr.segment_id = s.id ORDER BY vr.ordinal LIMIT 1) AS region_type,
+      (SELECT vr.page_number FROM visual_regions vr WHERE vr.segment_id = s.id ORDER BY vr.ordinal LIMIT 1) AS visual_page_number,
       (SELECT vr.bbox_json FROM visual_regions vr WHERE vr.segment_id = s.id ORDER BY vr.ordinal LIMIT 1) AS bbox_json,
       (SELECT vr.chart_json FROM visual_regions vr WHERE vr.segment_id = s.id ORDER BY vr.ordinal LIMIT 1) AS chart_json,
       (SELECT group_concat(DISTINCT vr.region_type) FROM visual_regions vr WHERE vr.segment_id = s.id) AS region_modalities
@@ -2064,7 +2157,7 @@ export async function searchRag(query: string, options: {
     version: item.version,
     updatedAt: item.updated_at,
     heading: item.heading || undefined,
-    pageNumber: item.page_number || undefined,
+    pageNumber: item.visual_page_number || item.page_number || undefined,
     excerpt: (() => {
       const adj = adjacentMap.get(item.id);
       const prevCtx = adj?.prev ? `${adj.prev}\n\n` : "";
@@ -2528,7 +2621,8 @@ export async function getCitation(assetId: string, segmentId: string, principal:
   await ensureRagSchema();
   return getD1().prepare(`SELECT s.id AS segment_id, s.asset_id, a.title, a.version, a.mime_type, a.classification,
     s.heading, s.content, s.page_number, s.char_start, s.char_end,
-    vr.id AS region_id, vr.region_type, vr.bbox_json, vr.caption, vr.ocr_text, vr.table_markdown, vr.labels_json, vr.chart_json
+    vr.id AS region_id, vr.region_type, vr.page_number AS visual_page_number, vr.bbox_json, vr.char_start AS visual_char_start, vr.char_end AS visual_char_end,
+    vr.caption, vr.ocr_text, vr.table_markdown, vr.labels_json, vr.chart_json
     FROM segments s JOIN assets a ON a.id = s.asset_id
     LEFT JOIN visual_regions vr ON vr.segment_id = s.id
     WHERE a.id = ? AND s.id = ? AND a.status = 'indexed' AND a.deleted_at IS NULL AND a.tenant_id = ?
@@ -2758,11 +2852,11 @@ export async function reindexAsset(principal: Principal, assetId: string) {
     }
     if (visualRegions.length && segmentIds.length) {
       await db.batch(visualRegions.slice(0, 128).map((region, index) => db.prepare(`INSERT INTO visual_regions
-        (id, asset_id, segment_id, page_number, region_type, ordinal, bbox_json, caption, ocr_text, table_markdown, labels_json, chart_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        (id, asset_id, segment_id, page_number, region_type, ordinal, bbox_json, char_start, char_end, caption, ocr_text, table_markdown, labels_json, chart_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(
-          createId("reg"), asset.id, segmentIds[Math.min(index, segmentIds.length - 1)],
-          region.pageNumber || 1, region.regionType, index, JSON.stringify(region.bbox || [0, 0, 1, 1]),
+          createId("reg"), asset.id, segmentIds[segmentIndexForVisualRegion(chunks, region)],
+          region.pageNumber || 1, region.regionType, index, JSON.stringify(region.bbox || [0, 0, 1, 1]), region.charStart || null, region.charEnd || null,
           region.caption || null, region.ocrText || null, region.tableMarkdown || null,
           region.labels?.length || region.labelSummary
             ? JSON.stringify({ labels: region.labels || [], summary: region.labelSummary || null, confidence: region.labelConfidence ?? null })

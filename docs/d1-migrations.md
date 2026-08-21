@@ -17,3 +17,14 @@ For the known production journal that contains only `0000` through `0004`, use t
 4. Run `wrangler d1 migrations list ... --remote` and a second read-only schema check. It must report no unapplied migration and no unexpected schema mismatch before deploying application code.
 
 If any verification fails, stop. Do not mark migrations as applied, do not edit historical migration files, and create a forward-only corrective migration after taking a fresh schema export.
+
+## 0030 Hybrid retrieval and visual locators
+
+`0030_hybrid_fts_and_visual_locators.sql` adds the `segments_fts` FTS5 external-content index, synchronization triggers, and nullable `visual_regions.char_start` / `char_end` locators. Apply it **before** deploying the RAG code that requires this schema.
+
+1. Complete the `0029` reconciliation above when the target database has the known historical journal state.
+2. Back up the target schema, then apply the forward-only migration with `npx wrangler d1 migrations apply iljin-ai-db --remote --env production` from `web-app`.
+3. Confirm `segments_fts` and its three `segments_fts_a*` triggers exist in `sqlite_master`, and `PRAGMA table_info(visual_regions)` returns `char_start` and `char_end`.
+4. Run `npm run typecheck`, the RAG regression tests, and a live identifier-query smoke test before application deployment.
+
+Do not apply `0030` twice through a manual SQL execution path: the D1 migration journal is the source of truth for this forward-only change.

@@ -1,6 +1,6 @@
 {
   "gate": "G2",
-  "generated_at": "2026-08-10T05:08:14.381Z",
+  "generated_at": "2026-08-21T05:58:37.703Z",
   "automated_status": "pass",
   "live_starter_evaluation": "not_run",
   "starter_case_count": 300,
@@ -27,5 +27,5 @@
     "enterprise IdP ACL negative set with zero leakage",
     "human or validated evaluator faithfulness and citation-correctness review"
   ],
-  "statement": "The three-case starter set and term/citation faithfulness proxy are not official G2 evidence."
+  "statement": "The starter golden set and term/citation faithfulness proxy are not official G2 evidence."
 }

@@ -42,7 +42,7 @@ const report = {
     "enterprise IdP ACL negative set with zero leakage",
     "human or validated evaluator faithfulness and citation-correctness review",
   ],
-  statement: "The three-case starter set and term/citation faithfulness proxy are not official G2 evidence.",
+  statement: "The starter golden set and term/citation faithfulness proxy are not official G2 evidence.",
 };
 const target = await writeReport(argument("output", "qa/results/g2.json"), report);
 console.log(`[${automatedStatus.toUpperCase()}] G2 automated starter=${cases.length}; official=HOLD: ${target}`);

@@ -14,7 +14,11 @@ test("심층 인터넷 조사는 1차 보고서, 누락 보강, 안전한 최종
   assert.match(route, /DEEP_INTERNET_FIRST_PASS_MIN_CHARACTERS = 4_500/);
   assert.match(route, /DEEP_INTERNET_FIRST_PASS_MAX_CHARACTERS = 7_000/);
   assert.match(route, /DEEP_INTERNET_FINAL_MAX_CHARACTERS = 16_000/);
+  assert.match(route, /DEEP_INTERNET_FIRST_PASS_MAX_OUTPUT_TOKENS = 4_800/);
+  assert.match(route, /DEEP_INTERNET_SUPPLEMENT_MAX_OUTPUT_TOKENS = 1_800/);
   assert.match(route, /ensureDeepInternetFirstPass/);
+  assert.match(route, /internet-deep-first-pass-under-target/);
+  assert.doesNotMatch(route, /first-pass-repair/);
   assert.match(route, /createDeepInternetSupplement/);
   assert.match(route, /mergeDeepInternetResearch/);
   assert.match(route, /seenLines/);
@@ -26,8 +30,14 @@ test("심층 인터넷 조사는 1차 보고서, 누락 보강, 안전한 최종
   assert.match(route, /이미 있는 주장·수치·사례를 다시 쓰거나 요약하지 마세요/);
   assert.match(route, /출처·유형/);
   assert.match(route, /핵심 근거/);
+  assert.match(route, /function citedInternetSources/);
+  assert.match(route, /citations = citedInternetSources\(completion\.content, citationCandidates\)/);
+  assert.doesNotMatch(route, /function ensureInternetCitationCoverage/);
+  assert.match(route, /INTERNET_SEARCH_COMPANY_SOURCE_UNVERIFIED/);
+  assert.match(route, /공식 관계 확인 불가입니다/);
   assert.match(answerFormat, /deepInternetFirstPassInstruction/);
   assert.match(answerFormat, /4,500~7,000자 수준/);
+  assert.match(answerFormat, /splitAnswerSummary/);
   assert.match(portal, /심층 분석 보강 중/);
   assert.match(portal, /최종 보고서 병합 중/);
   assert.match(portal, /출처·유형:/);

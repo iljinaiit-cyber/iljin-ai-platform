@@ -6,7 +6,7 @@ import { COMPANY_INDUSTRY, COMPANY_NAME } from "./company-profile";
 import { referenceYearInSeoul } from "./reference-date";
 
 export type InternetSearchProvider = "tavily" | "exa" | "google" | "naver" | "youtube" | "brave" | "webpilot" | "duckduckgo" | "jina" | "wikimedia";
-export type InternetSourceCategory = "government" | "academic" | "reference" | "web";
+export type InternetSourceCategory = "official" | "government" | "academic" | "reference" | "independent" | "unverified";
 export type InternetSearchIntent = "current" | "comparison" | "how-to" | "research" | "fact";
 
 export type InternetSearchResult = {
@@ -18,6 +18,7 @@ export type InternetSearchResult = {
   source: string;
   sourceCategory: InternetSourceCategory;
   sourceCategoryLabel: string;
+  sourceVerification: "official" | "independent" | "public" | "unverified";
   publishedAt?: string;
 };
 
@@ -196,18 +197,48 @@ function safeHttpUrl(value: string) {
   }
 }
 
-function classifySource(value: string): Pick<InternetSearchResult, "sourceCategory" | "sourceCategoryLabel"> {
-  const host = new URL(value).hostname.toLowerCase();
+// 사용자가 일진 계열 공식 서비스로 오인되는 사례를 보고한 도메인이다.
+// 검색 결과·인용·연관 질문의 근거로 쓰기 전에 전역적으로 제외한다.
+const BLOCKED_MISATTRIBUTED_ILJIN_DOMAINS = new Set([
+  "jinjai.net",
+  "jinjaimobile.com",
+]);
+
+function isBlockedMisattributedIljinDomain(host: string) {
+  const normalized = host.toLowerCase().replace(/^www\./, "");
+  return [...BLOCKED_MISATTRIBUTED_ILJIN_DOMAINS].some((domain) => normalized === domain || normalized.endsWith(`.${domain}`));
+}
+
+function configuredDomains(value?: string) {
+  return (value || "").split(",")
+    .map((domain) => domain.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, ""))
+    .filter(Boolean);
+}
+
+function matchesConfiguredDomain(host: string, domains: string[]) {
+  const normalized = host.toLowerCase().replace(/^www\./, "");
+  return domains.some((domain) => normalized === domain || normalized.endsWith(`.${domain}`));
+}
+
+function classifySource(value: string): Pick<InternetSearchResult, "sourceCategory" | "sourceCategoryLabel" | "sourceVerification"> {
+  const host = new URL(value).hostname.toLowerCase().replace(/^www\./, "");
+  const runtime = getRuntimeEnv();
+  if (matchesConfiguredDomain(host, configuredDomains(runtime.ILJIN_OFFICIAL_SOURCE_DOMAINS))) {
+    return { sourceCategory: "official", sourceCategoryLabel: "공식 확인", sourceVerification: "official" };
+  }
+  if (matchesConfiguredDomain(host, configuredDomains(runtime.ILJIN_TRUSTED_INDEPENDENT_SOURCE_DOMAINS))) {
+    return { sourceCategory: "independent", sourceCategoryLabel: "독립 제3자 보도", sourceVerification: "independent" };
+  }
   if (host.endsWith(".go.kr") || host.endsWith(".gov") || host.endsWith(".gov.kr")) {
-    return { sourceCategory: "government", sourceCategoryLabel: "정부·공공 출처" };
+    return { sourceCategory: "government", sourceCategoryLabel: "정부·공공 출처", sourceVerification: "public" };
   }
   if (host.endsWith(".ac.kr") || host.endsWith(".edu") || host.endsWith(".edu.kr")) {
-    return { sourceCategory: "academic", sourceCategoryLabel: "교육·연구 출처" };
+    return { sourceCategory: "academic", sourceCategoryLabel: "교육·연구 출처", sourceVerification: "public" };
   }
   if (host.endsWith("wikipedia.org") || host.endsWith("wikimedia.org")) {
-    return { sourceCategory: "reference", sourceCategoryLabel: "공개 백과사전" };
+    return { sourceCategory: "reference", sourceCategoryLabel: "공개 백과사전", sourceVerification: "public" };
   }
-  return { sourceCategory: "web", sourceCategoryLabel: "공개 웹" };
+  return { sourceCategory: "unverified", sourceCategoryLabel: "미검증 공개 웹", sourceVerification: "unverified" };
 }
 
 function trimText(value: string, maxLength = 1_800) {
@@ -271,7 +302,7 @@ function contextualSearchQuery(query: string, context: string[] = []) {
 }
 
 const AMBIGUOUS_COMPANY_QUERY_PATTERN = /(일진|iljin)/i;
-const COMPANY_CONTEXT_QUERY_PATTERN = /(기업|회사|사업|제품|산업|제조|베어링|매출|실적|공장|공급|품질|기술|동향|연혁|계열|법인|시장|company|business|product|industry|manufactur|bearing)/i;
+const COMPANY_CONTEXT_QUERY_PATTERN = /(기업|회사|사업|제품|서비스|ai|산업|제조|베어링|매출|실적|공장|공급|품질|기술|동향|연혁|계열|법인|시장|company|business|product|service|industry|manufactur|bearing)/i;
 const EXPLICIT_OTHER_ILJIN_ENTITY_PATTERN = /(일진그룹|일진홀딩스|일진전기|일진머티리얼즈|일진하이솔루스|iljin\s+(group|electric|materials|hi-solis))/i;
 
 function prioritizeCompanySearchQuery(query: string) {
@@ -282,6 +313,27 @@ function prioritizeCompanySearchQuery(query: string) {
     || EXPLICIT_OTHER_ILJIN_ENTITY_PATTERN.test(query)
   ) return query;
   return `${COMPANY_NAME} ${COMPANY_INDUSTRY} ${query}`;
+}
+
+function isCompanyIdentityQuery(query: string) {
+  return /일진글로벌|iljin\s+global/i.test(query)
+    || (AMBIGUOUS_COMPANY_QUERY_PATTERN.test(query) && COMPANY_CONTEXT_QUERY_PATTERN.test(query));
+}
+
+/**
+ * 기업·브랜드·법인 관계 질문은 승인된 공식 출처 1건 또는 서로 다른 승인 독립 보도
+ * 2건이 있을 때만 모델 근거로 사용한다. 검색 순위나 도메인명은 법인 관계의 근거가 아니다.
+ */
+function companyClaimEligibleResults(query: string, results: InternetSearchResult[]) {
+  if (!isCompanyIdentityQuery(query)) return results;
+  const official = results.filter((result) => result.sourceVerification === "official");
+  if (official.length) return results.filter((result) => result.sourceVerification === "official" || result.sourceVerification === "independent");
+  const independentDomains = new Set(results
+    .filter((result) => result.sourceVerification === "independent")
+    .map((result) => result.source));
+  return independentDomains.size >= 2
+    ? results.filter((result) => result.sourceVerification === "independent")
+    : [];
 }
 
 export function buildSearchPlan(query: string, context: string[] = []): InternetSearchPlan {
@@ -368,7 +420,11 @@ function relevanceScore(query: string, result: InternetSearchResult) {
       ? 0.12
       : result.sourceCategory === "reference"
         ? 0.08
-        : 0;
+        : result.sourceCategory === "official"
+          ? 0.16
+          : result.sourceCategory === "independent"
+            ? 0.1
+            : 0;
   const exactTitle = result.title.toLocaleLowerCase("ko-KR").includes(query.toLocaleLowerCase("ko-KR")) ? 0.1 : 0;
   const publishedAt = result.publishedAt ? Date.parse(result.publishedAt) : Number.NaN;
   const ageDays = Number.isFinite(publishedAt) ? Math.max(0, (Date.now() - publishedAt) / 86_400_000) : Number.POSITIVE_INFINITY;
@@ -459,6 +515,7 @@ function makeResult(
   // Wikimedia/Wikipedia is intentionally excluded from every provider's
   // normalized result set, not only from the legacy fallback path.
   if (source.endsWith("wikipedia.org") || source.endsWith("wikimedia.org")) return undefined;
+  if (isBlockedMisattributedIljinDomain(source)) return undefined;
   return {
     id: `web_${provider}_${index + 1}`,
     title,
@@ -610,7 +667,7 @@ async function naverSearch(query: string, limit: number, runtime: RuntimeEnv) {
       snippet: item.description,
       publishedAt: item.pubDate,
     });
-    return result ? [{ ...result, id: `web_naver_${kind}_${index + 1}`, sourceCategoryLabel: kind === "news" ? "NAVER 뉴스" : "NAVER 웹문서" }] : [];
+    return result ? [{ ...result, id: `web_naver_${kind}_${index + 1}`, sourceCategoryLabel: result.sourceVerification === "unverified" ? (kind === "news" ? "NAVER 뉴스 · 미검증" : "NAVER 웹문서 · 미검증") : result.sourceCategoryLabel }] : [];
   }));
 }
 
@@ -642,7 +699,7 @@ async function youtubeSearch(query: string, limit: number, runtime: RuntimeEnv) 
       snippet: [snippet.channelTitle ? `채널: ${snippet.channelTitle}.` : "", snippet.description || ""].filter(Boolean).join(" "),
       publishedAt: snippet.publishedAt,
     });
-    return result ? [{ ...result, sourceCategoryLabel: "YouTube 동영상" }] : [];
+    return result ? [{ ...result, sourceCategoryLabel: result.sourceVerification === "unverified" ? "YouTube 동영상 · 미검증" : result.sourceCategoryLabel }] : [];
   });
 }
 
@@ -1109,7 +1166,7 @@ async function executeInternetSearch(plan: InternetSearchPlan, limit: number) {
     if (rerankResults(plan.searchQuery, collected, limit, plan.freshness).length >= minimumResults) break;
   }
 
-  const results = rerankResults(plan.searchQuery, collected, limit, plan.freshness);
+  const results = companyClaimEligibleResults(plan.searchQuery, rerankResults(plan.searchQuery, collected, limit, plan.freshness));
   // 실제로 최종 결과에 살아남은 출처만 "사용됨"으로 센다 — 응답은 왔지만
   // 중복·저관련으로 rerankResults 에서 전부 걸러진 Provider 는 제외한다.
   const providersUsed = [...new Set(results.map(providerOfResult).filter((id): id is InternetSearchProvider => Boolean(id)))];
@@ -1247,6 +1304,13 @@ export async function searchInternet(
     );
   }
   if (!execution.results.length) {
+    if (isCompanyIdentityQuery(plan.searchQuery)) {
+      throw new RagError(
+        `${COMPANY_NAME} 관련 사실을 확인할 승인 출처가 없습니다. 공식 관계 확인 불가로 처리합니다.`,
+        404,
+        "INTERNET_SEARCH_COMPANY_SOURCE_UNVERIFIED",
+      );
+    }
     throw new RagError(
       "검증 가능한 웹 검색 결과를 찾지 못했습니다. 질문의 핵심어를 더 구체적으로 입력해 주세요.",
       404,

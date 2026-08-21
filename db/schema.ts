@@ -225,6 +225,8 @@ export const visualRegions = sqliteTable(
     regionType: text("region_type").notNull().default("image"),
     ordinal: integer("ordinal").notNull().default(0),
     bboxJson: text("bbox_json"),
+    charStart: integer("char_start"),
+    charEnd: integer("char_end"),
     caption: text("caption"),
     ocrText: text("ocr_text"),
     tableMarkdown: text("table_markdown"),
