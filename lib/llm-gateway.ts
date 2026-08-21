@@ -829,21 +829,33 @@ async function continueTruncatedCompletion(
   if (completion.finishReason !== "length" || !completion.content.trim()) return completion;
 
   try {
-    const continuation = await completeWithGateway(
-      [
-        ...messages,
-        { role: "assistant", content: completion.content.slice(-CONTINUATION_CONTEXT_LIMIT) },
-        { role: "user", content: CONTINUATION_INSTRUCTION },
-      ],
-      `${traceId}-continue`,
-      policy,
-      reasoningTier,
-      false,
-    );
+    let latest = completion;
+    let content = completion.content.trimEnd();
+    let usage = completion.usage;
+    let segment = 1;
+
+    while (latest.finishReason === "length" && latest.content.trim()) {
+      const continuation = await completeWithGateway(
+        [
+          ...messages,
+          { role: "assistant", content: content.slice(-CONTINUATION_CONTEXT_LIMIT) },
+          { role: "user", content: CONTINUATION_INSTRUCTION },
+        ],
+        `${traceId}-continue-${segment}`,
+        policy,
+        reasoningTier,
+        false,
+      );
+      content = `${content}\n\n${continuation.content.trimStart()}`;
+      usage = mergeUsage(usage, continuation.usage);
+      latest = continuation;
+      segment += 1;
+    }
+
     return {
-      ...continuation,
-      content: `${completion.content.trimEnd()}\n\n${continuation.content.trimStart()}`,
-      usage: mergeUsage(completion.usage, continuation.usage),
+      ...latest,
+      content,
+      usage,
       traceId: completion.traceId,
     };
   } catch (error) {

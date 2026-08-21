@@ -145,7 +145,7 @@ test("2차 시도가 성공하면 그 답변을 돌려준다", async (t) => {
   assert.equal(calls.length, 2);
 });
 
-test("길이 제한에 도달한 본문은 한 번만 이어서 생성한다", async (t) => {
+test("길이 제한에 도달한 본문은 완료될 때까지 이어서 생성한다", async (t) => {
   if (!requireGateway(t)) return;
   const calls = stubProvider((index) => index === 0
     ? {
@@ -171,6 +171,41 @@ test("길이 제한에 도달한 본문은 한 번만 이어서 생성한다", a
   assert.match(completion.content, /첫 번째 부분[\s\S]*이어서 작성/);
   assert.equal(completion.finishReason, "stop");
   assert.equal(completion.usage?.completion_tokens, 4_300);
+});
+
+test("심층 답변이 여러 번 잘려도 모든 구간을 이어서 완성한다", async (t) => {
+  if (!requireGateway(t)) return;
+  const calls = stubProvider((index) => [
+    {
+      model: MODEL,
+      choices: [{ finish_reason: "length", message: { role: "assistant", content: "## 1. 현황\n첫 번째 구간" } }],
+      usage: { completion_tokens: 3_600, total_tokens: 3_610 },
+    },
+    {
+      model: MODEL,
+      choices: [{ finish_reason: "length", message: { role: "assistant", content: "## 2. 분석\n두 번째 구간" } }],
+      usage: { completion_tokens: 3_600, total_tokens: 3_610 },
+    },
+    {
+      model: MODEL,
+      choices: [{ finish_reason: "stop", message: { role: "assistant", content: "## 3. 실행\n마지막 구간" } }],
+      usage: { completion_tokens: 700, total_tokens: 710 },
+    },
+  ][index]);
+
+  const completion = await gateway.completeWithGateway(
+    [{ role: "user", content: "시장 분석을 심층 조사해줘." }],
+    "TRC-MULTI-CONT",
+    { sensitivity: "internal", maxOutputTokens: 3_600 },
+    "deep",
+  );
+
+  assert.equal(calls.length, 3);
+  assert.match(calls[1].input.messages.at(-1).content, /직전 답변은 출력 길이 제한/);
+  assert.match(calls[2].input.messages.at(-1).content, /직전 답변은 출력 길이 제한/);
+  assert.match(completion.content, /첫 번째 구간[\s\S]*두 번째 구간[\s\S]*마지막 구간/);
+  assert.equal(completion.finishReason, "stop");
+  assert.equal(completion.usage?.completion_tokens, 7_900);
 });
 
 test("사고 필드에만 남은 답변은 오류 대신 구제한다", async (t) => {
